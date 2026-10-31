@@ -218,8 +218,13 @@ export function sitesScreen({ query }) {
     const repoList = h("datalist", { id: repoListID });
     const repoHint = h("div", { class: "hint" }, t("sites.repoHint"));
     const branch = h("input", { type: "text", placeholder: t("sites.branchPlaceholder"), autocomplete: "off", spellcheck: "false" });
-    const auto = h("option", { value: "auto", hidden: true }, t("template.auto"));
-    template.prepend(auto);
+    // "What the repository says" is an option only while the code comes
+    // from a repository. It was always in the list, hidden: prepended to a
+    // select with nothing chosen it became the chosen one, so the dialog
+    // opened on it with "a template" as the source and Create answered
+    // "unknown template"; and iOS shows hidden options in its picker
+    // anyway. Out of the list it can be neither.
+    const auto = h("option", { value: "auto" }, t("template.auto"));
     const repoFields = h("div", { hidden: true }, h("div", { class: "field" }, h("label", null, t("sites.repo")), repo, repoList, repoHint), field(t("sites.branch"), branch, t("sites.branchHint")));
     let githubOn = false;
     api.get("/modules").then((list) => {
@@ -231,7 +236,8 @@ export function sitesScreen({ query }) {
     const syncSource = async () => {
       const fromRepo = source.value === "repo";
       repoFields.hidden = !fromRepo;
-      auto.hidden = !fromRepo;
+      if (fromRepo) template.prepend(auto);
+      else auto.remove();
       template.value = fromRepo ? "auto" : (isProject() ? "project" : "static");
       if (fromRepo && !repoList.childElementCount) {
         try {
@@ -269,8 +275,10 @@ export function sitesScreen({ query }) {
           if (!repo.value.trim()) { showError(t("sites.repoNeeded")); return false; }
           body.repository = repo.value.trim();
           if (branch.value.trim()) body.branch = branch.value.trim();
-          if (body.template === "auto") delete body.template;
         }
+        // Only a repository has something to detect; anywhere else "auto"
+        // is the server's own default (static, or project without a dot).
+        if (body.template === "auto") delete body.template;
         if (!isProject()) body.publish = publish.input.checked;
         const target = where.options.length ? where.value : currentNode();
         const site = await api.at(target).post("/sites", body);

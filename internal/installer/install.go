@@ -216,7 +216,7 @@ func (in *Installer) Requirements() (Report, bool, error) {
 	dockerChanged, jailChanged := false, false
 	rep, err := in.runSteps([]Step{
 		{"package manager", in.stepPackageManager},
-		{"git, curl, wireguard, nftables", in.stepPackages},
+		{"git, curl, wireguard, nftables, libatomic", in.stepPackages},
 		{"docker", optional("sites in containers will not start here", func() (bool, string, error) {
 			c, d, err := in.stepDocker()
 			dockerChanged = c
@@ -248,7 +248,7 @@ func (in *Installer) Install() (Report, error) {
 	var unitsChanged, binaryChanged, dockerChanged bool
 	steps := []Step{
 		{"package manager", in.stepPackageManager},
-		{"git, curl, wireguard, nftables", in.stepPackages},
+		{"git, curl, wireguard, nftables, libatomic", in.stepPackages},
 		{"docker", optional("sites in containers will not start here", func() (bool, string, error) {
 			c, d, err := in.stepDocker()
 			dockerChanged = c
@@ -454,10 +454,24 @@ func (in *Installer) stepPackages() (bool, string, error) {
 			missing = append(missing, p.pkg)
 		}
 	}
+	cmd, name := in.packageManager()
+	// Libraries → package, per package manager: libatomic is what Node's
+	// official arm64 builds (the ones nvm downloads) link against, and a
+	// minimal Ubuntu on an Oracle aarch64 machine does not have it. Every
+	// Node site there died at once with "node: error while loading shared
+	// libraries: libatomic.so.1" (exit 127), the template's too. Arch has
+	// it in gcc-libs, which is always there.
+	for _, l := range []struct {
+		so   string
+		pkgs map[string]string
+	}{{"libatomic.so.1", map[string]string{"apt-get": "libatomic1", "dnf": "libatomic", "apk": "libatomic", "zypper": "libatomic1"}}} {
+		if pkg := l.pkgs[name]; pkg != "" && !in.Exec.HasLib(l.so) {
+			missing = append(missing, pkg)
+		}
+	}
 	if len(missing) == 0 {
 		return false, "present", nil
 	}
-	cmd, name := in.packageManager()
 	if cmd == nil {
 		return false, "", fmt.Errorf("missing %s and no package manager to install them", strings.Join(missing, ", "))
 	}

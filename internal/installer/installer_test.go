@@ -627,3 +627,27 @@ func TestNVMNeverRunsAsRoot(t *testing.T) {
 		t.Fatal("runAs accepted root")
 	}
 }
+
+// A minimal Ubuntu on an aarch64 machine has no libatomic, and every Node
+// nvm downloads there died with "error while loading shared libraries:
+// libatomic.so.1". The packages step installs it with the rest.
+func TestThePackagesStepInstallsLibatomicWhenItIsMissing(t *testing.T) {
+	in, rec, out := testInstaller(t)
+	rec.NoLibs = map[string]bool{"libatomic.so.1": true}
+	if _, _, err := in.stepPackages(); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	want := "sudo apt-get install -y -q -o DPkg::Lock::Timeout=300 curl libatomic1"
+	if got := strings.Join(rec.Mutations(), "\n"); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestTheSystemFindsALibraryThatIsThere(t *testing.T) {
+	if !(System{}).HasLib("libc.so.6") && !(System{}).HasLib("libc.musl-*.so.1") {
+		t.Skip("no glibc or musl in the usual folders on this machine")
+	}
+	if (System{}).HasLib("libnot-a-library-anyone-has.so.9") {
+		t.Fatal("a library that does not exist was found")
+	}
+}

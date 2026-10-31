@@ -578,7 +578,7 @@ func (e *Engine) handover(ctx context.Context, s *Site, spec *manifest.Spec, act
 			e.emit("handover.cancelled", domain, "", "the supervisor is stopping; the new generation was stopped before the switch", map[string]any{"revision": spec.Revision})
 			return
 		}
-		e.fail(s, fmt.Errorf("%w (last lines of the log: %s)", err, tail(logFile, 5)))
+		e.fail(s, fmt.Errorf("%w (last lines of the log: %s)%s", err, tail(logFile, 5), archHint(logFile)))
 		return
 	}
 	e.mu.Lock()

@@ -14,7 +14,8 @@ import (
 
 // requirements.install: the house's dependencies, installed from the panel, for an
 // operator without SSH. A closed list: the packages the house runs on
-// (git, curl, wireguard-tools, nftables), docker with the operator in its
+// (git, curl, wireguard-tools,
+// nftables, and the libatomic Node needs on arm64), docker with the operator in its
 // group, fail2ban with the house's jail, nvm with the current LTS and, when
 // asked, a headless Chromium: the dependency steps of `middleware install`
 // and nothing else, plus what the sites' jails need (an AppArmor profile

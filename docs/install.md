@@ -121,7 +121,7 @@ restarts the service (the sites keep running, see [upgrade.md](upgrade.md)).
 | step | as | what |
 | --- | --- | --- |
 | package manager | you | finds apt, dnf, apk, pacman or zypper |
-| git and curl | sudo | installs whichever is missing (and wireguard-tools and nftables) |
+| git and curl | sudo | installs whichever is missing (and wireguard-tools, nftables, and libatomic, which the arm64 builds of Node load) |
 | fail2ban | sudo | installs fail2ban when missing and writes `/etc/fail2ban/jail.d/middleware.conf` and `action.d/middleware.conf`: an SSH jail with the house's numbers (5 failures in 10 minutes, an hour, four times longer at every repeat, 30 days at most) and exceptions (loopback, private and CGNAT ranges), whose every ban is also written into the house's block list (`middleware waf block`), shown in the panel and closed in the kernel for every port; fail2ban's own nftables ban stays too. Uninstall removes the two files and leaves the package. A failure here warns and the install goes on |
 | docker | sudo | installs the distribution's docker engine when missing (`docker.io`, `moby-engine`, `docker`), enables and starts its daemon, and adds you to the `docker` group so the supervisor can run sites in containers; a failure here warns and the install goes on. The `docker` group is root on the host through the daemon ([security.md](security.md)) |
 | system group | sudo | `groupadd --system middleware` |
