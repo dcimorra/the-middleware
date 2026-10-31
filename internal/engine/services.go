@@ -409,8 +409,18 @@ func waitServiceReady(ctx context.Context, inst runtime.Instance, spec *manifest
 // archHint names the likely cause when a log says a binary was built for
 // another machine.
 func archHint(logFile string) string {
-	if strings.Contains(strings.ToLower(tail(logFile, 20)), "exec format error") {
+	last := strings.ToLower(tail(logFile, 20))
+	if strings.Contains(last, "exec format error") {
 		return "; \"exec format error\" is a binary built for another architecture: use a multi-arch base image and copy binaries from an image (COPY --from=<image>)"
+	}
+	// Node's arm64 builds need libatomic and a minimal Ubuntu lacks it:
+	// the log said only "libatomic.so.1: cannot open shared object file",
+	// and nothing about what installs it.
+	if strings.Contains(last, "error while loading shared libraries") {
+		if strings.Contains(last, "libatomic") {
+			return "; this machine lacks libatomic, which Node needs here: System → the house's requirements installs it"
+		}
+		return "; a shared library the program needs is not installed on this machine"
 	}
 	return ""
 }

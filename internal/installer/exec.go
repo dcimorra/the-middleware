@@ -22,6 +22,9 @@ type Exec interface {
 	Sudo(name string, args ...string) (string, error)
 	// LookPath says whether a program is on PATH.
 	LookPath(name string) (string, error)
+	// HasLib says whether the dynamic loader finds a shared library
+	// (libatomic.so.1) in the system's library folders.
+	HasLib(name string) bool
 	// WriteRoot puts a file where only root can write, with the given mode.
 	// Comparing before writing is the caller's job.
 	WriteRoot(path string, data []byte, perm os.FileMode) error
@@ -44,6 +47,20 @@ func (System) Sudo(name string, args ...string) (string, error) {
 }
 
 func (System) LookPath(name string) (string, error) { return exec.LookPath(name) }
+
+// libDirs are where distributions put shared libraries: the multiarch
+// folders (Debian, Ubuntu) by glob, the plain ones (Fedora, Alpine, Arch)
+// by name. /lib is a link to usr/lib on a merged /usr; both are looked at.
+var libDirs = []string{"/lib", "/lib64", "/usr/lib", "/usr/lib64", "/lib/*-linux-*", "/usr/lib/*-linux-*"}
+
+func (System) HasLib(name string) bool {
+	for _, d := range libDirs {
+		if m, _ := filepath.Glob(filepath.Join(d, name)); len(m) > 0 {
+			return true
+		}
+	}
+	return false
+}
 
 // WriteRoot stages the file in a temp dir the user owns and lets install(1)
 // move it: `sudo tee` would need a shell and a pipe, and `sudo cp` would
@@ -103,6 +120,9 @@ type Recorder struct {
 	Path map[string]bool
 	// Fail makes WriteRoot of this path fail, to test the ✗ line.
 	Fail map[string]error
+	// NoLibs are the shared libraries the machine lacks; every other one
+	// is there, so a test about something else never installs a library.
+	NoLibs map[string]bool
 	// SplitDockerCLI is a distribution whose docker.io has no `docker`
 	// command (Debian 12: it is in docker-cli).
 	SplitDockerCLI bool
@@ -275,6 +295,12 @@ func (r *Recorder) LookPath(name string) (string, error) {
 		return "/usr/bin/" + name, nil
 	}
 	return "", &exec.Error{Name: name, Err: exec.ErrNotFound}
+}
+
+func (r *Recorder) HasLib(name string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return !r.NoLibs[name]
 }
 
 func (r *Recorder) WriteRoot(path string, data []byte, perm os.FileMode) error {

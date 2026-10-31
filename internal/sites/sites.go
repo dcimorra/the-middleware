@@ -238,7 +238,11 @@ func (m *Manager) Create(domain string, mf *manifest.Manifest, template string) 
 	}
 	var files map[string]string
 	if mf == nil {
-		if template == "" {
+		// "auto" is "what the repository says"; with no repository there
+		// is nothing to detect, and the default is the answer. An older
+		// panel sent it for a site from a template and got "unknown
+		// template" for a choice it had made itself.
+		if template == "" || template == "auto" {
 			template = "static"
 			if manifest.IsProject(domain) {
 				template = "project"

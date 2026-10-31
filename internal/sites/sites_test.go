@@ -624,3 +624,23 @@ func TestASiteStoppedForAMoveKeepsTheWorkerItsDataIsIn(t *testing.T) {
 		t.Fatal("it did not come back as it was")
 	}
 }
+
+// The panel's "what the repository says" reached a site made from a
+// template and was refused as an unknown template; it means the default.
+func TestCreateTakesAutoWithoutARepositoryAsTheDefault(t *testing.T) {
+	f := newFixture(t, false)
+	s, err := f.m.Create("auto.test", nil, "auto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Mode != manifest.ModeStatic {
+		t.Fatalf("mode %s, want static", s.Mode)
+	}
+	p, err := f.m.Create("autoproject", nil, "auto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Mode != manifest.ModeProject {
+		t.Fatalf("mode %s, want project", p.Mode)
+	}
+}

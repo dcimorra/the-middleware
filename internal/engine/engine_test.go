@@ -36,6 +36,12 @@ func serveAsSite() {
 	if os.Getenv("MW_TEST_CRASH") != "" {
 		os.Exit(7)
 	}
+	if os.Getenv("MW_TEST_NO_LIBATOMIC") != "" {
+		// What the loader says for a Node built against a library the
+		// machine lacks, before a line of the program runs.
+		fmt.Fprintln(os.Stderr, "node: error while loading shared libraries: libatomic.so.1: cannot open shared object file: No such file or directory")
+		os.Exit(127)
+	}
 	if d := os.Getenv("MW_TEST_SLOW_START"); d != "" {
 		dur, _ := time.ParseDuration(d)
 		time.Sleep(dur)
@@ -554,5 +560,19 @@ func TestARestartOutlivesTheRequestThatAskedForIt(t *testing.T) {
 	waitFor(t, e, "r.test", func(s Snapshot) bool { return s.Alive && s.Port != before && !s.Handing })
 	if sn, _ := e.Lookup("r.test"); sn.Error != "" {
 		t.Fatalf("the restart failed: %s", sn.Error)
+	}
+}
+
+// A Node that cannot load libatomic said only that in the site's error;
+// the error now says what installs it.
+func TestASiteMissingASharedLibrarySaysWhatInstallsIt(t *testing.T) {
+	e, sites := newTestEngine(t)
+	writeSite(t, sites, "lib.test", "x", `,"MW_TEST_NO_LIBATOMIC":"1"`)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	sn := waitFor(t, e, "lib.test", func(s Snapshot) bool { return s.Error != "" })
+	if !strings.Contains(sn.Error, "libatomic.so.1") || !strings.Contains(sn.Error, "the house's requirements installs it") {
+		t.Fatalf("error does not say what installs libatomic: %s", sn.Error)
 	}
 }

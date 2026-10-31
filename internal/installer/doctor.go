@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -245,6 +246,11 @@ func (in *Installer) checkNode() Check {
 	nvm := (&nodeenv.Manager{Root: in.Params.Root}).NVMDir()
 	if _, err := os.Stat(filepath.Join(nvm, "nvm.sh")); err != nil {
 		return Check{"node (nvm)", false, "nvm is not under " + nvm + ": the first site that asks for a Node installs it then (run middleware install again)"}
+	}
+	// Node's official arm64 builds link libatomic, which a minimal
+	// distribution lacks: every Node site dies at its first line.
+	if (goruntime.GOARCH == "arm64" || goruntime.GOARCH == "arm") && !in.Exec.HasLib("libatomic.so.1") {
+		return Check{"node (nvm)", false, "libatomic is not installed and Node does not start without it on " + goruntime.GOARCH + ": the house's requirements install it"}
 	}
 	return Check{"node (nvm)", true, "nvm in " + nvm + ", any Node a site asks for is installed with it"}
 }
