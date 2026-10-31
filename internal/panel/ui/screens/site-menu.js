@@ -63,8 +63,23 @@ export function menu(label, items, opts = {}) {
     if (!el.isConnected) { document.removeEventListener("click", outside); document.removeEventListener("keydown", onKey); return; }
     if (e.key === "Escape" && el.open) { close(); el.querySelector("summary").focus(); }
   };
+  // The list hangs from the button's right edge, which suits a button at
+  // the right of the screen. On a phone the site page's Open wraps to the
+  // left, and a list hung from it went off the screen's left edge, its
+  // names cut. It is moved back inside the screen once it is open and
+  // can be measured.
+  const keepInside = () => {
+    list.style.transform = "";
+    const r = list.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth;
+    const m = 8;
+    let dx = 0;
+    if (r.left < m) dx = m - r.left;
+    else if (r.right > vw - m) dx = vw - m - r.right;
+    if (dx) list.style.transform = `translateX(${Math.round(dx)}px)`;
+  };
   el.addEventListener("toggle", () => {
-    if (el.open) { document.addEventListener("click", outside); document.addEventListener("keydown", onKey); }
+    if (el.open) { keepInside(); document.addEventListener("click", outside); document.addEventListener("keydown", onKey); }
     else { document.removeEventListener("click", outside); document.removeEventListener("keydown", onKey); }
   });
   return el;

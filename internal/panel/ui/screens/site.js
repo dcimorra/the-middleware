@@ -96,7 +96,7 @@ export function siteScreen({ domain, tab, query }) {
         // bakery.test/api): one link went only to the site's own, and the
         // others had to be typed by hand.
         statusLine.append(menu(t("sitepage.open_which"),
-          names.map((n) => ({ label: n.name, hint: n.service, icon: "external", href: `https://${n.name}`, external: true })),
+          names.map((n) => ({ label: n.name, title: n.name, hint: n.service, icon: "external", href: `https://${n.name}`, external: true })),
           { text: t("sitepage.open"), icon: "chevronDown", class: "site-open-menu" }));
       } else {
         statusLine.append(h("a", { class: "btn sm", href: `https://${names.length ? names[0].name : domain}`, target: "_blank", rel: "noopener" }, t("sitepage.open"), icon("external", { size: 14 })));

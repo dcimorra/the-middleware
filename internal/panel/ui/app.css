@@ -2454,3 +2454,6 @@ details.site-env[open] > summary { margin-bottom: 10px; }
    reads as the button it replaces, its list hanging from the right. */
 .site-open-menu > .site-menu-btn { height: auto; min-height: 30px; padding: 0 10px; color: var(--text); font-size: 13px; font-weight: 500; }
 .site-menu-hint { margin-left: auto; padding-left: 12px; color: var(--text-3); font-size: 12px; }
+/* A name longer than a phone is wide ends in an ellipsis, not past the
+   list's edge; the whole of it is in the link's title. */
+.site-menu-item > span:not(.site-menu-hint) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
