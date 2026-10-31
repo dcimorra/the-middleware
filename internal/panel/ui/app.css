@@ -2450,3 +2450,7 @@ details.site-env[open] > summary { margin-bottom: 10px; }
    button wrap under it instead of squeezing it to nothing. */
 .domain-row input { flex: 1 1 220px; min-width: 0; }
 .domain-row select { width: auto; }
+/* The site page's Open when a site answers several names: a menu that
+   reads as the button it replaces, its list hanging from the right. */
+.site-open-menu > .site-menu-btn { height: auto; min-height: 30px; padding: 0 10px; color: var(--text); font-size: 13px; font-weight: 500; }
+.site-menu-hint { margin-left: auto; padding-left: 12px; color: var(--text-3); font-size: 12px; }

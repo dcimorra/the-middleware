@@ -90,7 +90,17 @@ export function siteScreen({ domain, tab, query }) {
     // A project has no name to open, and an unmanaged folder is not
     // served: the link went to https://<project> and nowhere.
     if (mode !== "unmanaged" && mode !== "project") {
-      statusLine.append(h("a", { class: "btn sm", href: `https://${domain}`, target: "_blank", rel: "noopener" }, t("sitepage.open"), icon("external", { size: 14 })));
+      const names = openableNames(s, domain);
+      if (names.length > 1) {
+        // A site with services answers several names (cms.bakery.test,
+        // bakery.test/api): one link went only to the site's own, and the
+        // others had to be typed by hand.
+        statusLine.append(menu(t("sitepage.open_which"),
+          names.map((n) => ({ label: n.name, hint: n.service, icon: "external", href: `https://${n.name}`, external: true })),
+          { text: t("sitepage.open"), icon: "chevronDown", class: "site-open-menu" }));
+      } else {
+        statusLine.append(h("a", { class: "btn sm", href: `https://${names.length ? names[0].name : domain}`, target: "_blank", rel: "noopener" }, t("sitepage.open"), icon("external", { size: 14 })));
+      }
     }
   }
 
@@ -1022,4 +1032,24 @@ function historyCard(domain, editor) {
   }
   load();
   return wrap;
+}
+
+// The names a site with services answers, each with its service, the
+// site's own first: an internal service has none, and a name with a path
+// ("bakery.test/api") opens at that path.
+function openableNames(s, domain) {
+  const m = s.manifest || {};
+  const svcs = m.services || {};
+  const out = [];
+  const seen = new Set();
+  for (const service of Object.keys(svcs).sort()) {
+    for (const d of svcs[service].domains || []) {
+      const name = String(d).replace(/\/+$/, "");
+      if (!name || seen.has(name)) continue;
+      seen.add(name);
+      out.push({ name, service });
+    }
+  }
+  out.sort((a, b) => (b.name === domain) - (a.name === domain) || a.name.localeCompare(b.name));
+  return out;
 }
