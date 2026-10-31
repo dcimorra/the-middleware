@@ -1,6 +1,7 @@
 package guard
 
 import (
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -86,6 +87,15 @@ var rules = []Rule{
 				// A binary inside the site folder is the site's own, wherever
 				// the folder happens to be (tests build houses under /tmp).
 				if v.Site.Dir != "" && strings.HasPrefix(p, own) {
+					continue
+				}
+				// So is the house's own binary: a jail's init is it, until it
+				// execs the command. From a house under /tmp (a test binary,
+				// a build tried out) every jailed process was an intrusion
+				// for its first instant, and the guard's tick that landed
+				// there killed it: a site's task in the wired test, once in
+				// a few CI runs.
+				if p != "" && p == houseBinary {
 					continue
 				}
 				for _, tmp := range []string{"/tmp/", "/var/tmp/", "/dev/shm/"} {
@@ -183,6 +193,18 @@ func foreignSite(v View, path string) string {
 	}
 	return domain
 }
+
+// houseBinary is the running middleware's own executable, resolved.
+var houseBinary = func() string {
+	p, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
+}()
 
 func firstArg(cmdline []string) string {
 	if len(cmdline) == 0 {

@@ -1974,5 +1974,6 @@
   "site.routeState": "Estado",
   "site.execService": "Servicio",
   "logs.build": "{name} (construcción)",
-  "mode.services": "servicios"
+  "mode.services": "servicios",
+  "sitepage.open_which": "Qué nombre abrir"
 }

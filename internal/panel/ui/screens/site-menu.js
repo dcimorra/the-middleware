@@ -16,11 +16,16 @@ import { toastError } from "../components/toast.js";
 // items: { label, icon, onClick } for an action, { label, icon, href,
 // download } for a link, { separator: true } for a line, and danger on
 // either for what destroys. Null entries are skipped, so callers can
-// write `cond ? item : null` inline.
+// write `cond ? item : null` inline. A link with external set opens in
+// a new tab, and hint is a muted word after the label.
+//
+// opts.text puts words in the button and opts.icon replaces the "…":
+// the site page's Open becomes one of these for a site with several
+// names, and it has to read as the Open it was.
 export function menu(label, items, opts = {}) {
   const list = h("div", { class: "site-menu-list", role: "menu" });
   const el = h("details", { class: "site-menu" + (opts.class ? " " + opts.class : "") },
-    h("summary", { class: "site-menu-btn", "aria-label": label, title: label, role: "button" }, icon("more", { stroke: 2.5, size: 18 }), opts.text ? h("span", null, opts.text) : null),
+    h("summary", { class: "site-menu-btn", "aria-label": label, title: label, role: "button" }, opts.icon ? null : icon("more", { stroke: 2.5, size: 18 }), opts.text ? h("span", null, opts.text) : null, opts.icon ? icon(opts.icon, { size: 14 }) : null),
     list);
   const close = () => { el.open = false; };
   let lastWasSep = true;
@@ -34,7 +39,10 @@ export function menu(label, items, opts = {}) {
     lastWasSep = false;
     const cls = "site-menu-item" + (it.danger ? " danger" : "");
     if (it.href) {
-      list.append(h("a", { class: cls, role: "menuitem", href: it.href, download: it.download || null, title: it.title || null, onClick: close }, it.icon ? icon(it.icon, { size: 16 }) : null, h("span", null, it.label)));
+      list.append(h("a", {
+        class: cls, role: "menuitem", href: it.href, download: it.download || null, title: it.title || null, onClick: close,
+        target: it.external ? "_blank" : null, rel: it.external ? "noopener" : null,
+      }, it.icon ? icon(it.icon, { size: 16 }) : null, h("span", null, it.label), it.hint ? h("span", { class: "site-menu-hint" }, it.hint) : null));
       continue;
     }
     const b = h("button", { type: "button", class: cls, role: "menuitem", title: it.title || null }, it.icon ? icon(it.icon, { size: 16 }) : null, h("span", null, it.label));

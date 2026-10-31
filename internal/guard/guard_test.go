@@ -490,3 +490,23 @@ func TestASitesOwnPathAtTheEndOfASentenceIsNotAnotherSite(t *testing.T) {
 		t.Fatalf("another site's folder named %q", got)
 	}
 }
+
+// The house's own binary is the init of every jail until it execs the
+// command; under /tmp (a test binary) it is not a dropper. A task killed
+// by the guard's tick in that instant failed the wired test on CI.
+func TestAJailsInitFromAHouseUnderTmpIsNotAnIntrusion(t *testing.T) {
+	old := houseBinary
+	houseBinary = "/tmp/go-build123/b001/middleware.test"
+	t.Cleanup(func() { houseBinary = old })
+	fp := newFakeProc(t)
+	h := newHouse(t)
+	a := h.site("a.example", 100, 33001)
+	fp.add(procSpec{pid: 100, ppid: 1, comm: "middleware.test", cmdline: []string{"middleware-jail", "--jail", "x", "--", "/bin/sh"}, cwd: a.Dir, exe: houseBinary, startSec: 10})
+	fp.add(procSpec{pid: 101, ppid: 100, pgid: 100, comm: "x", cmdline: []string{"/tmp/.x/payload"}, cwd: a.Dir, exe: "/tmp/.x/payload", startSec: 11})
+	kills := &killLog{}
+	g, _ := newGuard(t, fp, h, kills, time.Unix(fp.bootUnix+600, 0))
+	incs, _ := g.Sweep()
+	if len(incs) != 1 || fmt.Sprint(kills.sorted()) != "[101]" {
+		t.Fatalf("incidents %+v kills %v: the house's binary is not a dropper, the one beside it is", incs, kills.sorted())
+	}
+}
