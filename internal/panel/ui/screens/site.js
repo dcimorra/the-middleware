@@ -268,6 +268,36 @@ function overviewTab(domain) {
       form);
   }
 
+  // Forcing https, one switch per name the site answers to: a site with
+  // several names may keep one on plain http (an old device, a webhook that
+  // cannot follow a redirect). The house sends http:// of a marked name to
+  // https:// before anything else answers it.
+  function httpsCard(m) {
+    const names = siteNames(m, domain);
+    if (!names.length) return null;
+    const forced = new Set((m.force_https || []).map((n) => String(n).toLowerCase()));
+    const save = async (next) => {
+      try {
+        await api.patch(`/sites/${enc(domain)}/manifest`, { force_https: next.length ? next : null });
+        toast(t("site.httpsSaved"), "ok");
+      } catch (e) { toastError(e); }
+    };
+    const rows = names.map((name) => {
+      const sw = toggle(h("code", null, name), { checked: forced.has(name) });
+      sw.input.addEventListener("change", () => {
+        // From the manifest as it is now, not as it was drawn: two
+        // switches flipped quickly must both stick.
+        const now = new Set(((store.site(domain).manifest || {}).force_https || []).map((n) => String(n).toLowerCase()));
+        if (sw.input.checked) now.add(name); else now.delete(name);
+        save(names.filter((n) => now.has(n)).concat([...now].filter((n) => !names.includes(n))));
+      });
+      return h("li", { class: "site-addr site-https" }, icon("lock", { size: 16 }), sw.el);
+    });
+    return h("section", { class: "card site-section" },
+      h("h2", null, t("site.https")), h("p", { class: "small muted" }, t("site.httpsHint")),
+      h("ul", { class: "site-addr-list" }, ...rows));
+  }
+
   // Out of its container, onto the machine as a normal process: the same
   // command in the same folder (the container mounts it at the same path),
   // and the docker section kept for going back. A command that needs Node
@@ -568,6 +598,7 @@ function overviewTab(domain) {
       workersCard(s),
       serves && owner && !Object.keys(m.services || {}).length ? domainsCard(m) : null,
       serves && can(domain, "code") ? redirectsCard(m) : null,
+      serves && can(domain, "code") ? httpsCard(m) : null,
       unmanaged || !door ? null : door,
       unmanaged ? null : envCard,
     ]);
@@ -1032,6 +1063,25 @@ function historyCard(domain, editor) {
   }
   load();
   return wrap;
+}
+
+// Every name a site answers to, as the house's Hosts counts them: its
+// own, its aliases, its services' domains (without their paths), and the
+// www. of each apex unless the manifest says www: false.
+function siteNames(m, domain) {
+  const out = [];
+  const add = (n) => {
+    n = String(n || "").trim().toLowerCase().replace(/\.$/, "").split("/")[0];
+    if (n && !out.includes(n)) out.push(n);
+  };
+  const extra = [...(m.aliases || [])];
+  for (const sv of Object.values(m.services || {})) extra.push(...((sv && sv.domains) || []));
+  add(domain);
+  extra.forEach(add);
+  if (m.www !== false) {
+    for (const n of [...out]) if (n.split(".").length === 2 && !n.startsWith("www.")) add("www." + n);
+  }
+  return out;
 }
 
 // The names a site with services answers, each with its service, the

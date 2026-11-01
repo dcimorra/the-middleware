@@ -88,9 +88,14 @@ type Manifest struct {
 	Cache *Cache `json:"cache,omitempty"`
 	// Redirects send a request that matches one to another address with
 	// a 3xx, before the site is served (redirect.go).
-	Redirects []Redirect        `json:"redirects,omitempty"`
-	Headers   map[string]string `json:"headers,omitempty"`
-	Notice    *Notice           `json:"notice,omitempty"`
+	Redirects []Redirect `json:"redirects,omitempty"`
+	// ForceHTTPS are the site's names that answer only over https, one by
+	// one because a site with several names may keep one on plain http
+	// (an old device, a webhook that cannot follow a redirect). The rest
+	// of the house serves http as it comes (https.go).
+	ForceHTTPS []string          `json:"force_https,omitempty"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Notice     *Notice           `json:"notice,omitempty"`
 	// ClaudeAPI opens the site door: the site's own code may talk to Claude
 	// through the house (see docs/api.md, "The site door").
 	ClaudeAPI *ClaudeAPI `json:"claude_api,omitempty"`
@@ -644,6 +649,9 @@ func (m *Manifest) Validate() error {
 		if err := rd.Check(); err != nil {
 			return fmt.Errorf("redirects[%d]: %w", i, err)
 		}
+	}
+	if err := validForceHTTPS(m.ForceHTTPS); err != nil {
+		return err
 	}
 	if m.Chat != nil {
 		for _, r := range m.Chat.Reads {

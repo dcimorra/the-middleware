@@ -720,3 +720,48 @@ func TestOneNodesVPNReachesAnotherNodesVPNOnlySite(t *testing.T) {
 		t.Fatalf("another device got %d", resp.StatusCode)
 	}
 }
+
+// TestANameKeptToHTTPSIsSentThereBeforeAnythingElse crosses the hook as a
+// tunnel request does: Cloudflare says http in X-Forwarded-Proto, or says
+// nothing for a loopback client, and only the names marked go to https.
+func TestANameKeptToHTTPSIsSentThereBeforeAnythingElse(t *testing.T) {
+	h := newHouseWith(t, func(hook *inbound.Hook) {
+		hook.ForceHTTPS = func(host string) bool { return host == "a.test" || host == "panel.test" }
+	}, "a.test", "b.test")
+	do := func(method, host, path, proto string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "http://"+host+path, nil)
+		r.Host = host
+		if proto != "" {
+			r.Header.Set("X-Forwarded-Proto", proto)
+		}
+		w := httptest.NewRecorder()
+		h.hook.Handler.ServeHTTP(w, r)
+		return w
+	}
+	for _, proto := range []string{"http", ""} {
+		w := do("GET", "a.test", "/x?y=1", proto)
+		if w.Code != 301 || w.Header().Get("Location") != "https://a.test/x?y=1" {
+			t.Fatalf("GET over %q: %d %q", proto, w.Code, w.Header().Get("Location"))
+		}
+	}
+	// A form posted over http keeps its method and body on the way.
+	if w := do("POST", "a.test", "/login", "http"); w.Code != 308 || w.Header().Get("Location") != "https://a.test/login" {
+		t.Fatalf("POST: %d %q", w.Code, w.Header().Get("Location"))
+	}
+	if w := do("GET", "a.test", "/x", "https"); w.Code != 200 || w.Body.String() != "site=a.test proto=https" {
+		t.Fatalf("over https: %d %q", w.Code, w.Body.String())
+	}
+	// Another name of the house, not marked, is served as it came.
+	if w := do("GET", "b.test", "/", "http"); w.Code != 200 {
+		t.Fatalf("unmarked name: %d %q", w.Code, w.Header().Get("Location"))
+	}
+	// The panel is never sent anywhere by a site's setting.
+	if w := do("GET", "panel.test", "/", "http"); w.Code != 200 {
+		t.Fatalf("panel: %d", w.Code)
+	}
+	// The CA still reads its challenge over plain http.
+	h.hook.Solver.Present(context.Background(), "a.test", "tok", "tok.thumb")
+	if w := do("GET", "a.test", acme.ChallengePath+"tok", "http"); w.Code != 200 || w.Body.String() != "tok.thumb" {
+		t.Fatalf("challenge: %d %q", w.Code, w.Body.String())
+	}
+}

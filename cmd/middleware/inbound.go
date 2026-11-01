@@ -117,6 +117,10 @@ func buildInbound(a *app.App) app.Hook {
 		}
 		return sn.Manifest.VPN.Paths
 	}
+	inboundHook.ForceHTTPS = func(host string) bool {
+		sn, ok := a.Engine.Lookup(host)
+		return ok && sn.Manifest.ForcesHTTPS(host)
+	}
 	return inboundHook
 }
 

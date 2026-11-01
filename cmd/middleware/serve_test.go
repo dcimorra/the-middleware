@@ -70,6 +70,13 @@ func TestServeAnswersEverySectionOfTheAPI(t *testing.T) {
 	// A site with the AI gateway open and a task of its own that writes
 	// down what it was given: the task must reach the door as the site,
 	// whatever its file in tasks/ says.
+	// A private site whose name is kept to https: plain http is sent on
+	// before the password door is shown, which is the whole point of the
+	// redirect sitting in the outermost hook and not in the proxy.
+	secure := filepath.Join(root, "sites", "secure.example")
+	os.MkdirAll(secure, 0o755)
+	os.WriteFile(filepath.Join(secure, "index.html"), []byte("<p>secure</p>"), 0o644)
+	os.WriteFile(filepath.Join(secure, "site.json"), []byte(`{"version":2,"access":{"password":"`+hash+`"},"force_https":["secure.example"]}`), 0o644)
 	ai := filepath.Join(root, "sites", "ai.example")
 	os.MkdirAll(ai, 0o755)
 	os.WriteFile(filepath.Join(ai, "index.html"), []byte("<p>ai</p>"), 0o644)
@@ -185,6 +192,25 @@ func TestServeAnswersEverySectionOfTheAPI(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode == 0 || resp.StatusCode >= 500 {
 		t.Fatalf("unknown host through the chain: %d", resp.StatusCode)
+	}
+
+	// A name kept to https, asked over http through the tunnel's door, is
+	// sent to https before the door asks for a password; over https it
+	// is the door.
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	for _, proto := range []string{"http", "https"} {
+		req, _ := http.NewRequest("GET", "http://"+s.Listen+"/a?b=1", nil)
+		req.Host = "secure.example"
+		req.Header.Set("X-Forwarded-Proto", proto)
+		up, err := noFollow.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		up.Body.Close()
+		moved := up.StatusCode == 301 && up.Header.Get("Location") == "https://secure.example/a?b=1"
+		if moved != (proto == "http") {
+			t.Fatalf("force_https over %s: %d %q", proto, up.StatusCode, up.Header.Get("Location"))
+		}
 	}
 
 	// The site's task gets the site's token at launch, the door answers

@@ -68,6 +68,9 @@ type Hook struct {
 	// network.
 	Elsewhere func(host string) bool
 	Relay     func(c net.Conn, host string, pre []byte, device string) error
+	// ForceHTTPS says host is a name its site keeps to https (the
+	// manifest's force_https). Nil keeps every name as it comes.
+	ForceHTTPS func(host string) bool
 	// VPNPorts overrides the VPN door's ports (tests).
 	VPNPorts VPNPorts
 
@@ -216,8 +219,40 @@ func (h *Hook) Wrap(next http.Handler) http.Handler {
 			// hop really was http.
 			r.Header.Set("X-Forwarded-Proto", "http")
 		}
+		if door == Tunnel && h.upgrade(w, r, host) {
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// upgrade sends a plain-http request for a name kept to https to the same
+// address on https, and says whether it did. Here, before every other
+// hook, and not in the proxy: the cache, the access door and the attack
+// page all answer before the proxy is asked, and a password typed into the
+// door's form over http would cross the internet in the clear.
+//
+// Only the tunnel door: port 80 of the ports door already sends everything
+// to https (serveHTTP); the bench is plain http only, and sending it to
+// https sends the developer nowhere; inside the VPN plain http is already
+// encrypted and a VPN-only name may have no public certificate. Through
+// the tunnel Cloudflare serves http:// unless told otherwise, and
+// cloudflared says which it was in X-Forwarded-Proto. A plain loopback
+// client that names the site (another site calling it by name) has no
+// header and is sent to https too, as any client would be.
+func (h *Hook) upgrade(w http.ResponseWriter, r *http.Request, host string) bool {
+	if h.ForceHTTPS == nil || host == "" || h.isPanel(host) {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") || !h.ForceHTTPS(host) {
+		return false
+	}
+	code := http.StatusPermanentRedirect
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		code = http.StatusMovedPermanently
+	}
+	http.Redirect(w, r, "https://"+host+r.URL.RequestURI(), code)
+	return true
 }
 
 // Run implements app.Hook: fills what the app knows, opens the ports door

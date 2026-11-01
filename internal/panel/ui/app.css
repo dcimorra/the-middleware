@@ -2332,6 +2332,7 @@ svg.np-spark.bad .area { fill: var(--bad); }
 .site-addr .badge { margin-right: 6px; }
 .site-www { margin: 0 0 14px; }
 .site-www .switch { font-weight: 400; }
+.site-https .switch { font-weight: 400; flex: 1; min-width: 0; }
 .site-inline-form { display: flex; gap: 8px; align-items: center; }
 .site-inline-form input { flex: 1 1 auto; }
 .site-inline-form .btn { flex: none; }
