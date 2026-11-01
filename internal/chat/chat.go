@@ -182,6 +182,23 @@ type Conversation struct {
 	Running bool `json:"running,omitempty"`
 	// Live is the running turn so far, filled by History too.
 	Live []Live `json:"live,omitempty"`
+	// Queued are the messages waiting for the running turn to end, in the
+	// order they were written; filled by History too.
+	Queued []Queued `json:"queued,omitempty"`
+}
+
+// Queued is one message written while a turn ran.
+type Queued struct {
+	Text string    `json:"text"`
+	At   time.Time `json:"at"`
+}
+
+// queueFile is data/chat/queued/<name>.json: what waits for the running
+// turn, so a supervisor that restarts mid-turn still sends it.
+type queueFile struct {
+	Messages []Queued `json:"messages"`
+	Model    string   `json:"model,omitempty"`
+	Provider string   `json:"provider,omitempty"`
 }
 
 // Options configure a Manager.
@@ -240,8 +257,11 @@ type running struct {
 	cancel   context.CancelFunc
 	// done closes when the turn is written and its slot free.
 	done chan struct{}
-	// queued are messages sent while the turn ran, kept for the next.
-	queued         []string
+	// queued are messages sent while the turn ran, kept for the next, in
+	// the order they came. They are also written to data/chat/queued/ on
+	// every arrival: kept only here, leaving the page and coming back
+	// showed none of them, and a restart lost them.
+	queued         []Queued
 	queuedModel    string
 	queuedProvider string
 	// live is what the turn showed so far, so a panel that reloads (or
@@ -587,6 +607,7 @@ func (m *Manager) History(domain string) (Conversation, error) {
 	if r, ok := m.running[domain]; ok {
 		c.Running = true
 		c.Live = append([]Live(nil), r.live...)
+		c.Queued = append([]Queued(nil), r.queued...)
 	}
 	m.mu.Unlock()
 	return c, nil
@@ -748,7 +769,7 @@ func (m *Manager) SendWith(name, text string, o SendOptions) (string, error) {
 	m.mu.Lock()
 	if r, busy := m.running[name]; busy {
 		if o.Queue {
-			r.queued = append(r.queued, text)
+			r.queued = append(r.queued, Queued{Text: text, At: time.Now()})
 			if model != "" {
 				r.queuedModel = model
 			}
@@ -756,8 +777,12 @@ func (m *Manager) SendWith(name, text string, o SendOptions) (string, error) {
 				r.queuedProvider = o.Provider
 			}
 			n := len(r.queued)
+			werr := fsx.WriteJSON(m.queuePath(name), queueFile{Messages: r.queued, Model: r.queuedModel, Provider: r.queuedProvider}, 0o600)
 			m.mu.Unlock()
-			m.emit("agent.queued", name, "", "", map[string]any{"queued": n})
+			if werr != nil {
+				m.emit("agent.error", name, "warn", "the queued message is kept in memory only: "+werr.Error(), nil)
+			}
+			m.emit("agent.queued", name, "", "", map[string]any{"queued": n, "text": text})
 			return "", ErrQueued
 		}
 		m.mu.Unlock()
@@ -1139,7 +1164,7 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 	_ = os.Remove(m.runningPath(name))
 	_ = os.Remove(m.streamPath(name, turnID))
 	_ = os.Remove(m.streamPath(name, turnID) + ".err")
-	var queued []string
+	var queued []Queued
 	queuedModel, queuedProvider := "", ""
 	m.mu.Lock()
 	if r := m.running[name]; r != nil {
@@ -1147,15 +1172,12 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 		queued, queuedModel, queuedProvider = r.queued, r.queuedModel, r.queuedProvider
 	}
 	delete(m.running, name)
+	_ = os.Remove(m.queuePath(name))
 	m.mu.Unlock()
 	if len(queued) > 0 {
 		// After this turn's final event, so whoever follows the stream sees
 		// one turn end and the next begin.
-		defer func() {
-			if _, err := m.SendWith(name, strings.Join(queued, "\n\n"), SendOptions{Model: queuedModel, Provider: queuedProvider}); err != nil {
-				m.emit("agent.error", name, "error", "the queued message was not sent: "+err.Error(), nil)
-			}
-		}()
+		defer m.sendQueued(name, queueFile{Messages: queued, Model: queuedModel, Provider: queuedProvider})
 	}
 	if errText != "" {
 		m.emit("agent.error", name, "error", errText, map[string]any{"turn_id": turnID, "cost": cost, "origin": c.Origin})
@@ -1383,6 +1405,22 @@ func (m *Manager) runningPath(name string) string {
 	return filepath.Join(m.opts.Root, "data", "chat", "running", name+".json")
 }
 
+func (m *Manager) queuePath(name string) string {
+	return filepath.Join(m.opts.Root, "data", "chat", "queued", name+".json")
+}
+
+// sendQueued sends what waited as one message, each piece in the order it
+// was written.
+func (m *Manager) sendQueued(name string, q queueFile) {
+	texts := make([]string, 0, len(q.Messages))
+	for _, x := range q.Messages {
+		texts = append(texts, x.Text)
+	}
+	if _, err := m.SendWith(name, strings.Join(texts, "\n\n"), SendOptions{Model: q.Model, Provider: q.Provider}); err != nil {
+		m.emit("agent.error", name, "error", "the queued message was not sent: "+err.Error(), nil)
+	}
+}
+
 func (m *Manager) streamPath(name, turnID string) string {
 	return filepath.Join(m.opts.Root, "data", "chat", "streams", name+"-"+turnID+".out")
 }
@@ -1412,10 +1450,36 @@ func (m *Manager) Recover(ctx context.Context) {
 		s.Model = rf.Model
 		cctx, cancel, deadline := withLimit(rf.Started)
 		run := adopter.Adopt(cctx, rf.PID, rf.Stream)
+		var q queueFile
+		_ = fsx.ReadJSON(m.queuePath(rf.Name), &q)
 		m.mu.Lock()
-		m.running[rf.Name] = &running{turnID: rf.TurnID, provider: rf.Provider, origin: rf.Origin, model: rf.Model, started: rf.Started, deadline: deadline, cancel: cancel, done: make(chan struct{}), run: run}
+		m.running[rf.Name] = &running{turnID: rf.TurnID, provider: rf.Provider, origin: rf.Origin, model: rf.Model, started: rf.Started, deadline: deadline, cancel: cancel, done: make(chan struct{}), run: run, queued: q.Messages, queuedModel: q.Model, queuedProvider: q.Provider}
 		m.mu.Unlock()
 		m.emit("agent.adopted", rf.Name, "", "a turn from before the restart, picked up", map[string]any{"turn_id": rf.TurnID, "pid": rf.PID})
 		go m.follow(rf.Name, rf.TurnID, s, run, cancel)
+	}
+	// What waited for a turn that is not coming back (it could not be
+	// picked up, or it ended as the old supervisor went) is sent now: it
+	// was written to be sent, and nothing else would.
+	qdir := filepath.Join(m.opts.Root, "data", "chat", "queued")
+	qents, _ := os.ReadDir(qdir)
+	for _, e := range qents {
+		name, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok {
+			continue
+		}
+		m.mu.Lock()
+		_, busy := m.running[name]
+		m.mu.Unlock()
+		if busy {
+			continue
+		}
+		var q queueFile
+		path := filepath.Join(qdir, e.Name())
+		err := fsx.ReadJSON(path, &q)
+		_ = os.Remove(path)
+		if err == nil && len(q.Messages) > 0 {
+			m.sendQueued(name, q)
+		}
 	}
 }

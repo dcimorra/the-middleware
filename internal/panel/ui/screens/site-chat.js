@@ -501,6 +501,14 @@ export function chatTab(domain) {
     return { el, textEl, who, words };
   }
 
+  // queuedEl is a message waiting for the running turn to end.
+  function queuedEl(msg, at) {
+    const tu = turnEl("user", msg, undefined, at);
+    tu.el.classList.add("is-queued");
+    tu.who.append(h("span", { class: "queued" }, t("chat.queued")));
+    return tu.el;
+  }
+
   // copyButton copies what text() gives when it is pressed, and says so
   // for a moment. The clipboard API needs a secure page; the panel on a
   // plain loopback address falls back to a selection copied the old way.
@@ -625,6 +633,12 @@ export function chatTab(domain) {
       if (conv.running) {
         begin();
         for (const lv of conv.live || []) handle({ type: lv.type, subject: cur.name, data: lv.data });
+        // What was written while it runs, each message in the order it
+        // came. The house keeps them, not this tab: drawn only from the
+        // reply to the send, they vanished on leaving the page, and a
+        // re-read (the tab coming back to the front) wiped them as if the
+        // last one had replaced the others.
+        for (const q of conv.queued || []) turns.append(queuedEl(q.text, q.at));
       } else {
         followUsage(false);
         syncButtons();
@@ -714,6 +728,9 @@ export function chatTab(domain) {
   let seen = { turn: "", seq: 0 };
   function handle(ev) {
     if (ev.type === "agent.capacity") return;
+    // Queued in another tab or device: the conversation says where it
+    // goes. This tab's own send draws its bubble itself.
+    if (ev.type === "agent.queued") { if (!sending) loadTurns(true); return; }
     const d = ev.data || {};
     if (d.seq) {
       if (d.turn_id === seen.turn && d.seq <= seen.seq) return;
