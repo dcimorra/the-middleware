@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dcimorra/the-middleware/internal/agent"
+	"github.com/dcimorra/the-middleware/internal/fsx"
 )
 
 // What a turn leaves behind with setsid escapes the group kill. The mark in
@@ -128,13 +130,49 @@ func TestAMessageDuringATurnIsSentWhenItEnds(t *testing.T) {
 	if _, err := m.SendWith("a.test", "and this", SendOptions{Queue: true}); err != ErrQueued {
 		t.Fatalf("queue: %v", err)
 	}
+	// A panel that comes back meanwhile sees both, in order, and the
+	// house has them on disk for a restart.
+	c, _ := m.History("a.test")
+	if len(c.Queued) != 2 || c.Queued[0].Text != "also this" || c.Queued[1].Text != "and this" {
+		t.Fatalf("history queued: %+v", c.Queued)
+	}
+	var q queueFile
+	if err := fsx.ReadJSON(m.queuePath("a.test"), &q); err != nil || len(q.Messages) != 2 || q.Messages[1].Text != "and this" {
+		t.Fatalf("queue file: %+v %v", q, err)
+	}
 	close(hold)
 	waitFor(t, ch, "agent.done")
 	waitFor(t, ch, "agent.started")
 	if p.last().Prompt != "also this\n\nand this" {
 		t.Fatalf("next prompt %q", p.last().Prompt)
 	}
+	if _, err := os.Stat(m.queuePath("a.test")); !os.IsNotExist(err) {
+		t.Fatalf("the queue file outlived its turn: %v", err)
+	}
+	if c, _ := m.History("a.test"); len(c.Queued) != 0 {
+		t.Fatalf("still queued: %+v", c.Queued)
+	}
 	waitFor(t, ch, "agent.done")
+}
+
+// What waited for a turn that a restart lost is sent by the next
+// supervisor, in the order it was written.
+func TestAQueueSurvivesARestart(t *testing.T) {
+	p := &fakeProvider{key: "fake", script: []agent.Event{{Kind: agent.KindResult, Text: "ok"}}}
+	m, _, bus := newManager(t, p)
+	ch, unsub := bus.Subscribe()
+	defer unsub()
+	if err := fsx.WriteJSON(m.queuePath("a.test"), queueFile{Messages: []Queued{{Text: "one"}, {Text: "two"}}}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.Recover(context.Background())
+	waitFor(t, ch, "agent.done")
+	if p.last().Prompt != "one\n\ntwo" {
+		t.Fatalf("prompt %q", p.last().Prompt)
+	}
+	if _, err := os.Stat(m.queuePath("a.test")); !os.IsNotExist(err) {
+		t.Fatalf("the queue file is still there: %v", err)
+	}
 }
 
 // An attachment goes with the next message, readable and not writable,
