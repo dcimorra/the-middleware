@@ -567,6 +567,34 @@ rest of the path follows; the query string follows unless `to` has its own.
 The first rule that matches wins; one that would send a request to itself
 is not followed. The site's page edits them (Redirects).
 
+## Forcing HTTPS
+
+```json
+"force_https": ["example.com", "www.example.com"]
+```
+
+Each name listed answers only over https: a request for it over plain
+http is sent to the same address on https (301, or 308 for anything but
+GET and HEAD, so a form keeps its method and body) before anything else
+answers it, the password door, the attack page and the cache included.
+It goes name by name because a site with several names may keep one on
+http (an old device, a webhook that cannot follow a redirect). A name the
+site does not answer is ignored, so an alias taken away leaves a harmless
+line. The site's page edits it (Force HTTPS), one switch per name.
+
+The ports door already sends every name to https on port 80, so this is
+for the tunnel door, where Cloudflare serves `http://` unless told
+otherwise and cloudflared says which it was in `X-Forwarded-Proto`. A
+client on the machine that asks the loopback listener for the name with
+no such header is sent to https as well. The local door (the bench) and
+the VPN door are left alone: the first has no https to go to, and inside
+the VPN plain http is already encrypted. The panel's name is never
+affected. The CA's challenge is answered over http as always.
+
+The redirect says nothing about later visits; for that, add
+`Strict-Transport-Security` to `headers` once https works on every name
+of the site.
+
 ## Move
 
 ```json

@@ -406,7 +406,7 @@ to go back to.
 The **revision** hashes what the instance was born from: resolved command,
 resolved environment (`env`, `env_files` contents, `env_from_file` contents),
 runtime and docker settings. Changing any of those hands the site over.
-`access`, `waf`, `headers`, `cache`, `hold`, `disabled` are applied live and
+`access`, `waf`, `headers`, `cache`, `hold`, `disabled`, `force_https` are applied live and
 touch no process.
 
 ### `disabled` and `hold`
@@ -790,6 +790,18 @@ only how long.
 
 Do not write `Content-Security-Policy` here for an app that sets its own: two
 copies of the same header end up saying two things.
+
+**A name that must never answer over http** → `force_https`, name by name:
+
+```json
+{ "version": 2, "aliases": ["shop.example"], "force_https": ["example.com", "shop.example"] }
+```
+
+Plain http for a listed name is sent to https before anything else answers,
+the password door included. It matters through the Cloudflare tunnel, which
+serves `http://` unless told otherwise; the ports door already sends every
+name to https. Do not write it in your app as well: a redirect your app makes
+from what it believes the scheme is can loop behind the tunnel.
 
 ## 9. Tasks and workers
 
