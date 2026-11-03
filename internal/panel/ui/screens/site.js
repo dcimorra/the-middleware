@@ -224,45 +224,97 @@ function overviewTab(domain) {
   // and certified, and sent to the apex), and the extra domains, added and
   // taken away here. Each one is published like the site's own name; one
   // the zone already points elsewhere waits for a yes in the list above.
+  //
+  // Any name but the main one can be made the main one or taken away: a
+  // site born with a made-up name is given its real domain as an extra
+  // one, that one is made the main one (the site is renamed to it and the
+  // made-up name stays as an extra), and the made-up one is taken away
+  // when nothing uses it. A site with services lists its services' names,
+  // each with its service; new ones are written in a service's domains.
   function domainsCard(m) {
     const aliases = [...(m.aliases || [])];
+    const svcs = m.services || {};
+    const withServices = Object.keys(svcs).length > 0;
     const apex = domain.split(".").length === 2;
-    const save = async (next, www) => {
-      const patch = { aliases: next.length ? next : null };
-      if (www !== undefined) patch.www = www ? null : false;
+    // name → the services that answer it, and whether one answers it
+    // whole (no path), which is what a main name must be.
+    const served = new Map();
+    for (const sn of Object.keys(svcs).sort()) {
+      for (const d of (svcs[sn] && svcs[sn].domains) || []) {
+        const [host, ...rest] = String(d).toLowerCase().replace(/\.$/, "").split("/");
+        const e = served.get(host) || { services: [], root: false };
+        if (!e.services.includes(sn)) e.services.push(sn);
+        if (!rest.join("/").replace(/\/+$/, "")) e.root = true;
+        served.set(host, e);
+      }
+    }
+    const extras = withServices ? [...served.keys()].filter((n) => n !== domain).sort() : aliases;
+    const saveAliases = async (next) => {
       try {
-        await api.patch(`/sites/${enc(domain)}/manifest`, patch);
+        await api.patch(`/sites/${enc(domain)}/manifest`, { aliases: next.length ? next : null });
         toast(t("site.domainsSaved"), "ok");
       } catch (e) { toastError(e); }
     };
-    // One line per name, the main one first and marked, each alias with
-    // its own × at the end of its line; the www of an apex is a switch on
-    // a line of its own, since it is a yes or no and not a name to type.
-    const rows = [h("li", { class: "site-addr" }, icon("globe", { size: 16 }), h("code", { class: "grow" }, domain), h("span", { class: "badge" }, t("site.domainMain")))];
-    for (const a of aliases) {
+    const saveWWW = async (on) => {
+      try {
+        await api.patch(`/sites/${enc(domain)}/manifest`, { www: on ? null : false });
+        toast(t("site.domainsSaved"), "ok");
+      } catch (e) { toastError(e); }
+    };
+    const remove = async (name) => {
+      if (!(await confirm({ title: t("site.domainRemoveQ", { name }), body: t("site.domainRemoveBody", { name }), confirmLabel: t("site.domainRemoveBtn"), danger: true }))) return;
+      try {
+        const r = await api.del(`/sites/${enc(domain)}/names/${enc(name)}`);
+        if (r && r.domain) store.putSite(r);
+        toast(t("site.domainRemoved", { name }), "ok");
+      } catch (e) { toastError(e); }
+    };
+    const makeMain = async (name) => {
+      if (!(await confirm({ title: t("site.domainMakeMainQ", { name }), body: t("site.domainMakeMainBody", { name, old: domain }), confirmLabel: t("site.domainMakeMain") }))) return;
+      try {
+        const r = await api.post(`/sites/${enc(domain)}/names/${enc(name)}/main`, {});
+        store.dropSite(domain);
+        if (r && r.domain) store.putSite(r);
+        toast(t("site.domainMadeMain", { name }), "ok");
+        navigate(`/sites/${encodeURIComponent(name)}`);
+      } catch (e) { toastError(e); }
+    };
+    const label = (name) => {
+      const e = served.get(name);
+      return e ? h("span", { class: "small muted" }, e.services.join(", ")) : null;
+    };
+    // One line per name, the main one first and marked, each other one
+    // with its buttons at the end of its line; the www of an apex is a
+    // switch on a line of its own, since it is a yes or no and not a name
+    // to type.
+    const rows = [h("li", { class: "site-addr" }, icon("globe", { size: 16 }), h("code", { class: "grow" }, domain), label(domain), h("span", { class: "badge" }, t("site.domainMain")))];
+    for (const a of extras) {
+      const canMain = a.includes(".") && (!withServices || served.get(a).root);
+      const main = canMain ? h("button", { type: "button", class: "btn sm ghost", title: t("site.domainMakeMainQ", { name: a }) }, t("site.domainMakeMain")) : null;
+      if (main) main.addEventListener("click", () => makeMain(a));
       const x = h("button", { type: "button", class: "icon-btn sm", "aria-label": t("site.domainRemove", { name: a }), title: t("site.domainRemove", { name: a }) }, icon("x", { size: 16 }));
-      x.addEventListener("click", async () => {
-        if (!(await confirm({ title: t("site.domainRemoveQ", { name: a }), body: t("site.domainRemoveBody", { name: a }), confirmLabel: t("site.domainRemoveBtn"), danger: true }))) return;
-        save(aliases.filter((y) => y !== a));
-      });
-      rows.push(h("li", { class: "site-addr" }, icon("link", { size: 16 }), h("code", { class: "grow" }, a), x));
+      x.addEventListener("click", () => remove(a));
+      rows.push(h("li", { class: "site-addr" }, icon("link", { size: 16 }), h("code", { class: "grow" }, a), label(a), main, x));
     }
     let www = null;
     if (apex) {
       www = toggle(t("site.wwwToo", { name: "www." + domain }), { checked: m.www !== false });
-      www.input.addEventListener("change", () => save(aliases, www.input.checked));
+      www.input.addEventListener("change", () => saveWWW(www.input.checked));
     }
-    const input = h("input", { type: "text", placeholder: t("sitepage.domainPlaceholder"), "aria-label": t("site.domainAdd"), autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
-    const add = h("button", { type: "submit", class: "btn" }, icon("plus"), t("site.domainAdd"));
-    const form = h("form", { class: "site-inline-form", novalidate: true }, input, add);
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const v = input.value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
-      if (!v || v === domain || aliases.includes(v)) return;
-      save([...aliases, v]);
-    });
+    let form = null;
+    if (!withServices) {
+      const input = h("input", { type: "text", placeholder: t("sitepage.domainPlaceholder"), "aria-label": t("site.domainAdd"), autocomplete: "off", autocapitalize: "off", spellcheck: "false" });
+      const add = h("button", { type: "submit", class: "btn" }, icon("plus"), t("site.domainAdd"));
+      form = h("form", { class: "site-inline-form", novalidate: true }, input, add);
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const v = input.value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+        if (!v || v === domain || aliases.includes(v)) return;
+        saveAliases([...aliases, v]);
+      });
+    }
     return h("section", { class: "card site-section" },
-      h("h2", null, t("site.domains")), h("p", { class: "small muted" }, t("site.domainsHint")),
+      h("h2", null, t("site.domains")), h("p", { class: "small muted" }, t(withServices ? "site.domainsHintServices" : "site.domainsHint")),
       h("ul", { class: "site-addr-list" }, ...rows),
       www ? h("div", { class: "site-www" }, www.el) : null,
       form);
@@ -596,7 +648,7 @@ function overviewTab(domain) {
       unmanaged ? notice("warn", t("site.unmanagedNotice")) : null,
       servicesCard(s),
       workersCard(s),
-      serves && owner && !Object.keys(m.services || {}).length ? domainsCard(m) : null,
+      serves && owner ? domainsCard(m) : null,
       serves && can(domain, "code") ? redirectsCard(m) : null,
       serves && can(domain, "code") ? httpsCard(m) : null,
       unmanaged || !door ? null : door,

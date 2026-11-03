@@ -421,3 +421,38 @@ func TestASiteTheEngineHasNotSeenYetIsWaitedForBeforeItsNamesAreRefused(t *testi
 		t.Fatal("the wait for a site that never appears is not bounded by Settle")
 	}
 }
+
+// A site renamed to one of its own aliases answers the same names after
+// as before: nothing is taken down or written again, the records change
+// owner, and taking the old name away afterwards unpublishes it alone.
+func TestASiteRenamedToItsAliasKeepsEveryNamePublished(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.setHosts(map[string]string{"otter.example.com": "otter.example.com", "shop.example.com": "otter.example.com"})
+	if _, err := f.p.Publish(ctx, "otter.example.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	f.dns.calls = nil
+	f.setHosts(map[string]string{"otter.example.com": "shop.example.com", "shop.example.com": "shop.example.com"})
+	f.p.Renamed("otter.example.com", "shop.example.com")
+	f.p.Reconcile(ctx)
+	if f.dns.log() != "" {
+		t.Fatalf("a rename to an alias touched DNS: %s", f.dns.log())
+	}
+	if door, ok := f.p.Published("shop.example.com"); !ok || door != "tunnel" {
+		t.Fatalf("the intent did not follow: %q %v", door, ok)
+	}
+	if _, ok := f.p.Published("otter.example.com"); ok {
+		t.Fatal("the old name still has an intent")
+	}
+	for n, r := range f.p.Records() {
+		if r.Site != "shop.example.com" || r.State != StatePublished {
+			t.Errorf("%s: %+v", n, r)
+		}
+	}
+	f.setHosts(map[string]string{"shop.example.com": "shop.example.com"})
+	f.p.Reconcile(ctx)
+	if log := f.dns.log(); !strings.Contains(log, "unpublish otter.example.com") || strings.Contains(log, "unpublish shop.example.com") {
+		t.Fatalf("calls:\n%s", log)
+	}
+}

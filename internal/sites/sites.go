@@ -809,6 +809,15 @@ func (m *Manager) DeleteArchive(name string) error {
 // manifest has to hold under the new name, and the reason is said when it
 // does not.
 func (m *Manager) Rename(ctx context.Context, from, to string) (Site, error) {
+	return m.rename(ctx, from, to, nil)
+}
+
+// rename is Rename with the manifest the site comes back with changed by
+// edit (nil keeps it as it was): making an alias the site's name swaps
+// the two in aliases, and writing that after the folder moved, in the
+// same step that undoes the stop, leaves no moment where the folder's
+// manifest names the folder as its own alias and is running.
+func (m *Manager) rename(ctx context.Context, from, to string, edit func([]byte) ([]byte, error)) (Site, error) {
 	if !manifest.ValidName(to) {
 		return Site{}, ErrBadDomain
 	}
@@ -825,6 +834,12 @@ func (m *Manager) Rename(ctx context.Context, from, to string) (Site, error) {
 		return Site{}, ErrExists
 	}
 	original, _ := os.ReadFile(filepath.Join(dir, manifest.FileName))
+	final := original
+	if edit != nil {
+		if final, err = edit(original); err != nil {
+			return Site{}, err
+		}
+	}
 	if err := m.stopAndWait(ctx, from, dir, original); err != nil {
 		return Site{}, err
 	}
@@ -844,8 +859,8 @@ func (m *Manager) Rename(ctx context.Context, from, to string) (Site, error) {
 			_ = os.Rename(pair[0], pair[1])
 		}
 	}
-	if original != nil {
-		_ = fsx.WriteAtomic(filepath.Join(m.Dir(to), manifest.FileName), original, 0o644)
+	if final != nil {
+		_ = fsx.WriteAtomic(filepath.Join(m.Dir(to), manifest.FileName), final, 0o644)
 	}
 	m.emit("site.renamed", to, "", from+" is now "+to, map[string]any{"from": from})
 	return m.describe(to), nil

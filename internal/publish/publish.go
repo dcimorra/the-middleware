@@ -299,6 +299,40 @@ func (p *Publisher) Unpublish(ctx context.Context, site string) []inbound.Line {
 	return p.reconcileSiteLocked(ctx, site)
 }
 
+// Renamed hands what the house published for site from to site to: its
+// intent and its names' records, without touching a record or a route.
+// A site renamed to one of its own aliases answers the same names after
+// as before; unpublishing and publishing again took every one of them
+// off the internet for as long as DNS took to come back, for a change
+// that does not change where any of them points.
+func (p *Publisher) Renamed(from, to string) {
+	p.work.Lock()
+	defer p.work.Unlock()
+	p.mu.Lock()
+	moved := false
+	if in, ok := p.f.Sites[from]; ok {
+		p.f.Sites[to] = in
+		delete(p.f.Sites, from)
+		moved = true
+	}
+	for _, r := range p.f.Names {
+		if r.Site == from {
+			r.Site = to
+			moved = true
+		}
+	}
+	if moved {
+		_ = p.saveLocked()
+	}
+	p.mu.Unlock()
+	delete(p.orphans, from)
+	if moved {
+		// No wake: the engine sees the renamed folder on its next scan,
+		// and a pass before that would call the site an orphan.
+		p.emit("publish.renamed", to, "", from+" is now "+to+"; its names stay where they are", map[string]any{"from": from})
+	}
+}
+
 // Move puts names on a door: the API's move, which is publishing names
 // one by one. The names' site is published on that door from now on, so
 // the loop keeps them there.

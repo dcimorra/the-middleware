@@ -130,6 +130,8 @@ var permRoutes = map[string][]string{
 var ownerOnly = []string{
 	"DELETE " + siteBase,
 	"POST " + siteBase + "/rename",
+	"POST " + siteBase + "/names/{name}/main",
+	"DELETE " + siteBase + "/names/{name}",
 	"POST " + siteBase + "/publish",
 	"POST " + siteBase + "/unpublish",
 	"GET " + siteBase + "/containerize",
