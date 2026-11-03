@@ -8,11 +8,15 @@ package traffic
 
 import (
 	"bufio"
+	"compress/gzip"
 	"context"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -75,9 +79,10 @@ type Options struct {
 	// site without services stay what they were.
 	Service func(r *http.Request) string
 	Now     func() time.Time
-	// MaxLogSize and KeepLogs set the rotation: 10 MB and 3 by default.
+	// MaxLogSize splits a week's access log when it grows past it, 64 MB
+	// by default. The log turns over every week either way and nothing is
+	// ever deleted: see archive.
 	MaxLogSize int64
-	KeepLogs   int
 }
 
 // Recorder counts requests and writes access logs.
@@ -88,6 +93,8 @@ type Recorder struct {
 	mu    sync.Mutex
 	rings map[string]*ring
 	logs  map[string]*logFile
+	// packing is the archives being compressed, waited for by Close.
+	packing sync.WaitGroup
 }
 
 // New builds a recorder.
@@ -96,10 +103,7 @@ func New(opts Options) *Recorder {
 		opts.Now = time.Now
 	}
 	if opts.MaxLogSize <= 0 {
-		opts.MaxLogSize = 10 << 20
-	}
-	if opts.KeepLogs <= 0 {
-		opts.KeepLogs = 3
+		opts.MaxLogSize = 64 << 20
 	}
 	return &Recorder{opts: opts, now: opts.Now, rings: map[string]*ring{}, logs: map[string]*logFile{}}
 }
@@ -334,6 +338,7 @@ func (r *Recorder) host(req *http.Request) string {
 // Run flushes the access logs every second and prunes idle rings, until
 // ctx ends. It returns at once.
 func (r *Recorder) Run(ctx context.Context) {
+	r.packLeftovers()
 	go func() {
 		t := time.NewTicker(time.Second)
 		defer t.Stop()
@@ -409,6 +414,8 @@ type logFile struct {
 	w    *bufio.Writer
 	size int64
 	used time.Time
+	// week is the ISO week the open file's lines belong to.
+	week string
 }
 
 // logIdle is how long an access log stays open with nothing to write.
@@ -465,12 +472,12 @@ func (r *Recorder) log(domain string, site bool, req *http.Request, status int, 
 	}
 	lf.used = now
 	if lf.f == nil {
-		if err := lf.open(); err != nil {
+		if err := lf.open(now); err != nil {
 			return
 		}
 	}
-	if lf.size+int64(len(line)) > r.opts.MaxLogSize {
-		lf.rotate(r.opts.KeepLogs)
+	if week := weekOf(now); week != lf.week || lf.size+int64(len(line)) > r.opts.MaxLogSize {
+		r.archive(lf, now)
 		if lf.f == nil {
 			return
 		}
@@ -497,7 +504,7 @@ func logName(name string) string {
 	}, name)
 }
 
-func (lf *logFile) open() error {
+func (lf *logFile) open(now time.Time) error {
 	if err := os.MkdirAll(filepath.Dir(lf.path), 0o755); err != nil {
 		return err
 	}
@@ -511,27 +518,150 @@ func (lf *logFile) open() error {
 		return err
 	}
 	lf.f, lf.w, lf.size = f, bufio.NewWriterSize(f, 16<<10), st.Size()
+	// A file left from before a restart, or from a site nobody visited
+	// for a while, belongs to the week its last line was written in: the
+	// next line, if that week is over, archives it under that week's
+	// name. The line's own time, not the file's: a copy or a backup
+	// restored changes the second and not the first.
+	lf.week = weekOf(now)
+	if lf.size > 0 {
+		lf.week = weekOf(lastLineTime(lf.path, st))
+	}
 	return nil
 }
 
-// rotate shifts access.log → .1 → .2 … and drops the oldest. Renames, not
-// copies, so the running writer never races a reader that tails the file.
-func (lf *logFile) rotate(keep int) {
+// lastLineTime is the time the last line of an access log begins with,
+// or the file's modification time when it does not read as one.
+func lastLineTime(path string, st os.FileInfo) time.Time {
+	f, err := os.Open(path)
+	if err != nil {
+		return st.ModTime()
+	}
+	defer f.Close()
+	const tail = 4096
+	off := st.Size() - tail
+	if off < 0 {
+		off = 0
+	}
+	buf := make([]byte, st.Size()-off)
+	if _, err := f.ReadAt(buf, off); err != nil && err != io.EOF {
+		return st.ModTime()
+	}
+	text := strings.TrimRight(string(buf), "\n")
+	if i := strings.LastIndexByte(text, '\n'); i >= 0 {
+		text = text[i+1:]
+	}
+	stamp, _, _ := strings.Cut(text, " ")
+	if t, err := time.Parse(time.RFC3339, stamp); err == nil {
+		return t
+	}
+	return st.ModTime()
+}
+
+// weekOf is t's ISO week, 2026-W45: the access log turns over on Monday.
+func weekOf(t time.Time) string {
+	y, w := t.Local().ISOWeek()
+	return fmt.Sprintf("%d-W%02d", y, w)
+}
+
+// archive closes the week's access log as access.log.<week>, or
+// access.log.<week>.2, .3… when a busy week was split by size, opens a
+// fresh one, and compresses the archive in the background.
+//
+// Nothing is ever deleted. The log holds who called (address, time, path,
+// User-Agent) and the operator may be bound by law to hand that over, so
+// a rotation that dropped the oldest file, as this did by size until
+// 2026-11, lost exactly the lines that might be asked for. What bounds
+// the disk now is gzip, about a tenth of the text, and the operator.
+// Renames, not copies, so the running writer never races a reader that
+// tails the file. The archive's name does not end in .log on purpose:
+// the guard and the site's own logrotate glob *.log, and an archive is
+// neither.
+func (r *Recorder) archive(lf *logFile, now time.Time) {
 	_ = lf.w.Flush()
 	_ = lf.f.Close()
 	lf.f, lf.w = nil, nil
-	for i := keep; i >= 1; i-- {
-		from := lf.path
-		if i > 1 {
-			from = lf.path + "." + strconv.Itoa(i-1)
-		}
-		to := lf.path + "." + strconv.Itoa(i)
-		if i == keep {
-			_ = os.Remove(to)
-		}
-		_ = os.Rename(from, to)
+	base := lf.path + "." + lf.week
+	name := base
+	for i := 2; exists(name) || exists(name+".gz"); i++ {
+		name = base + "." + strconv.Itoa(i)
 	}
-	_ = lf.open()
+	if os.Rename(lf.path, name) == nil {
+		r.packing.Add(1)
+		go func() {
+			defer r.packing.Done()
+			_ = pack(name)
+		}()
+	}
+	_ = lf.open(now)
+}
+
+func exists(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
+// pack compresses an archive to <name>.gz and removes the text. The .gz
+// is written aside and renamed into place, so a crash halfway leaves the
+// text, which packLeftovers compresses at the next start, and never a
+// truncated .gz next to nothing.
+func pack(name string) error {
+	in, err := os.Open(name)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	tmp := name + ".gz.tmp"
+	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	zw := gzip.NewWriter(out)
+	_, err = io.Copy(zw, in)
+	if cerr := zw.Close(); err == nil {
+		err = cerr
+	}
+	if serr := out.Sync(); err == nil {
+		err = serr
+	}
+	if cerr := out.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Rename(tmp, name+".gz")
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return os.Remove(name)
+}
+
+// archived matches an archive still in text: access.log.2026-W45 or
+// access.log.2026-W45.2.
+var archived = regexp.MustCompile(`^access\.log\.\d{4}-W\d{2}(\.\d+)?$`)
+
+// packLeftovers compresses the archives a stop or a crash left in text,
+// before anything is written: nothing else is compressing yet.
+func (r *Recorder) packLeftovers() {
+	if r.opts.LogDir == "" {
+		return
+	}
+	dirs, _ := filepath.Glob(filepath.Join(r.opts.LogDir, "*"))
+	dirs = append(dirs, r.opts.LogDir)
+	for _, d := range dirs {
+		entries, _ := os.ReadDir(d)
+		for _, e := range entries {
+			if !e.IsDir() && archived.MatchString(e.Name()) {
+				name := filepath.Join(d, e.Name())
+				r.packing.Add(1)
+				go func() {
+					defer r.packing.Done()
+					_ = pack(name)
+				}()
+			}
+		}
+	}
 }
 
 // Flush writes buffered log lines to disk.
@@ -545,13 +675,15 @@ func (r *Recorder) Flush() {
 	}
 }
 
-// Close flushes and closes every log file.
+// Close flushes and closes every log file, and waits for the archives
+// being compressed.
 func (r *Recorder) Close() {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	for _, lf := range r.logs {
 		lf.close()
 	}
+	r.mu.Unlock()
+	r.packing.Wait()
 }
 
 func (lf *logFile) close() {
