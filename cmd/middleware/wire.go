@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/dcimorra/the-middleware/internal/backups"
 	"github.com/dcimorra/the-middleware/internal/installer"
 	"github.com/dcimorra/the-middleware/internal/nodeenv"
 	"github.com/dcimorra/the-middleware/internal/runtime"
@@ -172,6 +173,7 @@ type wireHook struct {
 	updater   *update.Updater
 	mesh      *nodes.Mesh
 	fw        *firewall.Firewall
+	backups   *backups.Keeper
 }
 
 func buildWire(a *app.App) app.Hook {
@@ -323,6 +325,15 @@ func buildWire(a *app.App) app.Hook {
 		srv.RegisterTasks(api.TasksOptions{Scheduler: taskScheduler, Root: a.Root})
 	}
 	srv.RegisterGuard(api.GuardOptions{Guard: theGuard})
+	// The sites' database copies (the manifests' backups).
+	w.backups = backups.New(backups.Options{
+		Root: a.Root, Bus: a.Bus,
+		ServiceSpec: func(domain, service string) (*manifest.Spec, error) {
+			return a.Engine.ServiceSpec(domain, service)
+		},
+		Restart: a.Engine.Restart,
+	})
+	srv.RegisterBackups(w.backups)
 	// The repositories inside the sites, and the watcher that keeps the
 	// marked ones pulled (internal/repos).
 	rm := repos.New(repos.Options{DataDir: dataDir(a), Bus: a.Bus, Sites: func() []repos.Site {
@@ -549,6 +560,9 @@ func (w *wireHook) Run(ctx context.Context, a *app.App) error {
 	}
 	if w.fixer != nil {
 		go w.fixer.Run(ctx)
+	}
+	if w.backups != nil {
+		go w.backups.Run(ctx)
 	}
 	if w.updater != nil {
 		// Here, before app.Run opens the listener, so the confirmation

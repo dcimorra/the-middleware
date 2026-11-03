@@ -146,7 +146,7 @@ func TestAFreshInstallRunsTheStepsInOrderAndWritesEveryFile(t *testing.T) {
 		t.Fatalf("install: %v\n%s", err, out)
 	}
 	want := []string{
-		"sudo apt-get install -y -q -o DPkg::Lock::Timeout=300 curl",
+		"sudo apt-get install -y -q -o DPkg::Lock::Timeout=300 curl sqlite3",
 		"sudo apt-get install -y -q -o DPkg::Lock::Timeout=300 docker.io",
 		"sudo systemctl enable --now docker",
 		"sudo usermod -aG docker alice",
@@ -637,7 +637,7 @@ func TestThePackagesStepInstallsLibatomicWhenItIsMissing(t *testing.T) {
 	if _, _, err := in.stepPackages(); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	want := "sudo apt-get install -y -q -o DPkg::Lock::Timeout=300 curl libatomic1"
+	want := "sudo apt-get install -y -q -o DPkg::Lock::Timeout=300 curl sqlite3 libatomic1"
 	if got := strings.Join(rec.Mutations(), "\n"); got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}

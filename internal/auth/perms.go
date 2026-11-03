@@ -53,6 +53,8 @@ var permRoutes = map[string][]string{
 		"GET " + siteBase + "/download.zip",
 		"GET " + siteBase + "/tasks",
 		"GET " + siteBase + "/tasks/{name}/log",
+		"GET " + siteBase + "/backups",
+		"GET " + siteBase + "/backups/{name}/log",
 	},
 	// operate changes the site's state, never what it runs.
 	PermOperate: {
@@ -75,6 +77,7 @@ var permRoutes = map[string][]string{
 		"POST " + siteBase + "/tasks/{name}/stop",
 		"POST " + siteBase + "/tasks/{name}/disable",
 		"POST " + siteBase + "/tasks/{name}/enable",
+		"POST " + siteBase + "/backups/{name}/run",
 	},
 	// code decides what runs: the files, the manifest, the build, the
 	// tasks and a command where the site runs. Everything here runs as
@@ -90,6 +93,11 @@ var permRoutes = map[string][]string{
 		"POST " + siteBase + "/specs/init",
 		"PUT " + siteBase + "/tasks/{name}",
 		"DELETE " + siteBase + "/tasks/{name}",
+		// A copy is the database's whole content, and a restore replaces
+		// it: what code already reaches through exec, and no less.
+		"GET " + siteBase + "/backups/{name}/copies/{id}",
+		"DELETE " + siteBase + "/backups/{name}/copies/{id}",
+		"POST " + siteBase + "/backups/{name}/copies/{id}/restore",
 	},
 	// agents is the site's conversations, which spend the operator's
 	// subscriptions.

@@ -31,9 +31,11 @@ const Usage = `  setup        print a one-time code to create the operator in th
                (--domain panel.example.com [--door ports|tunnel]: the panel's name and door)
                (--password: set the password from the terminal instead)
                (--reset: with an operator already set, a code to set a new one)
-  site         list | show | add | rm | restart | stop | start | hold | unhold | logs | deploy | tasks
+  site         list | show | add | rm | restart | stop | start | hold | unhold | logs | deploy | tasks | backups
   site tasks <domain> [list | save <name> <file|-> | rm <name> | run <name> | stop <name> | log <name>]
                the tasks that run in that site's folder, through the API (what a site's agent may manage)
+  site backups <domain> [list | run <name> | restore <name> <copy> | download <name> <copy> [file] | rm <name> <copy> | log <name>]
+               the site's database copies, as its manifest's backups describe them
   events       recent events (-f to follow)
   system       version, uptime, load, memory, disk
   token        add | list | rm — API tokens for scripts
@@ -276,6 +278,9 @@ const siteUsage = `usage: middleware site <command> [flags]
                               writing or deploying it: schema, paths, names, Dockerfiles
   tasks <domain> [list | save <name> <file|-> | rm <name> | run <name> | stop <name> | log <name>]
                               the site's own scheduled tasks
+  backups <domain> [list | run <name> | restore <name> <copy> [--no-safety-copy] |
+          download <name> <copy> [file] | rm <name> <copy> | log <name>]
+                              the site's database copies (the manifest's backups)
 `
 
 func (e *Env) site(args []string) error {
@@ -302,6 +307,7 @@ func (e *Env) site(args []string) error {
 		file     = fs.String("file", "", "validate: the manifest to check (- for stdin; default: the one on disk)")
 		service  = fs.String("service", "", "restart, logs, show: one of the site's services")
 		build    = fs.Bool("build", false, "logs: the service's image build instead of its output")
+		noSafety = fs.Bool("no-safety-copy", false, "backups restore: skip the copy of the database as it is now")
 	)
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -581,6 +587,17 @@ func (e *Env) site(args []string) error {
 			}
 		})
 		return e.siteTasks(c, cl, domain, pos[1:], n)
+	case "backups", "backup":
+		if err := need(); err != nil {
+			return err
+		}
+		n := 0
+		fs.Visit(func(f *flag.Flag) {
+			if f.Name == "lines" {
+				n = *lines
+			}
+		})
+		return e.siteBackups(c, cl, domain, pos[1:], n, *noSafety)
 	case "logs", "log":
 		if err := need(); err != nil {
 			return err

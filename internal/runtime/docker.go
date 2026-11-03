@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -600,6 +601,29 @@ func (d Docker) ExecIn(ctx context.Context, container string, spec *manifest.Spe
 	if stdout != nil {
 		cmd.Stdout = stdout
 	}
+	cmd.WaitDelay = 5 * time.Second
+	return cmd.Run()
+}
+
+// ExecStdio runs argv inside a running container as its own user, with
+// env added to the container's own environment, stdin read and stdout
+// written as they are: a backup's dump, whose output the house compresses
+// itself, and its restore. No -w: a database's container does not have
+// the site's folder, and docker exec refuses a directory that is not
+// there.
+//
+// A cancel kills the docker client, not what it started inside the
+// container, which docker exec has no way to reach; the dump inside then
+// ends on the closed pipe it writes to.
+func (d Docker) ExecStdio(ctx context.Context, container string, env, argv []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	args := []string{"exec", "-i"}
+	for _, kv := range env {
+		args = append(args, "-e", kv)
+	}
+	args = append(args, container)
+	args = append(args, argv...)
+	cmd := exec.CommandContext(ctx, d.bin(), args...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 	cmd.WaitDelay = 5 * time.Second
 	return cmd.Run()
 }

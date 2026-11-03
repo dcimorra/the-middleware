@@ -701,6 +701,74 @@ plan a move shows first, and `middleware import --dry-run`, look for the
 program and say whether the export will be tried. What an export without
 `output` writes, the trial writes too, where the real one writes it again.
 
+## Backups: `backups`
+
+The site's databases, copied by the house on a schedule or by hand,
+compressed (gzip), into `data/backups/<domain>/<name>/`: outside the
+folder, so a copy is never pushed by the github module, served by the site
+or carried by a move. Each entry is one database:
+
+```json
+{
+  "backups": {
+    "db": {
+      "engine": "mysql",
+      "service": "db",
+      "database": "drupal",
+      "schedule": "30 3 * * *",
+      "timezone": "Europe/Madrid",
+      "keep": 14
+    },
+    "app": { "engine": "sqlite", "file": "data/app.db", "schedule": "0 */6 * * *" },
+    "pg": { "engine": "postgres", "service": "postgres", "user": "app", "password_env": "DB_PASSWORD", "schedule": "@daily" },
+    "redis": { "engine": "command", "service": "cache", "dump": ["sh", "-c", "redis-cli --rdb /tmp/d.rdb >&2 && cat /tmp/d.rdb"] }
+  }
+}
+```
+
+| field | meaning |
+| --- | --- |
+| `engine` | `mysql` (MariaDB too: `mariadb-dump` or `mysqldump`), `postgres` (`pg_dump`, or `pg_dumpall` for every database), `sqlite` (`sqlite3 .dump`), `mongodb` (`mongodump --archive`) or `command` |
+| `service` | the service or worker that runs the database. Its container when it runs in one (`docker exec`, as the container's own user, with the container's environment), or as the site's processes run when it is a process. Empty is the site's own `run`; a site with `services` must name one (sqlite excepted) |
+| `database` | the database; empty is the one the container was made with (`MARIADB_DATABASE`, `MYSQL_DATABASE`, `POSTGRES_DB`, `MONGO_INITDB_DATABASE`) and, without one, every database; `"*"` is every database |
+| `file` | sqlite only: the database file, inside the folder. It is read where the folder is, with the machine's `sqlite3`, whatever runs the site |
+| `host`, `port` | where the server is when the dump does not find it on its own. Inside a container, empty is its local socket; from a process, `127.0.0.1` (a jailed process has no `/run`, where the socket lives) |
+| `user` | who connects; empty is the image's administrator: `root` (with `MARIADB_ROOT_PASSWORD` or `MYSQL_ROOT_PASSWORD`), `POSTGRES_USER` or `postgres`, `MONGO_INITDB_ROOT_USERNAME`. A `user` without `password_env` uses `MARIADB_PASSWORD`/`MYSQL_PASSWORD` |
+| `password_env` | the **name** of the variable that holds the password, in the container's environment or the site's (`.env`, `env`). The password itself never goes in the manifest; it reaches the client through its own variable (`MYSQL_PWD`, `PGPASSWORD`), not as an argument |
+| `dump`, `restore` | `command` only: `dump` writes the copy to its standard output; `restore` reads one from its standard input (without it, a copy is restored by hand). `$DOMAIN` and `$SITE_DIR` are expanded |
+| `schedule` | five-field cron, as a task's; empty is by hand only |
+| `timezone` | reads `schedule` in that zone; empty is the machine's clock |
+| `keep` | how many copies are kept, the newest (7 when empty, up to 1000) |
+| `timeout` | bounds a copy and a restore (`1h` when empty) |
+| `disabled` | stops the schedule; copies by hand still work |
+| `note` | for people |
+
+A copy is `<YYYYMMDD-HHMMSS>-<kind>.<sql|archive|dump>.gz` (UTC), kind
+`scheduled`, `manual` or `pre-restore`, mode `0600`. The dump's standard
+output comes back to the house, which compresses it: nothing needs gzip, or
+a folder it may write, where the dump runs. It is written beside its name
+and renamed once whole; a dump that fails, is cut by `timeout` or writes
+nothing leaves no copy, and the reason (the end of what the client said) is
+the backup's last result and in `data/logs/<domain>/backup-<name>.log`.
+
+A **restore** first takes a copy of the database as it is now (kind
+`pre-restore`, the newest three kept apart from `keep`) and restores
+nothing if that fails, unless asked to go without it. Then the copy is read
+into the client: MySQL dumps drop each table before making it again;
+PostgreSQL ones are made with `--clean --if-exists` and one database is
+restored in one transaction that stops at the first error; MongoDB's with
+`--drop`; SQLite's are loaded into a new file that replaces the old one
+whole (its `-wal` and `-shm` removed) and the site is restarted, since its
+process holds the old file open.
+
+The schedule is looked at every minute; a copy missed while the house was
+down is not taken on its return. Two copies run at once at most across the
+house, and one per backup. A stopped site (`disabled`) is not copied on
+schedule. Removing a backup from the manifest stops it and keeps its
+copies, listed until they are deleted. `middleware site backups <domain>`
+and the site's **Backups** tab list, take, download, restore and delete
+them (docs/api.md).
+
 ## Tasks: `tasks/<name>.json`
 
 ```json
