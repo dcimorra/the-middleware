@@ -2458,3 +2458,12 @@ details.site-env[open] > summary { margin-bottom: 10px; }
 /* A name longer than a phone is wide ends in an ellipsis, not past the
    list's edge; the whole of it is in the link's title. */
 .site-menu-item > span:not(.site-menu-hint) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* A name with "Make main" and × beside it: on a phone the name takes the
+   first line whole and the buttons go under it, or a long made-up name
+   was squeezed to a few letters per line. */
+.site-addr .btn { flex: none; }
+.site-addr .small.muted { flex: none; }
+@media (max-width: 560px) {
+  .site-addr { flex-wrap: wrap; }
+  .site-addr:has(.icon-btn) code.grow { flex-basis: calc(100% - 40px); }
+}

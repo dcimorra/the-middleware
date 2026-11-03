@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -53,6 +54,8 @@ func (s *Server) registerSites() {
 	s.Handle("PUT", p+"/{domain}/file", "Write a file inside the site (raw body)", s.sitesWriteFile)
 	s.Handle("POST", p+"/{domain}/deploy", "Run deploy.github.build and write the pointer", s.sitesDeploy)
 	s.Handle("GET", p+"/{domain}/env", "The environment the instance is born with, secrets masked", s.sitesEnv)
+	s.Handle("POST", p+"/{domain}/names/{name}/main", "Make one of the site's names its main one: the site is renamed to it, the old name stays as an alias, nothing is unpublished", s.sitesSetMain)
+	s.Handle("DELETE", p+"/{domain}/names/{name}", "Take a name away from the site (an alias, or a service's domains on that host); never its main name", s.sitesRemoveName)
 	s.Handle("POST", p+"/{domain}/rename", "Rename a site (body: to): folder, HOME, logs, conversations and cost move with it; published names follow", s.sitesRename)
 	s.Handle("GET", p+"/{domain}/download.zip", "The site folder as a zip, without what an install or a build gives back (?all=1 for everything)", s.sitesDownload)
 	s.Handle("GET", Prefix+"/archive", "Archived sites, newest first", func(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -838,6 +841,52 @@ func (s *Server) sitesRename(w http.ResponseWriter, r *http.Request) (any, error
 			defer pcancel()
 			_, _ = s.publisher.Publish(pctx, to, door)
 		}()
+	}
+	return site, nil
+}
+
+func (s *Server) sitesSetMain(w http.ResponseWriter, r *http.Request) (any, error) {
+	m, err := s.sitesManager()
+	if err != nil {
+		return nil, err
+	}
+	from, err := domainOf(r)
+	if err != nil {
+		return nil, err
+	}
+	to := strings.ToLower(strings.TrimSpace(r.PathValue("name")))
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	site, err := m.SetMain(ctx, from, to)
+	if err != nil {
+		return nil, Errorf(http.StatusConflict, "%v", err)
+	}
+	if site.Domain != from {
+		if s.publisher != nil {
+			s.publisher.Renamed(from, site.Domain)
+		}
+		if s.opts.Auth != nil {
+			_ = s.opts.Auth.RenameSite(from, site.Domain)
+		}
+	}
+	return site, nil
+}
+
+func (s *Server) sitesRemoveName(w http.ResponseWriter, r *http.Request) (any, error) {
+	m, err := s.sitesManager()
+	if err != nil {
+		return nil, err
+	}
+	domain, err := domainOf(r)
+	if err != nil {
+		return nil, err
+	}
+	site, err := m.RemoveName(domain, r.PathValue("name"))
+	if errors.Is(err, sites.ErrNotFound) {
+		return nil, Errorf(http.StatusNotFound, "%v", err)
+	}
+	if err != nil {
+		return nil, Errorf(http.StatusConflict, "%v", err)
 	}
 	return site, nil
 }
