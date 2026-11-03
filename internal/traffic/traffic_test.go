@@ -2,6 +2,7 @@ package traffic
 
 import (
 	"bufio"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -149,10 +150,10 @@ func TestTheWrapperStillHijacksForWebSockets(t *testing.T) {
 	t.Fatalf("a hijacked request should count as 1xx: %+v", rec.Snapshot().ByDomain)
 }
 
-func TestTheAccessLogIsWrittenAndRotatedBySize(t *testing.T) {
+func TestTheAccessLogTurnsOverEveryWeekAndNothingIsDeleted(t *testing.T) {
 	dir := t.TempDir()
 	c := newClock()
-	rec := New(Options{LogDir: dir, Now: c.now, MaxLogSize: 400, KeepLogs: 3})
+	rec := New(Options{LogDir: dir, Now: c.now, MaxLogSize: 400})
 	h := rec.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, "ok") }))
 	for i := 0; i < 12; i++ {
 		r := httptest.NewRequest("GET", "http://log.example/page?i="+strings.Repeat("x", 20), nil)
@@ -179,20 +180,44 @@ func TestTheAccessLogIsWrittenAndRotatedBySize(t *testing.T) {
 	if strings.Contains(line, `"7"`) {
 		t.Fatal("quotes inside the agent must be neutralised so the line stays parseable")
 	}
-	rotated := 0
-	for _, suffix := range []string{".1", ".2", ".3"} {
-		if st, err := os.Stat(base + suffix); err == nil {
-			if st.Size() > 400 {
-				t.Fatalf("%s is %d bytes, over the limit", suffix, st.Size())
-			}
-			rotated++
+	// Twelve ~90-byte lines over a 400-byte cap split the week in parts,
+	// every one kept and compressed, none of them a .log the guard reads.
+	parts, _ := filepath.Glob(base + ".*")
+	if len(parts) < 2 {
+		t.Fatalf("twelve ~90-byte lines with a 400-byte cap should have split the week: %v", parts)
+	}
+	lines := strings.Count(string(data), "\n")
+	for _, p := range parts {
+		if !strings.HasPrefix(p, base+".2026-W43") || !strings.HasSuffix(p, ".gz") {
+			t.Fatalf("%s: not an archive of the week, compressed", p)
 		}
+		lines += strings.Count(gunzip(t, p), "\n")
 	}
-	if rotated == 0 {
-		t.Fatal("twelve ~90-byte lines with a 400-byte cap should have rotated")
+	if lines != 12 {
+		t.Fatalf("%d lines kept of 12: a rotation lost some", lines)
 	}
-	if _, err := os.Stat(base + ".4"); err == nil {
-		t.Fatal("more files kept than KeepLogs")
+
+	// A week later the log starts again, and last week's is an archive
+	// under last week's name, after a restart too.
+	c.advance(7 * 24 * time.Hour)
+	rec = New(Options{LogDir: dir, Now: c.now, MaxLogSize: 1 << 20})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rec.Run(ctx)
+	r = httptest.NewRequest("GET", "http://log.example/next-week", nil)
+	rec.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})).ServeHTTP(httptest.NewRecorder(), r)
+	rec.Close()
+	if data, _ := os.ReadFile(base); strings.Count(string(data), "\n") != 1 || !strings.Contains(string(data), "/next-week") {
+		t.Fatalf("the new week's log: %q", data)
+	}
+	after, _ := filepath.Glob(base + ".*")
+	if len(after) != len(parts)+1 {
+		t.Fatalf("archives before %v, after %v: last week's was not kept apart", parts, after)
+	}
+	for _, p := range after {
+		if !strings.HasSuffix(p, ".gz") {
+			t.Fatalf("%s was left uncompressed", p)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(dir, "etc")); err == nil {
 		t.Fatal("a hostile Host header wrote outside the log folder")
@@ -286,4 +311,43 @@ func TestRunFlushesInTheBackground(t *testing.T) {
 	}
 	cancel()
 	t.Fatal("the background flush never wrote the line")
+}
+
+func gunzip(t *testing.T, path string) string {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	b, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("%s: %v", path, err)
+	}
+	return string(b)
+}
+
+// A stop in the middle of compressing leaves the week in text; the next
+// start compresses it and keeps every line.
+func TestAnArchiveLeftInTextIsCompressedAtTheNextStart(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "a.example"), 0o755)
+	left := filepath.Join(dir, "a.example", "access.log.2026-W40")
+	os.WriteFile(left, []byte("one\ntwo\n"), 0o644)
+	os.WriteFile(left+".gz.tmp", []byte("half"), 0o644)
+	rec := New(Options{LogDir: dir})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rec.Run(ctx)
+	rec.Close()
+	if _, err := os.Stat(left); err == nil {
+		t.Fatal("the text was not compressed")
+	}
+	if got := gunzip(t, left+".gz"); got != "one\ntwo\n" {
+		t.Fatalf("compressed %q", got)
+	}
 }

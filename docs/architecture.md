@@ -42,8 +42,12 @@ data/                        what this installation decided
   modules.json               which modules are on; credentials encrypted inside
   state/<domain>.json        running instance: pid, port, revision (for re-adoption)
   docker-volumes.json        which site owns each docker volume made before volumes carried a label
-  logs/<domain>/             site output and its access.log, rotated
+  logs/<domain>/             site output (rotated by size) and its access.log
   logs/access.log            requests for the names no site serves, one file
+                             every access.log (client address, time, request,
+                             User-Agent) turns over each Monday into
+                             access.log.<YYYY-Www>[.N].gz, never deleted
+  visits/<domain>/           the site's audience per month, no addresses
   events/                    audit trail, one file per day
 modules/                     binaries a module installed (cloudflared, wg, agent CLIs)
 ```
