@@ -26,6 +26,7 @@ import { chatTab } from "./site-chat.js";
 import { accessTab } from "./site-access.js";
 import { securityTab } from "./site-security.js";
 import { activityTab } from "./site-activity.js";
+import { visitsTab } from "./site-visits.js";
 import { cacheTab } from "./site-cache.js";
 import { siteTasksTab } from "./tasks.js";
 import { doorCard } from "./site-door.js";
@@ -36,13 +37,13 @@ import { specsTab } from "./site-specs.js";
 // so instead of offering a button that fails.
 let shotsOff = false;
 
-const TABS = ["overview", "activity", "manifest", "logs", "files", "chat", "tasks", "specs", "access", "security", "cache", "moves"];
-const TAB_ICON = { overview: "gauge", activity: "activity", manifest: "code", logs: "list", files: "folder", chat: "chat", tasks: "clock", specs: "file", access: "lock", security: "shield", cache: "box", moves: "upload" };
+const TABS = ["overview", "activity", "visits", "manifest", "logs", "files", "chat", "tasks", "specs", "access", "security", "cache", "moves"];
+const TAB_ICON = { overview: "gauge", activity: "activity", visits: "chart", manifest: "code", logs: "list", files: "folder", chat: "chat", tasks: "clock", specs: "file", access: "lock", security: "shield", cache: "box", moves: "upload" };
 
 // The tabs a delegated user sees, by what opens them: the WAF, the edge
 // cache, the house's guard and the moves are the operator's, and the
 // access tab writes the manifest.
-const DELEGATE_TABS = { overview: "view", manifest: "view", logs: "view", files: "view", tasks: "view", specs: "view", chat: "agents", access: "code" };
+const DELEGATE_TABS = { overview: "view", visits: "view", manifest: "view", logs: "view", files: "view", tasks: "view", specs: "view", chat: "agents", access: "code" };
 
 export function siteScreen({ domain, tab, query }) {
   const shownTabs = delegate() ? TABS.filter((k) => DELEGATE_TABS[k] && can(domain, DELEGATE_TABS[k])) : TABS;
@@ -119,6 +120,7 @@ export function siteScreen({ domain, tab, query }) {
       case "access": view = accessTab(domain); break;
       case "security": view = securityTab(domain); break;
       case "activity": view = activityTab(domain, pickWorker); break;
+      case "visits": view = visitsTab(domain); break;
       case "cache": view = cacheTab(domain); break;
       // Its own tab, the last: a move's operations are read when one is
       // under way or went wrong, not every time the site is opened.
