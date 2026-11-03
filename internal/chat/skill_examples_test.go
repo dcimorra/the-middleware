@@ -41,6 +41,12 @@ func skillExamples(t *testing.T) (blocks []string, lines []int) {
 	return blocks, lines
 }
 
+// isTask tells a task file from a manifest: a task has a schedule at its
+// top, and a manifest has one only inside its backups.
+func isTask(body string) bool {
+	return strings.Contains(body, `"schedule"`) && !strings.Contains(body, `"backups"`)
+}
+
 // TestEveryManifestExampleInTheSkillParses runs each manifest snippet of the
 // skill through the real parser. A skill that teaches a field the schema
 // rejects would have every agent writing manifests the engine refuses, and
@@ -49,7 +55,7 @@ func TestEveryManifestExampleInTheSkillParses(t *testing.T) {
 	blocks, lines := skillExamples(t)
 	manifests := 0
 	for i, body := range blocks {
-		if strings.Contains(body, `"schedule"`) {
+		if isTask(body) {
 			continue
 		}
 		if _, err := manifest.Parse([]byte(body)); err != nil {
@@ -69,7 +75,7 @@ func TestEveryTaskExampleInTheSkillParses(t *testing.T) {
 	blocks, lines := skillExamples(t)
 	found := 0
 	for i, body := range blocks {
-		if !strings.Contains(body, `"schedule"`) {
+		if !isTask(body) {
 			continue
 		}
 		if _, err := tasks.Parse([]byte(body)); err != nil {

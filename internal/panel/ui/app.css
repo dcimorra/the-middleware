@@ -2481,3 +2481,18 @@ details.site-env[open] > summary { margin-bottom: 10px; }
   .site-addr { flex-wrap: wrap; }
   .site-addr:has(.icon-btn) code.grow { flex-basis: calc(100% - 40px); }
 }
+
+/* Backups: one card per database, its copies in a table under it. */
+.backup-card { display: grid; gap: 10px; }
+.backup-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.backup-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; min-width: 0; }
+.backup-title .small { flex-basis: 100%; overflow-wrap: anywhere; }
+.backup-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.backup-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; }
+.backup-card .error-box .mono { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.backup-card .row-actions { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.backup-more { margin: 4px 0 8px; }
+.backup-more > summary { cursor: pointer; color: var(--text-2); margin-bottom: 8px; }
+.backup-card .error-box { display: block; margin: 0; }
+.backup-card .status { display: flex; flex-wrap: wrap; white-space: normal; overflow-wrap: anywhere; margin: 0; min-width: 0; }
+.backup-card p { margin: 0; }

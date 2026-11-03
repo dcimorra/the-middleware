@@ -43,7 +43,8 @@ scopes list, and with `:site` only for that site: `read` (the site list, one
 site, its logs, the events), `restart` (a site's handover and a worker's
 restart), `deploy` (a site's deploy), `exec` (a one-off command streamed
 into the site's container or a service's, never on the machine), `tasks` (a site's own tasks, the six
-`/sites/{domain}/tasks` routes below; never `/tasks`). Anything else answers
+`/sites/{domain}/tasks` routes below; never `/tasks`), `backups` (a site's
+database copies, the `/sites/{domain}/backups` routes below). Anything else answers
 403 and names the scopes. For a program that acts on the house from outside, an app that builds
 sites and restarts them, it is the narrowest door that works. A token
 without scopes is the operator's and opens everything. An `import:<site>` token
@@ -56,9 +57,11 @@ and nothing else (`/users`, below). A user signs in with
 `POST /auth/login {user, password}` at the node they were made on and gets
 a cookie session like the operator's, held to their grants: each grant is a
 site and permissions out of `view` (the site, its logs, files, history,
-tasks and their logs: implied by every grant), `operate` (restart, stop,
-start, hold, workers, run and stop tasks, empty the cache), `code` (the
-manifest, files, deploy, exec, writing and deleting tasks) and `agents`
+tasks and their logs, the backups and their logs: implied by every grant),
+`operate` (restart, stop, start, hold, workers, run and stop tasks, take a
+database copy, empty the cache), `code` (the manifest, files, deploy, exec,
+writing and deleting tasks, downloading, restoring and deleting database
+copies) and `agents`
 (the site's conversations, `GET /sites/{domain}/agents`). Outside those a
 user reaches `GET /sites` and `GET /events` (both narrowed to their sites),
 `/events/stream` (the same), `/auth/me`, `/auth/logout` and
@@ -591,6 +594,24 @@ for the whole house, so a name the root or another site holds is 409 to PUT.
 | POST | `/sites/{domain}/tasks/{name}/disable` | → the task's row, as `POST /tasks/{name}/disable`; `task.disabled` carries `site` |
 | POST | `/sites/{domain}/tasks/{name}/enable` | → the task's row, as `POST /tasks/{name}/enable` |
 | GET | `/sites/{domain}/tasks/{name}/log` | `?lines=500` → `text/plain`, as `GET /tasks/{name}/log` |
+
+A site's database copies. What is copied, when and how many are kept is
+the manifest's `backups` (docs/manifest.md), written as any part of it;
+these routes are what is done with it. They are what the `backups:<domain>`
+scope opens and a site's agent turn reaches over the socket (`middleware
+site backups`). A copy and a restore answer at once and run on their own,
+with `backup.*` events (`backup.started`, `backup.done`, `backup.failed`,
+`backup.restoring`, `backup.restored`, `backup.restore_failed`,
+`backup.deleted`), unless the body says `wait`. 409 while a copy or a restore of the same backup runs.
+
+| method | path | body / result |
+| --- | --- | --- |
+| GET | `/sites/{domain}/backups` | → `[{name, config, next?, running?, last?, last_restore?, copies: [{id, at, bytes, kind}], bytes, error?}]`: each backup of the manifest (`config` is its entry), newest copy first, `last` and `last_restore` `{at, trigger, ok, error?, seconds, bytes?, copy?}`. A folder of a backup no longer in the manifest that still holds copies is listed with `config: null` and `error` |
+| POST | `/sites/{domain}/backups/{name}/run` | `{wait?}` → 202 `{started}`; with `wait`, the copy `{id, at, bytes, kind}` once written, 422 with the client's words when it failed |
+| GET | `/sites/{domain}/backups/{name}/log` | `?lines=200` → `text/plain`, the end of `data/logs/{domain}/backup-{name}.log` |
+| GET | `/sites/{domain}/backups/{name}/copies/{id}` | the copy as kept, `application/gzip`, as an attachment |
+| DELETE | `/sites/{domain}/backups/{name}/copies/{id}` | → `{ok}` |
+| POST | `/sites/{domain}/backups/{name}/copies/{id}/restore` | `{wait?, no_safety_copy?}` → 202 `{started}`; with `wait`, `{at, trigger, ok, seconds, copy}`, 422 when it failed. A copy of the database as it is now (`pre-restore`) is taken first and nothing is restored when it fails, unless `no_safety_copy`. 400 for a `command` backup without `restore` |
 
 ## Nodes
 

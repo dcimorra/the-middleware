@@ -105,9 +105,12 @@ type Manifest struct {
 	// subscription does, the site door only as far as its level.
 	Claude bool `json:"claude,omitempty"`
 	// Chat is what this site's conversation may do beyond its folder.
-	Chat   *ChatRules `json:"chat,omitempty"`
-	Deploy *Deploy    `json:"deploy,omitempty"`
-	Agent  *Agent     `json:"agent,omitempty"`
+	Chat *ChatRules `json:"chat,omitempty"`
+	// Backups are the site's databases the house copies, compressed, on
+	// a schedule or by hand (backups.go).
+	Backups map[string]*Backup `json:"backups,omitempty"`
+	Deploy  *Deploy            `json:"deploy,omitempty"`
+	Agent   *Agent             `json:"agent,omitempty"`
 }
 
 // Static serves files.
@@ -651,6 +654,9 @@ func (m *Manifest) Validate() error {
 		}
 	}
 	if err := validForceHTTPS(m.ForceHTTPS); err != nil {
+		return err
+	}
+	if err := m.validBackups(); err != nil {
 		return err
 	}
 	if m.Chat != nil {

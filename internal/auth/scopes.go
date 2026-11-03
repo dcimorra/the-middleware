@@ -59,6 +59,19 @@ var scopeRoutes = map[string][]string{
 		"POST /api/v1/sites/{domain}/tasks/{name}/enable",
 		"GET /api/v1/sites/{domain}/tasks/{name}/log",
 	},
+	// backups is a site's database copies: list them, take one, read the
+	// log, download, delete and restore one. What is copied and when is
+	// the manifest's, which the site writes already. The site's agent is
+	// asked for "a copy of the database every night" and for "put back
+	// yesterday's", and does both here.
+	"backups": {
+		"GET /api/v1/sites/{domain}/backups",
+		"POST /api/v1/sites/{domain}/backups/{name}/run",
+		"GET /api/v1/sites/{domain}/backups/{name}/log",
+		"GET /api/v1/sites/{domain}/backups/{name}/copies/{id}",
+		"DELETE /api/v1/sites/{domain}/backups/{name}/copies/{id}",
+		"POST /api/v1/sites/{domain}/backups/{name}/copies/{id}/restore",
+	},
 	// import is a site arriving from another installation (V1): its
 	// bundle, its last copy, the commit, and seeing whether it came up or
 	// removing it when it did not. Always for one site, and made to
@@ -85,7 +98,7 @@ var scopeRoutes = map[string][]string{
 // Scopes is the closed list, for the panel and for the message that
 // refuses a scope outside it. import is left out: it is made for one
 // site by POST /relocate/import-token, never picked from a list.
-func Scopes() []string { return []string{"read", "restart", "deploy", "exec", "tasks"} }
+func Scopes() []string { return []string{"read", "restart", "deploy", "exec", "tasks", "backups"} }
 
 // TurnScopes are what a site's agent turn opens when it calls the house
 // over the socket (the middleware CLI from one of its Bash calls): what a
@@ -97,7 +110,7 @@ func Scopes() []string { return []string{"read", "restart", "deploy", "exec", "t
 // runs in the folder the agent already writes and deploys. The routes
 // keep it to tasks that run there.
 func TurnScopes(site string) []string {
-	return []string{"read:" + site, "restart:" + site, "deploy:" + site, "exec:" + site, "tasks:" + site}
+	return []string{"read:" + site, "restart:" + site, "deploy:" + site, "exec:" + site, "tasks:" + site, "backups:" + site}
 }
 
 // ErrBadScope is a scope outside the list.

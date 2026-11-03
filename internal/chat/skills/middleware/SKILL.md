@@ -21,7 +21,8 @@ Four kinds, and choosing wrong shows at once.
 | something that answers a domain | a **site** | `sites/<domain>/` with a `site.json` |
 | a process that must always be up and answers no domain (an API behind a frontend, a queue consumer) | a **worker** | `workers` inside the site it belongs to |
 | workers, tasks and a conversation with no domain at all (a bot, a pipeline) | a **project** | `sites/<name>/`, a name without a dot, with only `workers` in its `site.json` |
-| something that happens because it is time (backup, purge, sync, prune old builds) | a **task** | `tasks/<name>.json`; from a site's conversation, `middleware site tasks <domain> save` (§ 9) |
+| a copy of a site's **database** (MySQL/MariaDB, PostgreSQL, SQLite, MongoDB), now or every night | a **backup** | `backups` in the site's `site.json`, never a task with a dump script (§ 9, "Database backups") |
+| something else that happens because it is time (purge, sync, prune old builds, a backup of files) | a **task** | `tasks/<name>.json`; from a site's conversation, `middleware site tasks <domain> save` (§ 9) |
 | something not every installation wants (DNS at a provider, deploy on push, a VPN, an agent) | a **module** | already shipped: enable it, never reimplement it in a site |
 
 Rules of thumb:
@@ -888,6 +889,86 @@ panel shows the last runs with exit code and output. The log is
 when the supervisor restarts, its own log (`site logs --worker <name>`). It
 restarts on any change; it is never handed over. If you need a worker to
 deploy without a cut, it is a site.
+
+### Database backups: `backups`
+
+When the person asks for copies of the site's database ("haz backups de la
+base de datos cada noche", "keep a week of copies", "restore yesterday's"),
+write `backups` in `site.json`. **Never** a task with a dump script: the
+house already runs the dump where the database is (inside its container,
+or in the site's jail for a process), compresses it (gzip), keeps the
+newest N outside the folder (`data/backups/<domain>/<name>/`, never pushed,
+served or moved), lists them in the site's **Backups** tab and puts one
+back, taking a copy of what is there first.
+
+Find the database first, from what the site already says: the `services`
+or `workers` entry with a database image (`mariadb:11.4`, `mysql:8`,
+`postgres:17`, `mongo:7`), a SQLite file in the folder (`*.db`, `*.sqlite`,
+`DATABASE_URL=file:...`), or a `.env` that points at a server
+(`DB_HOST`, `DATABASE_URL`). Then one entry per database:
+
+```json
+{
+  "version": 2,
+  "workers": {
+    "db": {
+      "command": ["mariadbd"],
+      "runtime": "docker",
+      "docker": { "image": "mariadb:11.4", "volumes": ["db:/var/lib/mysql"] },
+      "env_files": [".env.db"]
+    }
+  },
+  "backups": {
+    "db": { "engine": "mysql", "service": "db", "schedule": "30 3 * * *", "timezone": "Europe/Madrid", "keep": 14 },
+    "app": { "engine": "sqlite", "file": "data/app.db", "schedule": "0 */6 * * *", "keep": 28 }
+  }
+}
+```
+
+| field | write it |
+| --- | --- |
+| `engine` | `mysql` (MariaDB too), `postgres`, `sqlite`, `mongodb`, or `command` for anything else |
+| `service` | the service or worker that runs the database (`db` above). Empty is the site's own `run`. **A site with `services` must name one**; sqlite never does |
+| `database` | leave it out when the container was made with `MARIADB_DATABASE`/`MYSQL_DATABASE`/`POSTGRES_DB` (that one is copied); `"*"` copies every database; otherwise its name |
+| `file` | sqlite: the file, a path inside the folder |
+| `user`, `password_env` | leave both out for an official image (its root user and `MARIADB_ROOT_PASSWORD`/`POSTGRES_USER` are used). Otherwise `user` and the **name** of the variable with the password (`"password_env": "DB_PASSWORD"`), which must be in the container's or the site's environment. **Never write a password in the manifest** |
+| `host`, `port` | only for a server the dump does not find: a process reaches `127.0.0.1` by default, a container its own socket |
+| `schedule`, `timezone` | cron as a task's; write `timezone` with the person's zone, the machine's clock is usually UTC. No schedule: by hand only |
+| `keep` | copies kept, newest first (7 when left out) |
+| `dump`, `restore` | `command` only: argv, the dump writes the copy to stdout, the restore reads it from stdin. E.g. Redis: `"dump": ["sh", "-c", "redis-cli --rdb /tmp/d.rdb >&2 && cat /tmp/d.rdb"]` |
+
+Then, every time, **take the first copy now and read how it went**; a
+backup nobody saw work is a backup that does not exist:
+
+```sh
+middleware site validate shop.example.com            # the manifest with the new block
+middleware site backups shop.example.com run db      # waits, prints the copy or the client's error
+middleware site backups shop.example.com             # each backup: schedule, next, last result, copies
+middleware site backups shop.example.com log db      # what the dump said
+```
+
+The usual failures and what they mean: `none of mariadb-dump mysqldump is
+installed where the database is` (the dump ran on the machine or in the
+wrong container: set `service`, or install the client), `Access denied`
+(set `user` and `password_env`, or the variable it names is not in that
+environment), `is not running here` (start the service first: a copy is
+taken from the running database), `no such file` (the sqlite `file` path).
+
+**Restoring replaces the database.** Do it only when the person asks for
+it, and say which copy (its date) you are putting back before you do:
+
+```sh
+middleware site backups shop.example.com restore db 20261103-013000-scheduled.sql.gz
+```
+
+It first takes a `pre-restore` copy of the database as it is now, and
+restores nothing if that copy fails; `--no-safety-copy` skips it, only
+for a database too broken to be copied, and only when the person agrees.
+A SQLite restore restarts the site. `download <name> <copy> [file]` saves
+a copy (gzip) where you are: never commit it, it is the people's data.
+`rm <name> <copy>` deletes one.
+
+Removing an entry from `backups` stops it and keeps its copies.
 
 ## 10. Before saying "done": the checklist
 

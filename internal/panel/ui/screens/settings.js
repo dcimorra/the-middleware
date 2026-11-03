@@ -313,7 +313,7 @@ export function settingsScreen({ query } = {}) {
     // Full access, or a service door: some of read, restart and deploy,
     // for every site or for one.
     const kind = h("select", null, h("option", { value: "" }, t("settings.tokenKindFull")), h("option", { value: "scoped" }, t("settings.tokenKindScoped")));
-    const actions = ["read", "restart", "deploy", "tasks"].map((a) => ({ a, box: checkbox(t("settings.scope." + a), {}) }));
+    const actions = ["read", "restart", "deploy", "tasks", "backups"].map((a) => ({ a, box: checkbox(t("settings.scope." + a), {}) }));
     const site = h("input", { type: "text", class: "mono", placeholder: "shop.example", autocomplete: "off" });
     const scopedBox = h("div", { hidden: true }, h("div", { class: "field" }, ...actions.map(({ box }) => h("div", null, box.el))), field(t("settings.tokenSite"), site, t("settings.tokenSiteHint")));
     kind.addEventListener("change", () => { scopedBox.hidden = kind.value !== "scoped"; });

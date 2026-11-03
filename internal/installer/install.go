@@ -455,6 +455,14 @@ func (in *Installer) stepPackages() (bool, string, error) {
 		}
 	}
 	cmd, name := in.packageManager()
+	// sqlite3 copies a SQLite site's database (a manifest's backups):
+	// read on the machine, in the site's jail, because a site's image
+	// seldom carries it. Its package has a name per distribution.
+	if _, err := in.Exec.LookPath("sqlite3"); err != nil {
+		if pkg := map[string]string{"apt-get": "sqlite3", "dnf": "sqlite", "apk": "sqlite", "pacman": "sqlite", "zypper": "sqlite3"}[name]; pkg != "" {
+			missing = append(missing, pkg)
+		}
+	}
 	// Libraries → package, per package manager: libatomic is what Node's
 	// official arm64 builds (the ones nvm downloads) link against, and a
 	// minimal Ubuntu on an Oracle aarch64 machine does not have it. Every
