@@ -361,6 +361,36 @@ func TestServeAnswersEverySectionOfTheAPI(t *testing.T) {
 	if code, _ := visit(false); code != 401 {
 		t.Errorf("a visit without the password got %d: the cache served past the door", code)
 	}
+	// The audience, through the whole chain: a browser opening a page is
+	// one visitor however many times it opens it, and a robot, a program
+	// wearing a browser's name, an image and a page that is not there are
+	// none of it.
+	open := func(path, ua string, navigate bool) int {
+		t.Helper()
+		req, _ := http.NewRequest("GET", "http://"+s.Listen+path, nil)
+		req.Host = "shop.example"
+		req.Header.Set("User-Agent", ua)
+		if navigate {
+			req.Header.Set("Sec-Fetch-Dest", "document")
+			req.Header.Set("Sec-Fetch-Mode", "navigate")
+			req.Header.Set("Accept-Language", "es-ES,es;q=0.9")
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	open("/", browser, true)
+	open("/", browser, true)
+	open("/", browser, false)
+	open("/missing.html", browser, true)
+	open("/", "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)", true)
+	open("/", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/130.0 Safari/537.36", true)
+	if code, body := get("/sites/shop.example/visits?days=1"); code != 200 || !strings.Contains(body, `"visits": 1,`) || !strings.Contains(body, `"pageviews": 2,`) || !strings.Contains(body, `"key": "linux"`) {
+		t.Errorf("the audience is not what was asked: %d %s", code, body)
+	}
 	if code, body := get("/sites/shop.example/security/blocks"); code != 200 || !strings.Contains(body, "GPTBot") || !strings.Contains(body, `".git/"`) {
 		t.Errorf("the refusals are not listed: %d %s", code, body)
 	}

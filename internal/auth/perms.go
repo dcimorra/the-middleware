@@ -47,6 +47,7 @@ var permRoutes = map[string][]string{
 		"GET " + siteBase + "/shot.png",
 		"GET " + siteBase + "/cache",
 		"GET " + siteBase + "/security/seen",
+		"GET " + siteBase + "/visits",
 		"GET " + siteBase + "/security/blocks",
 		"GET " + siteBase + "/resources",
 		"GET " + siteBase + "/download.zip",
