@@ -29,6 +29,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/audit"
 	"github.com/dcimorra/the-middleware/internal/auth"
 	"github.com/dcimorra/the-middleware/internal/autofix"
+	"github.com/dcimorra/the-middleware/internal/cgroups"
 	"github.com/dcimorra/the-middleware/internal/chat"
 	"github.com/dcimorra/the-middleware/internal/deps"
 	"github.com/dcimorra/the-middleware/internal/domains"
@@ -54,6 +55,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/repos"
 	"github.com/dcimorra/the-middleware/internal/settings"
 	"github.com/dcimorra/the-middleware/internal/shots"
+	"github.com/dcimorra/the-middleware/internal/sitegroups"
 	"github.com/dcimorra/the-middleware/internal/sites"
 	"github.com/dcimorra/the-middleware/internal/sitetoken"
 	"github.com/dcimorra/the-middleware/internal/update"
@@ -328,6 +330,12 @@ func buildWire(a *app.App) app.Hook {
 		in := installer.New(p)
 		in.Out = io.Discard
 		return in.Doctor()
+	})
+	srv.RegisterSiteResources(cgroups.ThisMachine(), func() bool { return sitegroups.Live.Load() != nil }, func(domain string) (cgroups.SiteMemory, bool) {
+		if t := sitegroups.Live.Load(); t != nil {
+			return t.Memory(domain)
+		}
+		return cgroups.SiteMemory{}, false
 	})
 	srv.RegisterRequirements(helper.InstallLog(helper.DefaultRunDir), func(ctx context.Context, browser bool) error {
 		_, err := helper.Dial("").InstallRun(ctx, browser)

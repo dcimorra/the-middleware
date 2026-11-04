@@ -42,6 +42,10 @@ func lockedKeys(m *manifest.Manifest) map[string]any {
 		// Other nodes' machines and this one's databases, opened to them.
 		"cluster": m.Cluster,
 		"replica": m.Replica,
+		// The site's budget on the machine, as run.docker is a
+		// container's: an account that could raise it could take the
+		// machine from every other site.
+		"limits": m.Limits,
 	}
 	// The agent's provider and model are the user's to pick among those
 	// the operator turned on (the chat picker writes them here on the
