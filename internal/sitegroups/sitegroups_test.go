@@ -348,8 +348,8 @@ func TestCgroupLiveAHandoverAtTheMemoryLimitDropsNoRequest(t *testing.T) {
 	close(stop)
 	wg.Wait()
 	sn, _ := h.eng.Lookup("full.test")
-	if body, _ := get(sn.Port, "/"); body != "build-1" {
-		t.Fatalf("serving %q, want the old generation", body)
+	if body, err := get(sn.Port, "/"); body != "build-1" {
+		t.Fatalf("serving %q (%v), want the old generation; %d of %d requests failed", body, err, failed, total)
 	}
 	if failed != 0 || total < 50 {
 		t.Fatalf("%d of %d requests failed across the handover", failed, total)

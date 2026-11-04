@@ -101,7 +101,7 @@ func (Process) Start(ctx context.Context, spec *manifest.Spec, port int, logFile
 		return nil, err
 	}
 	fmt.Fprintf(out, "\n--- %s middleware: start %s rev %s on port %d\n", time.Now().Format(time.RFC3339), spec.Domain, spec.Revision, port)
-	if err := cmd.Start(); err != nil {
+	if err := startMarked(cmd, isTrial(ctx)); err != nil {
 		return nil, err
 	}
 	p := &procInstance{cmd: cmd, pid: cmd.Process.Pid, port: port, revision: spec.Revision, domain: spec.Domain, logFile: logFile, started: time.Now(), done: make(chan error, 1)}
@@ -373,6 +373,41 @@ func (p *procInstance) PreferOOMKill(on bool) {
 	for _, pid := range descendants(p.pid) {
 		_ = os.WriteFile("/proc/"+strconv.Itoa(pid)+"/oom_score_adj", v, 0o644)
 	}
+}
+
+type trialKey struct{}
+
+// WithTrial marks the instances started under ctx as on trial: born with
+// TrialScore rather than given it once running. Marking it after Start
+// lost a race on the runner: a new generation that takes its memory at
+// once had reached the limit, with a score of 0, before the mark was
+// written, and the kernel killed the generation serving.
+func WithTrial(ctx context.Context) context.Context { return context.WithValue(ctx, trialKey{}, true) }
+
+func isTrial(ctx context.Context) bool { v, _ := ctx.Value(trialKey{}).(bool); return v }
+
+// forkMu holds the supervisor's own score while a trial forks.
+var forkMu sync.Mutex
+
+// startMarked starts cmd; on trial the child inherits TrialScore from the
+// supervisor, whose score is raised for the fork and put back at once (a
+// score may go back down to where it started without privilege). The
+// supervisor lives in house/, outside every site's group, so a site's
+// limit cannot pick it in that moment; what forks beside it meanwhile
+// inherits the mark too and is only a likelier victim.
+func startMarked(cmd *exec.Cmd, trial bool) error {
+	if !trial {
+		return cmd.Start()
+	}
+	forkMu.Lock()
+	defer forkMu.Unlock()
+	const self = "/proc/self/oom_score_adj"
+	was, err := os.ReadFile(self)
+	if err != nil || os.WriteFile(self, []byte(strconv.Itoa(TrialScore)), 0o644) != nil {
+		return cmd.Start()
+	}
+	defer os.WriteFile(self, was, 0o644)
+	return cmd.Start()
 }
 
 // descendants is pid and every process under it, from /proc.
