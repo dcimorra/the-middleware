@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/dcimorra/the-middleware/internal/cgroups"
+	"github.com/dcimorra/the-middleware/internal/fsx"
 )
 
 // The supervisor splits its unit's cgroup into the house, the agents and
@@ -52,4 +55,28 @@ func (in *Installer) stepCgroups() (bool, string, error) {
 		return true, "", err
 	}
 	return true, "service may split its cgroup", nil
+}
+
+// checkCgroups says whether the running supervisor did split its cgroup,
+// which is what the installer's step cannot: the step writes the unit,
+// and only the supervisor started after it makes sites/. A machine where
+// «Instalar requisitos» ended well and nobody restarted the house looks
+// ready to every other check and still runs every site in house/.
+func (in *Installer) checkCgroups() Check {
+	const name = "cgroups"
+	if _, err := os.Stat(filepath.Join(cgroups.Root, "cgroup.controllers")); err != nil {
+		return Check{name, true, "no unified cgroup hierarchy here: sites share the machine"}
+	}
+	cg, err := in.Exec.Run("systemctl", "show", "-p", "ControlGroup", "--value", ServiceUnit)
+	cg = strings.TrimSpace(cg)
+	if err != nil || cg == "" {
+		return Check{name, true, "the service is not running under systemd: nothing to split"}
+	}
+	if _, err := os.Stat(filepath.Join(cgroups.Root, cg, cgroups.SitesName)); err == nil {
+		return Check{name, true, "agents and each site have their own group"}
+	}
+	if unit, err := os.ReadFile(in.pathFor(ServiceUnit)); err == nil && unitNeedsCgroups(string(unit)) && !fsx.Exists(filepath.Join(in.Paths.SystemdDir, CgroupsDropIn)) {
+		return Check{name, false, "the service unit keeps the supervisor from its cgroup: run `middleware install` again (or Install requirements on the panel), then restart the house"}
+	}
+	return Check{name, false, "the unit allows it but the supervisor has not split its cgroup: restart the house"}
 }

@@ -21,14 +21,27 @@ import (
 // longer, and the run was cut (a reboot, a kill) and is said as such.
 const requirementsStale = 30 * time.Minute
 
+// RequirementsStep is one line of the run's report. Optional is a step
+// that failed without stopping the run (its line starts with "!"): the
+// house works without it, and it is still not what was asked.
+type RequirementsStep struct {
+	Name     string `json:"name"`
+	OK       bool   `json:"ok"`
+	Optional bool   `json:"optional,omitempty"`
+	Detail   string `json:"detail"`
+}
+
 // RequirementsStatus is what GET /system/requirements answers.
 type RequirementsStatus struct {
 	// State: none, running, finished, restart (finished, and the house must
 	// restart to see docker's group), failed, interrupted.
-	State   string    `json:"state"`
-	Log     string    `json:"log"`
-	Error   string    `json:"error,omitempty"`
-	Updated time.Time `json:"updated,omitzero"`
+	State string `json:"state"`
+	// Steps are the run's ✓ and ✗ lines, read from the log: what the
+	// panel checks a run by on every node at once without reading logs.
+	Steps   []RequirementsStep `json:"steps"`
+	Log     string             `json:"log"`
+	Error   string             `json:"error,omitempty"`
+	Updated time.Time          `json:"updated,omitzero"`
 }
 
 func (s *Server) requirementsStatus(path string) RequirementsStatus {
@@ -41,7 +54,7 @@ func (s *Server) requirementsStatus(path string) RequirementsStatus {
 	if len(text) > 256<<10 {
 		text = "[…]\n" + text[len(text)-256<<10:]
 	}
-	st := RequirementsStatus{Log: text, Updated: info.ModTime(), State: "running"}
+	st := RequirementsStatus{Log: text, Updated: info.ModTime(), State: "running", Steps: stepsOf(text)}
 	last := ""
 	if lines := strings.Split(strings.TrimSpace(text), "\n"); len(lines) > 0 {
 		last = strings.TrimSpace(lines[len(lines)-1])
@@ -96,4 +109,25 @@ func (s *Server) RegisterRequirements(log string, run func(ctx context.Context, 
 		}
 		return RequirementsStatus{State: "running"}, nil
 	})
+}
+
+// stepsOf reads an installer's report lines ("✓ name  detail", "✗" a
+// failed step, "!" an optional one that failed; the name
+// padded to its column; installer.Check.String and Install print them).
+// A name too long for the column has no padding to split at and is kept
+// whole.
+func stepsOf(log string) []RequirementsStep {
+	out := []RequirementsStep{}
+	for _, line := range strings.Split(log, "\n") {
+		mark, rest, found := strings.Cut(line, " ")
+		if !found || (mark != "✓" && mark != "✗" && mark != "!") {
+			continue
+		}
+		name, detail := rest, ""
+		if len(rest) > installer.NameColumn && rest[installer.NameColumn] == ' ' {
+			name, detail = rest[:installer.NameColumn], rest[installer.NameColumn:]
+		}
+		out = append(out, RequirementsStep{Name: strings.TrimSpace(name), OK: mark == "✓", Optional: mark == "!", Detail: strings.TrimSpace(detail)})
+	}
+	return out
 }

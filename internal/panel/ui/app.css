@@ -725,13 +725,13 @@ dialog form.dlg { display: flex; flex-direction: column; max-height: calc(100dvh
 .checklist .mark { flex: none; width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
 .checklist .mark .ico { width: 12px; height: 12px; stroke-width: 2.5; }
 .checklist .ok .mark { background: var(--ok-soft); color: var(--ok); }
-.checklist .skip .mark { background: var(--muted-soft); color: var(--text-2); }
+.checklist .skipped .mark { background: var(--muted-soft); color: var(--text-2); }
 .checklist .fail .mark { background: var(--bad-soft); color: var(--bad); }
 .checklist .pending .mark { border: 2px solid var(--border-strong); }
 .checklist .word { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 600; width: 36px; flex: none; margin-top: 2px; }
 .checklist .ok .word { color: var(--ok); }
 .checklist .fail .word { color: var(--bad); }
-.checklist .skip .word { color: var(--text-3); }
+.checklist .skipped .word { color: var(--text-3); }
 .checklist .text { overflow-wrap: anywhere; }
 
 /* ---------- JSON editor ---------- */
@@ -2496,3 +2496,13 @@ details.site-env[open] > summary { margin-bottom: 10px; }
 .backup-card .error-box { display: block; margin: 0; }
 .backup-card .status { display: flex; flex-wrap: wrap; white-space: normal; overflow-wrap: anywhere; margin: 0; min-width: 0; }
 .backup-card p { margin: 0; }
+/* Requirements on every node: a row per node, its state beside its
+   name, what went wrong under it, its buttons at the end. */
+.req-all { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.req-all-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 8px 10px; border-radius: var(--radius); background: var(--surface-2); }
+.req-all-head .badge { white-space: normal; }
+.req-all-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+.req-all-body { grid-column: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.req-all-body:empty { display: none; }
+.req-all-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: start; justify-content: flex-end; }
+@media (max-width: 600px) { .req-all-row { grid-template-columns: minmax(0, 1fr); } .req-all-actions { grid-column: 1; grid-row: auto; justify-content: flex-start; } }

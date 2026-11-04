@@ -24,6 +24,10 @@ type Check struct {
 	Detail string
 }
 
+// NameColumn is the width a step's or check's name is padded to in the
+// printed lines, which the panel splits at (api.stepsOf).
+const NameColumn = 26
+
 // String is the line as printed: a mark, the name in a fixed column, the
 // detail. Fixed width so the eye can scan the marks.
 func (c Check) String() string {
@@ -31,7 +35,7 @@ func (c Check) String() string {
 	if !c.OK {
 		mark = "✗"
 	}
-	return fmt.Sprintf("%s %-26s %s", mark, c.Name, c.Detail)
+	return fmt.Sprintf("%s %-*s %s", mark, NameColumn, c.Name, c.Detail)
 }
 
 // Doctor runs every check and writes one line each. It returns the checks
@@ -61,6 +65,7 @@ func (in *Installer) Doctor() ([]Check, bool) {
 		in.checkNode(),
 		in.checkWireGuard(),
 		in.checkJail(),
+		in.checkCgroups(),
 		in.checkDisk(),
 	)
 	all := true

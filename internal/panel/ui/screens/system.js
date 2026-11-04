@@ -5,6 +5,7 @@
 import { icon } from "../lib/icons.js";
 import { vitalsCard } from "./system-vitals.js";
 import { requirementsCard } from "./system-requirements.js";
+import { requirementsAllCard } from "./system-requirements-all.js";
 import { doctorCard } from "./system-doctor.js";
 import { leftoversCard } from "./system-leftovers.js";
 import { h, clear, append, fmtBytes, fmtDuration } from "../lib/dom.js";
@@ -26,6 +27,7 @@ export function systemScreen() {
   const updateCard = h("div", { class: "card sys-card" });
   const vitals = vitalsCard();
   const reqs = requirementsCard();
+  const reqsAll = requirementsAllCard();
   const doctor = doctorCard();
   const leftovers = leftoversCard();
   // In the order an operator comes for them: how the machine is now, the
@@ -36,7 +38,7 @@ export function systemScreen() {
     stats, vitals.el,
     section("software", h("div", { class: "sys-grid" }, updateCard, info)),
     section("running", procs, portsCard),
-    section("care", h("div", { class: "sys-grid sys-grid-3" }, doctor.el, reqs.el, leftovers.el)),
+    section("care", reqsAll.el, h("div", { class: "sys-grid sys-grid-3" }, doctor.el, reqs.el, leftovers.el)),
   );
   const subs = [];
   let timer = null;
@@ -202,5 +204,5 @@ export function systemScreen() {
   subs.push(onEvent("middleware.", all));
   subs.push(onEvent("update.", () => renderUpdate(false).catch(() => {})));
   subs.push(onEvent("instance.", () => { renderProcs().catch(() => {}); renderPorts().catch(() => {}); }));
-  return { el: p.el, destroy() { clearInterval(timer); vitals.destroy(); reqs.destroy(); subs.forEach((u) => u()); } };
+  return { el: p.el, destroy() { clearInterval(timer); vitals.destroy(); reqs.destroy(); reqsAll.destroy(); subs.forEach((u) => u()); } };
 }

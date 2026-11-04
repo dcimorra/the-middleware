@@ -163,19 +163,19 @@ func (in *Installer) runSteps(steps []Step) (Report, error) {
 			rep.Failed = append(rep.Failed, s.Name)
 			var oe optionalError
 			errors.As(err, &oe)
-			fmt.Fprintf(in.Out, "! %-26s %s\n", s.Name, shortErr(err, oe.cost))
+			fmt.Fprintf(in.Out, "! %-*s %s\n", NameColumn, s.Name, shortErr(err, oe.cost))
 		case err != nil:
 			rep.Failed = append(rep.Failed, s.Name)
-			fmt.Fprintf(in.Out, "✗ %-26s %v\n", s.Name, err)
+			fmt.Fprintf(in.Out, "✗ %-*s %v\n", NameColumn, s.Name, err)
 			return rep, fmt.Errorf("%s: %w", s.Name, err)
 		case changed:
 			rep.Changed = append(rep.Changed, s.Name)
-			fmt.Fprintf(in.Out, "✓ %-26s %s\n", s.Name, detail)
+			fmt.Fprintf(in.Out, "✓ %-*s %s\n", NameColumn, s.Name, detail)
 		default:
 			if detail == "" {
 				detail = "unchanged"
 			}
-			fmt.Fprintf(in.Out, "✓ %-26s %s\n", s.Name, detail)
+			fmt.Fprintf(in.Out, "✓ %-*s %s\n", NameColumn, s.Name, detail)
 		}
 	}
 	return rep, nil
