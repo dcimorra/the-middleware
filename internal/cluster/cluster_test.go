@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -658,4 +659,90 @@ func TestAServicesSiteReplicatesItsWebAndKeepsItsDatabaseOnThePrimary(t *testing
 		}
 		return seen["alpha"] > 0 && seen["beta"] > 0
 	})
+}
+
+// A site with claude_api has copies, and a copy's processes call the site
+// door through the primary: the copy keeps no door rules of its own, its
+// address goes through the mesh, and the primary serves the call with the
+// site's token put on it, whatever the copy sent.
+func TestACopyCallsTheSiteDoorThroughThePrimary(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	port := freePort(t)
+	a := newHouse(t, ctx, "alpha", port)
+	b := newHouse(t, ctx, "beta", port)
+	join(t, ctx, a, b)
+	a.cl.SetDoor(func(site string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "%s %s %s", site, r.URL.Path, r.Header.Get("Authorization"))
+		})
+	})
+	writeSite(t, a.root, "ai.example", map[string]any{"version": 2, "static": map[string]any{"root": "."},
+		"claude_api": map[string]any{}, "cluster": map[string]any{"replicas": 1}}, map[string]string{"index.html": "x"})
+	replica := filepath.Join(b.root, "sites", "ai.example")
+	var man *manifest.Manifest
+	waitFor(t, "the copy to be in place", 15*time.Second, func() bool {
+		m, err := manifest.Load(replica)
+		man = m
+		return err == nil && m.IsReplica()
+	})
+	if !man.Replica.Door || man.ClaudeAPI != nil {
+		t.Fatalf("the copy keeps door rules of its own, or no door: %+v %+v", man.Replica, man.ClaudeAPI)
+	}
+	env := b.cl.DoorEnv("ai.example", man)
+	if env["MIDDLEWARE_TOKEN"] != DoorToken || !strings.HasPrefix(env["MIDDLEWARE_API"], "http://127.0.0.1:") {
+		t.Fatalf("env %v", env)
+	}
+	req, _ := http.NewRequest("GET", env["MIDDLEWARE_API"]+"/api/v1/site/info", nil)
+	req.Header.Set("Authorization", "Bearer "+env["MIDDLEWARE_TOKEN"])
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if string(body) != "ai.example /api/v1/site/info Bearer "+DoorToken {
+		t.Fatalf("the primary's door saw %q", body)
+	}
+	// Two calls on one connection, as an HTTP client keeps it.
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	// A site of the primary without claude_api opens no door to a copy.
+	alpha, _ := b.mesh.Member(a.mesh.Self().ID)
+	writeSite(t, a.root, "plain.example", map[string]any{"version": 2, "static": map[string]any{"root": "."},
+		"cluster": map[string]any{"replicas": 1}}, map[string]string{"index.html": "x"})
+	waitFor(t, "plain's copy to be placed", 15*time.Second, func() bool {
+		a.cl.mu.Lock()
+		defer a.cl.mu.Unlock()
+		return len(a.cl.placement["plain.example"]) == 1
+	})
+	tctx, tcancel := context.WithTimeout(ctx, 5*time.Second)
+	defer tcancel()
+	if _, err := b.mesh.Tunnel(tctx, alpha, "plain.example", DoorTarget); err == nil {
+		t.Fatal("a site without claude_api opened its door to a copy")
+	}
+}
+
+// A copy's door keeps its address across a restart of the keeper: its
+// processes are re-adopted with the environment they were started with.
+func TestACopysDoorKeepsItsAddressAcrossARestart(t *testing.T) {
+	root := t.TempDir()
+	man := &manifest.Manifest{Version: 2, Replica: &manifest.Replica{Of: "p", Revision: "r", Door: true}}
+	first := New(Options{Root: root, Sites: fakeSites{}})
+	env := first.DoorEnv("ai.example", man)
+	if env == nil {
+		t.Fatal("no door")
+	}
+	first.closeDoors()
+	again := New(Options{Root: root, Sites: fakeSites{}})
+	defer again.closeDoors()
+	if got := again.DoorEnv("ai.example", man); got["MIDDLEWARE_API"] != env["MIDDLEWARE_API"] {
+		t.Fatalf("moved: %v, was %v", got, env)
+	}
+	if again.DoorEnv("ai.example", &manifest.Manifest{Version: 2, Replica: &manifest.Replica{Of: "p"}}) != nil {
+		t.Fatal("a copy without a door got one")
+	}
 }

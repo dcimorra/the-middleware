@@ -124,7 +124,12 @@ func replicaManifest(raw []byte, from nodes.Member, req CommitRequest) (*manifes
 	if primary == "" {
 		primary = from.Name
 	}
-	man.Replica = &manifest.Replica{Of: from.ID, Primary: primary, Revision: req.Revision, Gateway: gw, Keep: keep}
+	// The door's rules are the primary's, read there at every call: a
+	// copy that kept them would open a door of its own here, with this
+	// node's token and this node's spending.
+	door := man.ClaudeAPI != nil
+	man.ClaudeAPI = nil
+	man.Replica = &manifest.Replica{Of: from.ID, Primary: primary, Revision: req.Revision, Gateway: gw, Keep: keep, Door: door}
 	return man, man.Validate()
 }
 

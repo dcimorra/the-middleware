@@ -76,6 +76,11 @@ type Replica struct {
 	// Keep are the services that run only on the primary
 	// (KeptServices): not started here, reached through the mesh.
 	Keep []string `json:"keep,omitempty"`
+	// Door is the primary's claude_api: the copy's processes call the
+	// site door at an address of this node that goes through the mesh
+	// to the primary's, which puts the site's token on each call. The
+	// token and the spending stay the primary's; the copy holds neither.
+	Door bool `json:"door,omitempty"`
 }
 
 // Keeps says service runs only on the primary.
@@ -149,6 +154,19 @@ func (c *Cluster) SpillAt() float64 {
 // Spreads says the requests are always shared, not only on overflow.
 func (c *Cluster) Spreads() bool { return c != nil && c.Mode == ClusterSpread }
 
+// HasContainers says some piece of the site runs in a container.
+func (m *Manifest) HasContainers() bool {
+	if m.Run != nil && m.Run.Runtime == "docker" {
+		return true
+	}
+	for _, sv := range m.Services {
+		if sv != nil && sv.Run != nil && sv.Run.Runtime == "docker" {
+			return true
+		}
+	}
+	return false
+}
+
 // IsReplica says the site is another node's copy.
 func (m *Manifest) IsReplica() bool { return m != nil && m.Replica != nil }
 
@@ -184,8 +202,15 @@ func (m *Manifest) Blockers() []string {
 	if len(m.Needs) > 0 {
 		out = append(out, "it needs other sites of this node, which the other nodes do not have")
 	}
-	if m.ClaudeAPI != nil || m.Claude {
-		out = append(out, "it talks to an AI through this house, whose token and spending are this node's")
+	// claude_api goes through the primary (Replica.Door), but only from
+	// a process: a container's 127.0.0.1 is its own, as for the database
+	// gateway. The subscription token is a credential of this machine,
+	// and is not handed to another one.
+	if m.ClaudeAPI != nil && m.HasContainers() {
+		out = append(out, "it talks to an AI through this house from a container, which cannot reach the address its copies would call it at")
+	}
+	if m.Claude {
+		out = append(out, "it runs the AI's CLI with this house's subscription, a credential that stays on this machine (claude_api goes through the primary and can have copies)")
 	}
 	return out
 }

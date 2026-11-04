@@ -915,6 +915,13 @@ func wireSiteDoor(a *app.App, srv *api.Server, set *moduleSet) {
 				mounts = append(mounts, runDir)
 			}
 		}
+		// A copy of another node's site calls the site door through the
+		// primary, with the primary's token and spending.
+		if theCluster != nil {
+			for k, v := range theCluster.DoorEnv(domain, m) {
+				env[k] = v
+			}
+		}
 		if m.Claude && set != nil {
 			// The house's subscription token, for a site that runs the CLI
 			// itself: it reaches as far as the subscription does.
@@ -985,6 +992,10 @@ func wireSiteDoor(a *app.App, srv *api.Server, set *moduleSet) {
 	}
 	_ = os.Chmod(sock, 0o666)
 	h := srv.Panel()
+	if theCluster != nil {
+		// A copy of one of this node's sites calls its door through here.
+		theCluster.SetDoor(func(site string) http.Handler { return doorForCopies(tokens, site, h) })
+	}
 	door := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := api.SiteDoorPath(r.URL.Path); !ok {
 			http.NotFound(w, r)
@@ -993,6 +1004,28 @@ func wireSiteDoor(a *app.App, srv *api.Server, set *moduleSet) {
 		h.ServeHTTP(w, r)
 	})
 	go func() { _ = (&http.Server{Handler: door, ReadHeaderTimeout: 15 * time.Second}).Serve(ln) }()
+}
+
+// doorForCopies is the primary's end of a copy's door: only the door's
+// routes, with this site's token on them whatever the copy sent, so a
+// copy reaches no other site's door and nothing of the panel.
+func doorForCopies(tokens *sitetoken.Keys, site string, h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, ok := api.SiteDoorPath(r.URL.Path)
+		tok, err := tokens.Token(site)
+		if !ok || err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		r.Header.Del("X-Middleware-Site")
+		r.Header.Set("Authorization", "Bearer "+tok)
+		// The call is a site process's, as direct as one on this
+		// machine; it arrives from the other node's mesh address, which
+		// the panel's address lists would refuse, as they would have
+		// refused the site door before it was let past them on loopback.
+		r.RemoteAddr = "127.0.0.1:0"
+		h.ServeHTTP(w, r)
+	})
 }
 
 // doorEnv is what a process of a site with claude_api needs to call the
