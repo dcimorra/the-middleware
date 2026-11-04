@@ -4,7 +4,9 @@ import (
 	"os"
 
 	"github.com/dcimorra/the-middleware/internal/cgroups"
+	"github.com/dcimorra/the-middleware/internal/manifest"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -144,5 +146,19 @@ func TestAnOldEightBecomesComputedAndAChosenNumberStays(t *testing.T) {
 	}
 	if again, _ := Load(root); again.Agents.MaxConcurrent != 8 || again.Format != Format {
 		t.Fatalf("after save: %+v", again)
+	}
+}
+
+// The house's default budget is held to a manifest's rules, and absent
+// by default: no site gets a ceiling it did not ask for on an upgrade.
+func TestTheSitesDefaultLimitsAreEmptyAndCheckedLikeAManifest(t *testing.T) {
+	if d := Defaults(); d.Sites.DefaultLimits != nil {
+		t.Fatalf("default limits %+v", d.Sites.DefaultLimits)
+	}
+	if err := (Sites{DefaultLimits: &manifest.Limits{Memory: "2g", Pids: 2048}}).Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Sites{DefaultLimits: &manifest.Limits{Memory: "512m", MemoryHigh: "1g"}}).Validate(); err == nil || !strings.Contains(err.Error(), "sites.default_limits") {
+		t.Fatalf("high above max: %v", err)
 	}
 }

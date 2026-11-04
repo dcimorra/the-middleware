@@ -32,11 +32,13 @@ jobs:
       # test binary started in its house/ (internal/cgroups).
       - name: cgroups, live
         run: |
-          go test -c -o "$RUNNER_TEMP/runtime.test" ./internal/runtime
-          sudo systemd-run --wait --pipe --collect --quiet \
-            -p Delegate=yes -p DelegateSubgroup=house \
-            --setenv=MIDDLEWARE_TEST_CGROUPS=1 \
-            "$RUNNER_TEMP/runtime.test" -test.run Cgroup -test.v
+          for pkg in runtime sitegroups; do
+            go test -c -o "$RUNNER_TEMP/$pkg.test" ./internal/$pkg
+            sudo systemd-run --wait --pipe --collect --quiet \
+              -p Delegate=yes -p DelegateSubgroup=house \
+              --setenv=MIDDLEWARE_TEST_CGROUPS=1 \
+              "$RUNNER_TEMP/$pkg.test" -test.run Cgroup -test.v
+          done
       - name: build
         run: go build -o middleware ./cmd/middleware
       - name: no third-party dependencies in the core

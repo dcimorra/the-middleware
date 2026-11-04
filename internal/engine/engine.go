@@ -54,6 +54,7 @@ type Engine struct {
 	aliases        map[string]string
 	aliasConflicts map[string]string // said once, until resolved
 	siteEnv        atomic.Pointer[SiteEnvFunc]
+	onManifest     atomic.Pointer[func(domain string, m *manifest.Manifest)]
 	// wg counts the work Run waits for on its way out. Every Add happens
 	// under mu, and none once closing is set, so an operator's restart
 	// that arrives during the shutdown cannot Add to a Wait in progress.
@@ -314,6 +315,15 @@ func (e *Engine) SetSiteEnv(f SiteEnvFunc) {
 	e.siteEnv.Store(&f)
 }
 
+// SetOnManifest installs a function told every manifest a reconcile
+// reads, before anything of the site starts: what has to be in place
+// before the site's first process (its cgroup's limits) and follows the
+// manifest live. It runs on every tick for every site, so it must be
+// cheap when nothing changed.
+func (e *Engine) SetOnManifest(f func(domain string, m *manifest.Manifest)) {
+	e.onManifest.Store(&f)
+}
+
 // tick is one reconcile pass.
 func (e *Engine) tick(ctx context.Context) {
 	entries, err := os.ReadDir(e.opts.SitesDir)
@@ -402,6 +412,9 @@ func (e *Engine) reconcile(ctx context.Context, domain, dir string) {
 	s.Manifest = m
 	s.Mode = m.ModeFor(domain)
 	e.mu.Unlock()
+	if f := e.onManifest.Load(); f != nil {
+		(*f)(domain, m)
+	}
 
 	e.reconcileWorkers(ctx, s, m)
 
@@ -560,11 +573,20 @@ func (e *Engine) handover(ctx context.Context, s *Site, spec *manifest.Spec, act
 	logFile := filepath.Join(e.opts.DataDir, "logs", domain, "site.log")
 	home := filepath.Join(e.opts.DataDir, "homes", domain)
 	e.opts.Bus.Emit(events.Event{Type: "instance.starting", Subject: domain, Actor: actor, Data: map[string]any{"port": port, "revision": spec.Revision}})
+	e.mu.RLock()
+	handing := s.Instance != nil
+	e.mu.RUnlock()
 	inst, err := rt.Start(ctx, spec, port, logFile, home)
 	if err != nil {
 		e.opts.Ports.Release(port)
 		e.fail(s, err)
 		return
+	}
+	// Both generations share the site's memory budget while the new one
+	// starts: if it does not fit, the kernel is to kill it, not the one
+	// serving (runtime.TrialScore).
+	if handing {
+		preferOOMKill(inst, true)
 	}
 	timeout := spec.Health.Timeout.Or(60 * time.Second)
 	if err := runtime.WaitReady(ctx, inst, spec.Health, timeout); err != nil {
@@ -604,9 +626,14 @@ func (e *Engine) handover(ctx context.Context, s *Site, spec *manifest.Spec, act
 	e.saveState(inst.State())
 	e.mu.Unlock()
 	if old == nil {
+		preferOOMKill(inst, false)
 		e.opts.Bus.Emit(events.Event{Type: "instance.started", Subject: domain, Actor: actor, Data: map[string]any{"port": port, "revision": spec.Revision}})
 		return
 	}
+	// Now the old one drains and the new one serves: the mark changes
+	// hands.
+	preferOOMKill(inst, false)
+	preferOOMKill(old, true)
 	e.opts.Bus.Emit(events.Event{Type: "handover.switched", Subject: domain, Actor: actor, Data: map[string]any{"from": old.Port(), "to": port, "revision": spec.Revision}})
 	drain := spec.Drain.Or(8 * time.Second)
 	began := time.Now()
@@ -620,6 +647,15 @@ func (e *Engine) handover(ctx context.Context, s *Site, spec *manifest.Spec, act
 	_ = old.Stop(stopCtx, 5*time.Second)
 	e.opts.Ports.Release(old.Port())
 	e.opts.Bus.Emit(events.Event{Type: "handover.done", Subject: domain, Actor: actor, Data: map[string]any{"drained": time.Since(began).Round(time.Millisecond).String()}})
+}
+
+// preferOOMKill marks an instance as the kernel's first victim in its
+// site's cgroup, where the runtime can (a process; a container lives in
+// the daemon's cgroup with its own limit).
+func preferOOMKill(inst runtime.Instance, on bool) {
+	if p, ok := inst.(interface{ PreferOOMKill(bool) }); ok {
+		p.PreferOOMKill(on)
+	}
 }
 
 func (e *Engine) fail(s *Site, err error) {

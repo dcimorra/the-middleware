@@ -236,6 +236,45 @@ site, with what was tried and the last lines of the log; it writes a
 `Dockerfile` and `run.docker` (agents cannot run docker), and the button tries
 that next. Going back into a kept container takes the same path.
 
+## Limits: `limits`
+
+A site's budget, for every process-runtime piece of it together:
+
+```json
+"limits": { "memory": "1g", "memory_high": "768m", "cpus": 1.5, "cpu_weight": 100, "pids": 2048 }
+```
+
+Each site has a cgroup of its own, `sites/<domain>/` beside the house's
+(see [architecture.md](architecture.md#resources)): its instances, its
+process workers and services, and its tasks run inside it, and the block
+is what that group may hold. `memory` is the ceiling (past it the kernel
+kills inside the site, a `site.oom` event says so, with the limit and what
+the site held, and the site does not swap); `memory_high` is where the kernel
+starts squeezing without killing, at most `memory`; `cpus` caps the site in
+cores; `pids` caps its processes (4096 when unset). Sizes are written as
+`docker.memory` is.
+
+`cpu_weight` is the cgroup scale, **1 to 10000 with 100 an equal share**:
+every site has 100 with no manifest at all, so CPU is shared per site, not
+per process, and a site with thirty processes no longer has thirty shares.
+`docker.cpu_weight` is docker's scale, where 1024 is the default share: the
+two are different numbers on purpose, each the scale of what reads it.
+
+The ceiling is the site's, whatever holds it. **During a handover** the old
+and new generation run at once in the same group, so `memory` has to cover
+both: a new generation that does not fit is the one the kernel kills (it is
+marked as the first victim while it starts, and the draining one after the
+switch), fails its health check, and the old one keeps serving.
+
+The block applies to process-runtime pieces: a docker piece lives in the
+daemon's cgroup and keeps `docker.*`. Changes take effect live, on the next
+reconcile, without a restart. Whatever the block leaves out comes from the
+house's `sites.default_limits` in the settings (empty by default: no memory
+ceiling unless the operator sets one). Commands run for the site
+(`npm install`, migrations) are not inside the budget. Without a delegated
+cgroup (a unit from an old install, a container) the block is read and
+validated and has no effect.
+
 ## Node
 
 A command that wants Node (`node`, `npm`, `npx`, `pnpm`, `yarn`,

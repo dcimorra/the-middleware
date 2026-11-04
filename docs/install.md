@@ -137,7 +137,10 @@ restarts the service (the sites keep running, see [upgrade.md](upgrade.md)).
 The rendered units are also checked in under [`systemd/`](../systemd/) so you
 can read them before installing. The comments in them say why each line is
 what it is; the one that matters most is `KillMode=process`, which is what
-lets the sites outlive a restart of the supervisor.
+lets the sites outlive a restart of the supervisor. `Delegate=cpu memory pids`
+hands the unit's cgroup to the supervisor, which splits it into the house,
+the agents and one group per site ([architecture.md](architecture.md#resources));
+an older unit without `pids` still works, without the per-site process cap.
 
 Flags: `--root <dir>` (default `/srv/middleware`, or `$MIDDLEWARE_ROOT`),
 `--user <name>` (default: you), `--no-helper` (skip the privileged helper;

@@ -14,6 +14,7 @@ import (
 
 	"github.com/dcimorra/the-middleware/internal/cgroups"
 	"github.com/dcimorra/the-middleware/internal/fsx"
+	"github.com/dcimorra/the-middleware/internal/manifest"
 )
 
 // Format is the file's shape. A file without it was written before
@@ -53,7 +54,21 @@ type Settings struct {
 	Cache Cache `json:"cache"`
 	// Update is whether this program updates itself (internal/update).
 	Update Update `json:"update"`
+	// Sites is what every site gets that its manifest does not say.
+	Sites Sites `json:"sites"`
 }
+
+// Sites holds the house-wide defaults of the sites' budgets.
+type Sites struct {
+	// DefaultLimits is every site's cgroup budget where its manifest's
+	// limits block leaves a field out. Empty by default: a memory ceiling
+	// guessed for everyone would kill some working site on the upgrade
+	// that brought it, so the operator sets one knowing the sites.
+	DefaultLimits *manifest.Limits `json:"default_limits,omitempty"`
+}
+
+// Validate holds the defaults to a manifest's rules.
+func (s Sites) Validate() error { return s.DefaultLimits.Validate("sites.default_limits") }
 
 // Update is the self-update. The newest release is looked for every
 // EveryMinutes (an hour unless set); one found is installed by itself only

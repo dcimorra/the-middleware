@@ -427,12 +427,23 @@ say why rather than working around it. Files a copy writes into its folder
 house writes it on the copies. `GET /api/v1/sites/<domain>/cluster` says
 where the copies are and how they are. Details: docs/cluster.md.
 
+### A site's budget: `limits`
+
+`"limits": { "memory": "1g", "memory_high": "768m", "cpus": 1.5, "cpu_weight": 100, "pids": 2048 }`
+is what every process-runtime piece of the site (instances, process
+workers and services, tasks) may hold together, in the site's own cgroup;
+a docker piece keeps `docker.*`. `cpu_weight` is 1..10000 with 100 an equal
+share (not docker's 1024). During a deploy both generations run inside the
+same `memory`, so leave room for two: a new one that does not fit is killed
+and fails its health check while the old one serves. A kill at the ceiling
+is a `site.oom` event: read it before raising the limit. Applied live.
+
 ### Live versus restart
 
 The **revision** hashes what the instance was born from: resolved command,
 resolved environment (`env`, `env_files` contents, `env_from_file` contents),
 runtime and docker settings. Changing any of those hands the site over.
-`access`, `waf`, `headers`, `cache`, `hold`, `disabled`, `force_https` are applied live and
+`access`, `waf`, `headers`, `cache`, `hold`, `disabled`, `force_https`, `limits` are applied live and
 touch no process.
 
 ### `disabled` and `hold`
