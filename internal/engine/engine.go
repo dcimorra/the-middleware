@@ -576,7 +576,11 @@ func (e *Engine) handover(ctx context.Context, s *Site, spec *manifest.Spec, act
 	e.mu.RLock()
 	handing := s.Instance != nil
 	e.mu.RUnlock()
-	inst, err := rt.Start(ctx, spec, port, logFile, home)
+	startCtx := ctx
+	if handing {
+		startCtx = runtime.WithTrial(ctx)
+	}
+	inst, err := rt.Start(startCtx, spec, port, logFile, home)
 	if err != nil {
 		e.opts.Ports.Release(port)
 		e.fail(s, err)

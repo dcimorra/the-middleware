@@ -205,7 +205,8 @@ func shortErr(err error, cost string) string {
 // ownership of what it made as root. No unit, no binary, no restart: what
 // the panel may start (the helper's requirements.install). It says whether the
 // supervisor must restart to see what changed: the operator added to
-// docker's group, or what the sites' jails need (stepJail).
+// docker's group, what the sites' jails need (stepJail), or the unit's
+// cgroup (stepCgroups).
 func (in *Installer) Requirements() (Report, bool, error) {
 	if err := in.defaults(); err != nil {
 		return Report{}, false, err
@@ -213,7 +214,7 @@ func (in *Installer) Requirements() (Report, bool, error) {
 	if os.Geteuid() == 0 && in.Params.User == "root" {
 		return Report{}, false, errors.New("refusing to install for root")
 	}
-	dockerChanged, jailChanged := false, false
+	dockerChanged, jailChanged, cgroupsChanged := false, false, false
 	rep, err := in.runSteps([]Step{
 		{"package manager", in.stepPackageManager},
 		{"git, curl, wireguard, nftables, libatomic", in.stepPackages},
@@ -230,9 +231,14 @@ func (in *Installer) Requirements() (Report, bool, error) {
 			jailChanged = c
 			return c, d, err
 		})},
+		{"cgroups", optional("agents and sites share the house's CPU and memory", func() (bool, string, error) {
+			c, d, err := in.stepCgroups()
+			cgroupsChanged = c
+			return c, d, err
+		})},
 		{"ownership", in.stepOwnership},
 	})
-	return rep, dockerChanged || jailChanged, err
+	return rep, dockerChanged || jailChanged || cgroupsChanged, err
 }
 
 // Install runs every step in order and stops at the first failure, which is
@@ -396,7 +402,7 @@ func (in *Installer) filePaths() []string {
 		filepath.Join(in.Paths.SystemdDir, HelperUnit),
 		filepath.Join(in.Paths.TmpfilesDir, TmpfilesIn),
 		filepath.Join(in.Paths.SysctlDir, SysctlIn),
-	}, in.jailFiles()...)
+	}, append(in.jailFiles(), filepath.Join(in.Paths.SystemdDir, CgroupsDropIn))...)
 }
 
 func (in *Installer) pathFor(name string) string {
