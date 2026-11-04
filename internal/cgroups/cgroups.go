@@ -142,6 +142,12 @@ type Tree struct {
 	// desired is each site's limits as last set, written again to a
 	// group made after them (the site was stopped, or a move brought it).
 	desired map[string]SiteLimits
+	// trials numbers the trial leaves (TrialAttr); starting holds the
+	// ones made and not yet entered, which SweepTrials leaves alone: an
+	// empty leaf swept between its mkdir and the clone would fail the
+	// start.
+	trials   int
+	starting map[string]bool
 }
 
 // Root is where the unified hierarchy is mounted; tests use a folder.
@@ -198,7 +204,7 @@ func Setup(self string, l Limits) (*Tree, error) {
 	if err := os.MkdirAll(agents, 0o755); err != nil {
 		return nil, err
 	}
-	t := &Tree{agents: agents, house: filepath.Join(unit, HouseName), pids: pids, desired: map[string]SiteLimits{}}
+	t := &Tree{agents: agents, house: filepath.Join(unit, HouseName), pids: pids, desired: map[string]SiteLimits{}, starting: map[string]bool{}}
 	if err := t.SetAgents(l); err != nil {
 		return nil, err
 	}

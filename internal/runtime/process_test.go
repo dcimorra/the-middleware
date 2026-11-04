@@ -214,6 +214,10 @@ func (f *fakeGroups) SiteAttr(domain string) (*syscall.SysProcAttr, func(), erro
 	f.asked = append(f.asked, domain)
 	return &syscall.SysProcAttr{Setpgid: true}, func() {}, nil
 }
+func (f *fakeGroups) TrialAttr(domain string) (*syscall.SysProcAttr, func(), func(), error) {
+	f.asked = append(f.asked, "trial:"+domain)
+	return &syscall.SysProcAttr{Setpgid: true}, func() {}, func() { f.adopted = append(f.adopted, "promoted:"+domain) }, nil
+}
 func (f *fakeGroups) AdoptSite(domain string, pid int) error {
 	f.adopted = append(f.adopted, domain)
 	return nil
@@ -266,5 +270,39 @@ func TestATrialIsBornMarkedForTheOOMKiller(t *testing.T) {
 	}
 	if after, _ := os.ReadFile("/proc/self/oom_score_adj"); string(after) != string(before) {
 		t.Fatalf("supervisor's score %q, was %q", after, before)
+	}
+}
+
+// A generation on trial asks for its trial leaf, not the site's main
+// one, and the leaf's ceiling is lifted when its mark is cleared.
+func TestATrialStartsInItsOwnLeafAndIsPromotedAtTheSwitch(t *testing.T) {
+	f := &fakeGroups{}
+	defer func(g interface {
+		SiteAttr(string) (*syscall.SysProcAttr, func(), error)
+		TrialAttr(string) (*syscall.SysProcAttr, func(), func(), error)
+		AdoptSite(string, int) error
+	}) {
+		SiteGroups = g
+	}(SiteGroups)
+	SiteGroups = f
+	dir := t.TempDir()
+	spec := &manifest.Spec{Domain: "a.test", SiteDir: dir, Cwd: dir, Command: []string{"/bin/true"}, Env: map[string]string{}, Revision: "r"}
+	inst, err := Process{}.Start(WithTrial(context.Background()), spec, 0, filepath.Join(dir, "out.log"), filepath.Join(dir, "home"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-inst.Done()
+	if len(f.asked) != 1 || f.asked[0] != "trial:a.test" {
+		t.Fatalf("asked %v", f.asked)
+	}
+	p := inst.(*procInstance)
+	p.PreferOOMKill(true)
+	if len(f.adopted) != 0 {
+		t.Fatal("promoted while still on trial")
+	}
+	p.PreferOOMKill(false)
+	p.PreferOOMKill(false)
+	if len(f.adopted) != 1 || f.adopted[0] != "promoted:a.test" {
+		t.Fatalf("promotions %v", f.adopted)
 	}
 }

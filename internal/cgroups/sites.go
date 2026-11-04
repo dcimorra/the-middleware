@@ -49,10 +49,17 @@ func siteName(domain string) (string, error) {
 	return site, nil
 }
 
-// group makes the site's group if it is not there, with its limits.
+// MainName is the leaf inside a site's group where everything of the site
+// runs, but a generation on trial (TrialAttr). A group that hands memory
+// to children cannot hold processes itself ("no internal processes"), so
+// the site's budget is on the group and its processes in its leaves.
+const MainName = "main"
+
+// group makes the site's group if it is not there, with its limits, and
+// its main leaf.
 func (t *Tree) group(site string) (string, error) {
 	dir := filepath.Join(t.sites, site)
-	if _, err := os.Stat(dir); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, MainName)); err == nil {
 		return dir, nil
 	}
 	if err := os.Mkdir(dir, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
@@ -64,7 +71,40 @@ func (t *Tree) group(site string) (string, error) {
 	if err := t.write(dir, l); err != nil {
 		return "", err
 	}
+	main := filepath.Join(dir, MainName)
+	if err := os.Mkdir(main, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+		return "", fmt.Errorf("cgroups: %w", err)
+	}
+	// A group from alpha.108 to .110 holds the site's processes itself:
+	// into main first, or the kernel refuses the children their memory.
+	if err := emptyInto(dir, main); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cgroup.subtree_control"), []byte("+memory"), 0o644); err != nil {
+		return "", fmt.Errorf("cgroups: %s: children's memory: %w", site, err)
+	}
 	return dir, nil
+}
+
+// emptyInto moves every process of from into to, in passes, as
+// moveIntoHouse does. A folder without cgroup.procs (tests) is empty.
+func emptyInto(from, to string) error {
+	for pass := 0; pass < 5; pass++ {
+		raw, err := os.ReadFile(filepath.Join(from, "cgroup.procs"))
+		if err != nil {
+			return nil
+		}
+		pids := strings.Fields(string(raw))
+		if len(pids) == 0 {
+			return nil
+		}
+		for _, pid := range pids {
+			if err := movePID(to, pid); err != nil && !errors.Is(err, syscall.ESRCH) {
+				return fmt.Errorf("cgroups: moving %s into %s: %w", pid, to, err)
+			}
+		}
+	}
+	return fmt.Errorf("cgroups: %s did not empty into %s", from, to)
 }
 
 // SetSite writes a site's limits, live: a cgroup takes new numbers while
@@ -165,11 +205,102 @@ func (t *Tree) SiteAttr(domain string) (*syscall.SysProcAttr, func(), error) {
 	if err != nil {
 		return nil, func() {}, err
 	}
+	return cloneInto(filepath.Join(dir, MainName))
+}
+
+func cloneInto(dir string) (*syscall.SysProcAttr, func(), error) {
 	fd, err := syscall.Open(dir, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, func() {}, err
 	}
 	return &syscall.SysProcAttr{Setpgid: true, UseCgroupFD: true, CgroupFD: fd}, func() { syscall.Close(fd) }, nil
+}
+
+// TrialMargin is what a generation on trial leaves of the site's budget
+// for the generation serving to keep allocating while the new one starts.
+const TrialMargin = 8 << 20
+
+// TrialAttr starts a new generation of a site in a leaf of its own,
+// trial-<n>, capped at what the site's budget has free now (less
+// TrialMargin). Both generations count against the site's memory.max,
+// and with only that ceiling the kernel's first kill was right (the new
+// one, marked runtime.TrialScore) but the second was not: the victim's
+// memory is uncharged a few milliseconds after it leaves the task list,
+// the old generation allocated in that window and was killed in turn
+// (seen on the runner, dmesg and all). Capped below the site's ceiling,
+// a new generation that does not fit runs out inside its own leaf and
+// the site's ceiling is never reached. promote lifts the cap once the
+// generation is the one serving; its leaf stays as it is and is swept
+// when it empties.
+func (t *Tree) TrialAttr(domain string) (attr *syscall.SysProcAttr, release, promote func(), err error) {
+	none := func() {}
+	if !t.Sites() {
+		return nil, none, none, nil
+	}
+	site, err := siteName(domain)
+	if err != nil {
+		return nil, none, none, err
+	}
+	dir, err := t.group(site)
+	if err != nil {
+		return nil, none, none, err
+	}
+	t.mu.Lock()
+	limit := t.desired[site].MemoryMax
+	t.mu.Unlock()
+	// A fresh leaf, never one left by an earlier supervisor (the count
+	// starts again at each start, and a promoted leaf lives on with the
+	// generation serving in it).
+	var leaf string
+	for {
+		t.mu.Lock()
+		t.trials++
+		leaf = filepath.Join(dir, fmt.Sprintf("trial-%d", t.trials))
+		t.starting[leaf] = true
+		t.mu.Unlock()
+		err := os.Mkdir(leaf, 0o755)
+		if err == nil {
+			break
+		}
+		t.mu.Lock()
+		delete(t.starting, leaf)
+		t.mu.Unlock()
+		if !errors.Is(err, os.ErrExist) {
+			return nil, none, none, fmt.Errorf("cgroups: %w", err)
+		}
+	}
+	entered := func() {
+		t.mu.Lock()
+		delete(t.starting, leaf)
+		t.mu.Unlock()
+	}
+	if limit > 0 {
+		free := limit - readInt(filepath.Join(dir, "memory.current")) - TrialMargin
+		if free < 1<<20 {
+			free = 1 << 20 // it will not start, and says so; never "max"
+		}
+		if err := os.WriteFile(filepath.Join(leaf, "memory.max"), []byte(strconv.FormatInt(free, 10)), 0o644); err != nil {
+			entered()
+			return nil, none, none, fmt.Errorf("cgroups: %s: %w", leaf, err)
+		}
+	}
+	attr, closeFD, err := cloneInto(leaf)
+	if err != nil {
+		entered()
+		return nil, none, none, err
+	}
+	release = func() { closeFD(); entered() }
+	promote = func() { _ = os.WriteFile(filepath.Join(leaf, "memory.max"), []byte("max"), 0o644) }
+	return attr, release, promote, nil
+}
+
+func readInt(p string) int64 {
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	return n
 }
 
 // SitePath is a site's group, "" without one.
@@ -223,6 +354,7 @@ func (t *Tree) AdoptSite(domain string, leader int) error {
 	if err != nil {
 		return err
 	}
+	dir = filepath.Join(dir, MainName)
 	ours := map[int]bool{leader: true}
 	for pass := 0; pass < 5; pass++ {
 		raw, err := os.ReadFile(filepath.Join(t.house, "cgroup.procs"))
@@ -284,7 +416,43 @@ func (t *Tree) RemoveSite(domain string) error {
 	t.mu.Lock()
 	delete(t.desired, site)
 	t.mu.Unlock()
-	return removeGroup(filepath.Join(t.sites, site))
+	dir := filepath.Join(t.sites, site)
+	for _, leaf := range leaves(dir) {
+		if err := removeGroup(leaf); err != nil {
+			return err
+		}
+	}
+	return removeGroup(dir)
+}
+
+// leaves are a site group's children.
+func leaves(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			out = append(out, filepath.Join(dir, e.Name()))
+		}
+	}
+	return out
+}
+
+// SweepTrials takes away the trial leaves that emptied: a generation that
+// failed, or one that served and was replaced.
+func (t *Tree) SweepTrials() {
+	for _, site := range t.SiteNames() {
+		for _, leaf := range leaves(filepath.Join(t.sites, site)) {
+			t.mu.Lock()
+			busy := t.starting[leaf]
+			t.mu.Unlock()
+			if strings.HasPrefix(filepath.Base(leaf), "trial-") && !busy {
+				_ = removeGroup(leaf)
+			}
+		}
+	}
 }
 
 // removeGroup is rmdir on a cgroup, which the kernel allows with the

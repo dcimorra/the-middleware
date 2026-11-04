@@ -25,8 +25,17 @@ type Process struct{}
 // one re-adopted from a supervisor that started it in house/ is moved
 // there. Nil runs them where the supervisor is. Exec is left out on
 // purpose: an install or a migration runs uncapped (see Exec).
+//
+// A generation started on trial (a handover) goes into a leaf of its own
+// whose memory ceiling is what the site has free: if it takes more, the
+// kernel kills it inside that leaf and never reaches the generation
+// serving. Marking it as the likelier victim was not enough: the first
+// OOM killed it, and a second one fired in the next milliseconds, before
+// its memory was given back, and took the old generation too. promote
+// lifts the ceiling once it serves.
 var SiteGroups interface {
 	SiteAttr(domain string) (*syscall.SysProcAttr, func(), error)
+	TrialAttr(domain string) (attr *syscall.SysProcAttr, release, promote func(), err error)
 	AdoptSite(domain string, pid int) error
 }
 
@@ -46,6 +55,8 @@ type procInstance struct {
 	ticks   uint64
 	boot    string
 	adopted bool
+	// promote lifts a trial leaf's ceiling; nil out of trial.
+	promote func()
 	done    chan error
 	once    sync.Once
 }
@@ -90,10 +101,21 @@ func (Process) Start(ctx context.Context, spec *manifest.Spec, port int, logFile
 	// A house task (no domain) stays with the house. A group that cannot
 	// be made leaves the site running uncapped, as before groups existed,
 	// rather than not running: the wiring reports it.
+	trial := isTrial(ctx)
+	var promote func()
 	if g := SiteGroups; g != nil && spec.Domain != "" {
-		if attr, release, err := g.SiteAttr(spec.Domain); err == nil && attr != nil {
-			defer release()
-			cmd.SysProcAttr = attr
+		if trial {
+			if attr, release, up, err := g.TrialAttr(spec.Domain); err == nil && attr != nil {
+				defer release()
+				cmd.SysProcAttr = attr
+				promote = up
+			}
+		}
+		if promote == nil {
+			if attr, release, err := g.SiteAttr(spec.Domain); err == nil && attr != nil {
+				defer release()
+				cmd.SysProcAttr = attr
+			}
 		}
 	}
 	// The jail keeps the SysProcAttr it is given, the cgroup with it.
@@ -101,10 +123,10 @@ func (Process) Start(ctx context.Context, spec *manifest.Spec, port int, logFile
 		return nil, err
 	}
 	fmt.Fprintf(out, "\n--- %s middleware: start %s rev %s on port %d\n", time.Now().Format(time.RFC3339), spec.Domain, spec.Revision, port)
-	if err := startMarked(cmd, isTrial(ctx)); err != nil {
+	if err := startMarked(cmd, trial); err != nil {
 		return nil, err
 	}
-	p := &procInstance{cmd: cmd, pid: cmd.Process.Pid, port: port, revision: spec.Revision, domain: spec.Domain, logFile: logFile, started: time.Now(), done: make(chan error, 1)}
+	p := &procInstance{cmd: cmd, pid: cmd.Process.Pid, port: port, revision: spec.Revision, domain: spec.Domain, logFile: logFile, started: time.Now(), promote: promote, done: make(chan error, 1)}
 	// Read before Wait can reap the child: its stat stays until then,
 	// even if it has already exited.
 	p.ticks, _ = startTicks(p.pid)
@@ -364,8 +386,13 @@ const TrialScore = 500
 
 // PreferOOMKill marks the instance (its leader and every process under
 // it) as the one the kernel kills first inside its group, or clears the
-// mark. A process it forks later inherits what it has then.
+// mark. A process it forks later inherits what it has then. Clearing it
+// is the switch (or a first start): a trial leaf's ceiling goes with it.
 func (p *procInstance) PreferOOMKill(on bool) {
+	if !on && p.promote != nil {
+		p.promote()
+		p.promote = nil
+	}
 	v := []byte("0")
 	if on {
 		v = []byte(strconv.Itoa(TrialScore))

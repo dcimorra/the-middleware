@@ -262,9 +262,12 @@ two are different numbers on purpose, each the scale of what reads it.
 
 The ceiling is the site's, whatever holds it. **During a handover** the old
 and new generation run at once in the same group, so `memory` has to cover
-both: a new generation that does not fit is the one the kernel kills (it is
-marked as the first victim while it starts, and the draining one after the
-switch), fails its health check, and the old one keeps serving.
+both. The new generation starts in a leaf of the group (`trial-N`, beside
+the `main` leaf the site otherwise runs in) whose own ceiling is what the
+site has free at that moment less 8 MiB: a generation that does not fit is
+killed inside that leaf, fails its health check, and the old one keeps
+serving untouched. The leaf's ceiling is lifted at the switch, and empty
+leaves are swept.
 
 The block applies to process-runtime pieces: a docker piece lives in the
 daemon's cgroup and keeps `docker.*`. Changes take effect live, on the next

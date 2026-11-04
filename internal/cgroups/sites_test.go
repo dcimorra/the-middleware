@@ -164,7 +164,7 @@ func TestAReadoptedSiteMovesOutOfTheHouseWithItsChildren(t *testing.T) {
 	defer func(f func(string, string) error) { movePID = f }(movePID)
 	var moved []string
 	movePID = func(cg, pid string) error {
-		if cg != filepath.Join(unit, "sites", "a.test") {
+		if cg != filepath.Join(unit, "sites", "a.test", MainName) {
 			t.Fatalf("moved into %s", cg)
 		}
 		moved = append(moved, pid)
@@ -190,5 +190,55 @@ func TestAReadoptedSiteMovesOutOfTheHouseWithItsChildren(t *testing.T) {
 	moved = nil
 	if err := tree.AdoptSite("a.test", 100); err != nil || len(moved) != 0 {
 		t.Fatalf("second adoption moved %v (%v)", moved, err)
+	}
+}
+
+// A site's processes run in its main leaf, the budget on the group; a
+// generation on trial gets a leaf of its own capped at what the budget
+// has free less the margin, lifted when it is promoted, and swept once
+// it empties.
+func TestAGenerationOnTrialIsCappedAtWhatTheSiteHasFree(t *testing.T) {
+	unit := unitTree(t, "cpu memory pids")
+	tree, _ := Setup("/system.slice/middleware.service/house", Limits{CPUWeight: 10})
+	tree.SetSite("a.test", SiteLimits{MemoryMax: 112 << 20})
+	site := filepath.Join(unit, "sites", "a.test")
+	if got := readFile(t, filepath.Join(site, "cgroup.subtree_control")); got != "+memory" {
+		t.Fatalf("children's controllers %q", got)
+	}
+	if _, release, err := tree.SiteAttr("a.test"); err != nil {
+		t.Fatal(err)
+	} else {
+		release()
+	}
+	if _, err := os.Stat(filepath.Join(site, MainName)); err != nil {
+		t.Fatal("no main leaf")
+	}
+	os.WriteFile(filepath.Join(site, "memory.current"), []byte("75497472\n"), 0o644) // 72 MiB held
+	os.MkdirAll(filepath.Join(site, "trial-1"), 0o755)                               // left by an earlier supervisor
+	attr, release, promote, err := tree.TrialAttr("a.test")
+	if err != nil || attr == nil || !attr.UseCgroupFD {
+		t.Fatalf("attr %+v %v", attr, err)
+	}
+	leaf := filepath.Join(site, "trial-2")
+	defer func(f func(string) error) { removeGroup = f }(removeGroup)
+	removeGroup = os.RemoveAll
+	tree.SweepTrials()
+	if _, err := os.Stat(leaf); err != nil {
+		t.Fatal("a trial leaf was swept before its generation entered it")
+	}
+	release()
+	if got := readFile(t, filepath.Join(leaf, "memory.max")); got != strconv.Itoa((112-72-8)<<20) {
+		t.Fatalf("trial cap %q, want 32 MiB", got)
+	}
+	promote()
+	if got := readFile(t, filepath.Join(leaf, "memory.max")); got != "max" {
+		t.Fatalf("after promotion %q", got)
+	}
+	tree.SweepTrials()
+	if _, err := os.Stat(leaf); !os.IsNotExist(err) {
+		t.Fatal("an empty trial leaf was kept")
+	}
+	if _, err := os.Stat(filepath.Join(site, MainName)); err != nil {
+		t.Fatal("the main leaf was swept")
 	}
 }
