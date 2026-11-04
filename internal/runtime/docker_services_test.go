@@ -171,8 +171,16 @@ func TestAReplicasContainerFindsTheKeptServicesOnTheMachine(t *testing.T) {
 	}
 	spec.AddHosts = []string{"db"}
 	d := Docker{Bin: bin, House: "/srv/test"}
-	if _, err := d.Start(context.Background(), spec, 41235, filepath.Join(t.TempDir(), "web.log"), t.TempDir()); err != nil {
+	inst, err := d.Start(context.Background(), spec, 41235, filepath.Join(t.TempDir(), "web.log"), t.TempDir())
+	if err != nil {
 		t.Fatal(err)
+	}
+	// Its followers write the log until the container is gone: stopped and
+	// waited for, or they write into the folders the test is removing.
+	_ = inst.Stop(context.Background(), time.Second)
+	select {
+	case <-inst.Done():
+	case <-time.After(10 * time.Second):
 	}
 	runs := callsOf(t, calls, "run ")
 	if len(runs) != 1 || !strings.Contains(runs[0], "--add-host db:172.30.0.1") {
