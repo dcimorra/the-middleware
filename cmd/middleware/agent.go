@@ -117,20 +117,29 @@ var (
 type chatHook struct{}
 
 func newChatHook(a *app.App) app.Hook {
-	chatManager = chat.New(chat.Options{Root: a.Root, Bus: a.Bus, Registry: providers(), Limits: a.Settings.Agents, Usage: usageBook(a.Root)})
-	// A figure that moved reaches the chats open on the panel at once:
-	// a long turn moves the window while nobody types.
-	usageBook(a.Root).OnChange(func(provider string, u agent.Usage) {
-		a.Bus.Emit(events.Event{Type: "agent.usage", Subject: provider, Actor: "agent", Data: map[string]any{"provider": provider, "usage": u}})
-	})
 	// Agent turns start in a cgroup of their own with a low CPU weight and
-	// a ceiling, so a conversation's browsers cannot starve the sites.
-	if tree, err := cgroups.Setup(cgroups.SelfPath(), cgroups.DefaultLimits()); err != nil {
+	// a ceiling, so a conversation's browsers cannot starve the sites. The
+	// ceiling is the machine's unless the settings say otherwise, and
+	// follows them live: the chat manager hands every new section on.
+	machine := cgroups.ThisMachine()
+	tree, err := cgroups.Setup(cgroups.SelfPath(), a.Settings.Agents.Limits(machine))
+	if err != nil {
 		a.Bus.Emit(events.Event{Type: "cgroups.off", Actor: "engine", Level: "warn", Message: err.Error()})
 	} else {
 		agent.SpawnAttr = tree.AgentsAttr
 		a.Bus.Emit(events.Event{Type: "cgroups.on", Actor: "engine", Message: "agent turns run in " + tree.Agents()})
 	}
+	onLimits := func(ag settings.Agents) {
+		if err := tree.SetAgents(ag.Limits(machine)); err != nil {
+			a.Bus.Emit(events.Event{Type: "cgroups.limits", Actor: "engine", Level: "warn", Message: err.Error()})
+		}
+	}
+	chatManager = chat.New(chat.Options{Root: a.Root, Bus: a.Bus, Registry: providers(), Limits: a.Settings.Agents, Usage: usageBook(a.Root), OnLimits: onLimits})
+	// A figure that moved reaches the chats open on the panel at once:
+	// a long turn moves the window while nobody types.
+	usageBook(a.Root).OnChange(func(provider string, u agent.Usage) {
+		a.Bus.Emit(events.Event{Type: "agent.usage", Subject: provider, Actor: "agent", Data: map[string]any{"provider": provider, "usage": u}})
+	})
 	return chatHook{}
 }
 

@@ -12,11 +12,19 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dcimorra/the-middleware/internal/cgroups"
 	"github.com/dcimorra/the-middleware/internal/fsx"
 )
 
+// Format is the file's shape. A file without it was written before
+// max_concurrent could mean "computed": there 8 was the default written on
+// every save, and is read as computed (see Load).
+const Format = 2
+
 // Settings is the file.
 type Settings struct {
+	// Format is the shape the file was last written in.
+	Format int `json:"format,omitempty"`
 	// PanelDomain answers the panel. Empty means loopback only.
 	PanelDomain string `json:"panel_domain,omitempty"`
 	// Listen is the loopback address the tunnel door pushes to.
@@ -148,7 +156,8 @@ func (d Deps) AutoUpdateOn() bool { return d.AutoUpdate == nil || *d.AutoUpdate 
 // the house what is going on when every site is busy.
 type Agents struct {
 	// MaxConcurrent is the number of turns running at once, all
-	// conversations together. 1..64.
+	// conversations together. 1..64, or 0 for computed from the machine
+	// (MaxConcurrentFor).
 	MaxConcurrent int `json:"max_concurrent"`
 	// ReservedForHouse is how many of those only the middleware
 	// conversation may take. Less than MaxConcurrent.
@@ -160,6 +169,11 @@ type Agents struct {
 	// SiteDailyUSD is what a site may spend through the site door in a
 	// day when its manifest says nothing (claude_api.daily_usd).
 	SiteDailyUSD float64 `json:"site_daily_usd,omitempty"`
+	// CPUCores and MemoryMax replace the agents' cgroup ceiling computed
+	// from the machine (cgroups.Machine.DefaultLimits); zero and empty
+	// are computed. MemoryMax is a size as docker writes it ("8g").
+	CPUCores  int    `json:"cpu_cores,omitempty"`
+	MemoryMax string `json:"memory_max,omitempty"`
 }
 
 // SiteDaily is SiteDailyUSD with its default.
@@ -173,17 +187,89 @@ func (a Agents) SiteDaily() float64 {
 // MaxAgents is the ceiling of MaxConcurrent.
 const MaxAgents = 64
 
-// DefaultAgents is the section a fresh installation runs with.
-func DefaultAgents() Agents {
-	return Agents{MaxConcurrent: 8, ReservedForHouse: 1, PerProvider: map[string]int{"claude": 0, "agy": 0, "opencode": 0}, DefaultProvider: "claude"}
+// TurnMemory is what one agent turn is counted as holding when the number
+// of turns is computed: a CLI, its model's context and, often, a browser.
+const TurnMemory = 3 << 29 // 1.5 GiB
+
+// MaxConcurrentFor is the computed cap: the agents' memory ceiling over
+// TurnMemory, from 2 to 64. It was 8 everywhere: too many turns for a
+// 4 GB VPS, whose agents' ceiling then killed them one after another,
+// and too few for 64 GB. Unknown memory keeps the old 8.
+func MaxConcurrentFor(agentsMemory int64) int {
+	if agentsMemory <= 0 {
+		return 8
+	}
+	n := int(agentsMemory / TurnMemory)
+	return min(max(n, 2), MaxAgents)
 }
 
-// Validate says what is wrong with the section, if anything.
-func (a Agents) Validate() error {
-	if a.MaxConcurrent < 1 || a.MaxConcurrent > MaxAgents {
-		return fmt.Errorf("agents.max_concurrent: want 1..%d", MaxAgents)
+// Machine is the machine the computed values are sized from; tests
+// replace it.
+var Machine = cgroups.ThisMachine
+
+// Limits is the agents' cgroup budget on m: the computed one with the
+// operator's numbers in its place. A lower memory ceiling brings the
+// point where the kernel starts squeezing down with it (three quarters,
+// the computed quarter-to-third ratio), or high would sit above max.
+func (a Agents) Limits(m cgroups.Machine) cgroups.Limits {
+	l := m.DefaultLimits()
+	if a.CPUCores > 0 {
+		l.CPUCores = a.CPUCores
+		if m.CPUs > 0 && l.CPUCores > m.CPUs {
+			l.CPUCores = m.CPUs
+		}
 	}
-	if a.ReservedForHouse < 0 || a.ReservedForHouse >= a.MaxConcurrent {
+	if a.MemoryMax != "" {
+		if v, err := cgroups.ParseBytes(a.MemoryMax); err == nil && v > 0 {
+			l.MemoryMax = v
+			l.MemoryHigh = v / 4 * 3
+		}
+	}
+	return l
+}
+
+// Concurrency is the cap in force on m and whether it was computed.
+func (a Agents) Concurrency(m cgroups.Machine) (int, bool) {
+	if a.MaxConcurrent > 0 {
+		return a.MaxConcurrent, false
+	}
+	return MaxConcurrentFor(a.Limits(m).MemoryMax), true
+}
+
+// Resolved is the section with the computed cap in place of a zero and
+// the reserved slots kept under it: an operator's 4 reserved on a machine
+// that computes 2 leaves one slot for everyone else rather than none.
+func (a Agents) Resolved(m cgroups.Machine) Agents {
+	a.MaxConcurrent, _ = a.Concurrency(m)
+	if a.ReservedForHouse >= a.MaxConcurrent {
+		a.ReservedForHouse = a.MaxConcurrent - 1
+	}
+	if a.ReservedForHouse < 0 {
+		a.ReservedForHouse = 0
+	}
+	return a
+}
+
+// DefaultAgents is the section a fresh installation runs with: the cap
+// computed from the machine.
+func DefaultAgents() Agents {
+	return Agents{MaxConcurrent: 0, ReservedForHouse: 1, PerProvider: map[string]int{"claude": 0, "agy": 0, "opencode": 0}, DefaultProvider: "claude"}
+}
+
+// Validate says what is wrong with the section, if anything, on this
+// machine.
+func (a Agents) Validate() error { return a.ValidateOn(Machine()) }
+
+// ValidateOn is Validate on m: with the cap computed, the reserved slots
+// are held to the number it computes there.
+func (a Agents) ValidateOn(m cgroups.Machine) error {
+	if a.MaxConcurrent < 0 || a.MaxConcurrent > MaxAgents {
+		return fmt.Errorf("agents.max_concurrent: want 1..%d, or 0 for computed", MaxAgents)
+	}
+	if n, computed := a.Concurrency(m); a.ReservedForHouse < 0 || a.ReservedForHouse >= n {
+		if computed {
+			return fmt.Errorf("agents.reserved_for_house: want 0 <= reserved < %d (max_concurrent computed on this machine)", n)
+		}
 		return errors.New("agents.reserved_for_house: want 0 <= reserved < max_concurrent")
 	}
 	for k, v := range a.PerProvider {
@@ -193,6 +279,16 @@ func (a Agents) Validate() error {
 	}
 	if a.DefaultProvider == "" {
 		return errors.New("agents.default_provider: empty")
+	}
+	if a.CPUCores < 0 {
+		return errors.New("agents.cpu_cores: cannot be negative (0 is computed)")
+	}
+	if a.MemoryMax != "" {
+		if v, err := cgroups.ParseBytes(a.MemoryMax); err != nil {
+			return fmt.Errorf("agents.memory_max: %v", err)
+		} else if v < 256<<20 {
+			return errors.New("agents.memory_max: want at least 256m (empty is computed)")
+		}
 	}
 	return nil
 }
@@ -216,8 +312,21 @@ func Load(root string) (Settings, error) {
 	if err != nil && !os.IsNotExist(err) {
 		return s, err
 	}
+	s.migrate()
 	s.Fill()
 	return s, nil
+}
+
+// migrate brings a file written before Format up to it. Until then every
+// save wrote max_concurrent, so 8 there is the old default that nobody
+// chose, and becomes computed; any other number was the operator's and
+// stays. An operator who had typed 8 on purpose gets the computed number:
+// the file cannot tell the two apart, and the panel shows which applies.
+func (s *Settings) migrate() {
+	if s.Format < 2 && s.Agents.MaxConcurrent == 8 {
+		s.Agents.MaxConcurrent = 0
+	}
+	s.Format = Format
 }
 
 // Fill puts the defaults where a field was left empty: a file from before
@@ -263,7 +372,12 @@ func ValidListen(addr string) error {
 }
 
 // Save writes the file atomically.
-func Save(root string, s Settings) error { return fsx.WriteJSON(Path(root), s, 0o644) }
+func Save(root string, s Settings) error {
+	// Whatever is saved now was read or sent in this shape: an 8 from
+	// here on is a choice.
+	s.Format = Format
+	return fsx.WriteJSON(Path(root), s, 0o644)
+}
 
 // Root resolves the installation root: the flag, then MIDDLEWARE_ROOT, then
 // the current directory if it already holds a sites/ folder, then the

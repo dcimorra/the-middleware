@@ -40,6 +40,28 @@ type AgentInfo struct {
 type Agents struct {
 	Providers []AgentInfo    `json:"providers"`
 	Capacity  *chat.Capacity `json:"capacity,omitempty"`
+	// Computed is what the settings' empty fields stand for on this
+	// machine, so the panel can show the number in force and where it
+	// came from.
+	Computed *ComputedAgents `json:"computed,omitempty"`
+}
+
+// ComputedAgents are the agents' numbers this machine computes.
+type ComputedAgents struct {
+	CPUs          int   `json:"cpus"`
+	Memory        int64 `json:"memory"`
+	MaxConcurrent int   `json:"max_concurrent"`
+	CPUCores      int   `json:"cpu_cores"`
+	MemoryMax     int64 `json:"memory_max"`
+}
+
+// computedAgents is the machine's numbers for a section: the cap follows
+// the agents' memory ceiling in force, the operator's if set.
+func computedAgents(a settings.Agents) *ComputedAgents {
+	m := settings.Machine()
+	l := m.DefaultLimits()
+	n, _ := settings.Agents{MemoryMax: a.MemoryMax}.Concurrency(m)
+	return &ComputedAgents{CPUs: m.CPUs, Memory: m.Memory, MaxConcurrent: n, CPUCores: l.CPUCores, MemoryMax: l.MemoryMax}
 }
 
 // RegisterAgents adds /agents, the per-site conversations and the
@@ -78,6 +100,7 @@ func (s *Server) RegisterAgents(o AgentsOptions) {
 			c := o.Chat.Capacity()
 			out.Capacity = &c
 		}
+		out.Computed = computedAgents(s.opts.Settings().Agents)
 		return out, nil
 	})
 	// The providers a site's conversation can use, from the node that

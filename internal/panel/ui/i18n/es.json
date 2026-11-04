@@ -514,7 +514,7 @@
   "settings.defaultProviderHint": "Para un sitio cuyo manifiesto no indica ninguno.",
   "settings.siteDailyUSD": "Dólares al día por puerta de sitio",
   "settings.siteDailyUSDHint": "Lo que un sitio puede gastar al día por su puerta de Claude cuando su manifiesto no fija daily_usd. Vacío: 5.",
-  "settings.agentsBad": "El tope debe ser de 1 a 64, los huecos reservados menos que el tope y el tope de un proveedor de 0 a 64.",
+  "settings.agentsBad": "El tope debe estar vacío o ser de 1 a 64, los huecos reservados menos que el tope, el tope de un proveedor de 0 a 64 y los núcleos un número entero.",
   "settings.agentsSaved": "Límites de agentes guardados y en vigor.",
   "system.version": "Versión",
   "system.uptime": "Tiempo en marcha",
@@ -2162,5 +2162,10 @@
   "cluster.state.failed": "Falló",
   "cluster.state.unreachable": "Sin respuesta",
   "cluster.keep": "Services que se quedan aquí",
-  "cluster.keepHint": "Los que tienen datos: las copias no los arrancan y llegan a los de este nodo por la malla con el mismo nombre y las mismas $SERVICE_x. Los que tienen volúmenes se quedan siempre. Services: {services}. Se quedan ahora: {kept}."
+  "cluster.keepHint": "Los que tienen datos: las copias no los arrancan y llegan a los de este nodo por la malla con el mismo nombre y las mismas $SERVICE_x. Los que tienen volúmenes se quedan siempre. Services: {services}. Se quedan ahora: {kept}.",
+  "settings.maxConcurrentComputed": "Vacío: calculado con la memoria de esta máquina, {n} ahora. De 1 a 64 para fijar el tuyo.",
+  "settings.agentsCores": "Núcleos de los agentes",
+  "settings.agentsCoresHint": "Los núcleos que pueden usar como mucho todos los turnos de agente juntos. Vacío: {n} de {cpus}, siempre queda una cuarta parte para los sitios.",
+  "settings.agentsMemory": "Memoria de los agentes",
+  "settings.agentsMemoryHint": "Techo para todos los turnos de agente juntos (512m, 8g). Vacío: un tercio de la máquina, {size}."
 }

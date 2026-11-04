@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -402,9 +403,11 @@ func TestServeAnswersEverySectionOfTheAPI(t *testing.T) {
 	}
 
 	// `middleware agents` reads the same answer over the socket, and the
-	// capacity it prints is the settings' default.
+	// capacity it prints is the settings' default: computed from the
+	// machine, and said to be.
 	code, body = get("/agents")
-	if code != 200 || !strings.Contains(body, `"max": 8`) || !strings.Contains(body, `"provider": "claude"`) {
+	n, _ := settings.DefaultAgents().Concurrency(settings.Machine())
+	if code != 200 || !strings.Contains(body, fmt.Sprintf(`"max": %d,`, n)) || !strings.Contains(body, `"max_computed": true`) || !strings.Contains(body, `"provider": "claude"`) {
 		t.Fatalf("agents: %d %s", code, body)
 	}
 	if err := agentsCmd([]string{"--root", root}); err != nil {

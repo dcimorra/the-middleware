@@ -13,6 +13,7 @@ import (
 
 	"github.com/dcimorra/the-middleware/internal/agent"
 	"github.com/dcimorra/the-middleware/internal/auth"
+	"github.com/dcimorra/the-middleware/internal/cgroups"
 	"github.com/dcimorra/the-middleware/internal/chat"
 	"github.com/dcimorra/the-middleware/internal/settings"
 )
@@ -33,15 +34,19 @@ func TestAgentsAreListedAndTheConversationsAnswer(t *testing.T) {
 	reg := agent.NewRegistry()
 	reg.Register(fakeProvider{key: "claude"})
 	os.MkdirAll(filepath.Join(f.root, "sites", "x.test"), 0o755)
+	// The cap is computed from the machine when the settings leave it:
+	// 24 GiB is 5 turns.
+	defer func(f func() cgroups.Machine) { settings.Machine = f }(settings.Machine)
+	settings.Machine = func() cgroups.Machine { return cgroups.Machine{CPUs: 8, Memory: 24 << 30} }
 	m := chat.New(chat.Options{Root: f.root, Bus: f.bus, Registry: reg})
 	f.srv.RegisterAgents(AgentsOptions{Registry: reg, Chat: m})
 
 	resp, body := f.call("GET", "/api/v1/agents", nil)
-	if resp.StatusCode != 200 || !strings.Contains(text(body), `"provider": "claude"`) || !strings.Contains(text(body), `"capacity"`) {
+	if resp.StatusCode != 200 || !strings.Contains(text(body), `"provider": "claude"`) || !strings.Contains(text(body), `"capacity"`) || !strings.Contains(text(body), `"cpu_cores": 6`) {
 		t.Fatalf("agents: %d %s", resp.StatusCode, text(body))
 	}
 	resp, body = f.call("GET", "/api/v1/agents/capacity", nil)
-	if resp.StatusCode != 200 || body["max"] != float64(8) || body["used"] != float64(0) {
+	if resp.StatusCode != 200 || body["max"] != float64(5) || body["max_computed"] != true || body["used"] != float64(0) {
 		t.Fatalf("capacity: %d %v", resp.StatusCode, body)
 	}
 	resp, body = f.call("GET", "/api/v1/chat/middleware", nil)
@@ -192,9 +197,10 @@ func TestAFullHouseAnswers429AndANewCapFromSettingsAppliesAtOnce(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("after raising the cap: %d %s", resp.StatusCode, text(body))
 	}
-	// A body without the section keeps the defaults rather than zeroing the cap.
+	// A body without the section keeps the defaults rather than zeroing
+	// the cap: the computed one, with its slot for the house.
 	resp, body = f.call("PUT", "/api/v1/settings", map[string]any{"listen": settings.Defaults().Listen})
-	if resp.StatusCode != 200 || saved.Agents.MaxConcurrent != 8 {
+	if resp.StatusCode != 200 || saved.Agents.MaxConcurrent != 0 || saved.Agents.ReservedForHouse != 1 || saved.Agents.DefaultProvider != "claude" {
 		t.Fatalf("settings without agents: %d %s saved=%+v", resp.StatusCode, text(body), saved.Agents)
 	}
 }

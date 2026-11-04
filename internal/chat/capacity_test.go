@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dcimorra/the-middleware/internal/agent"
+	"github.com/dcimorra/the-middleware/internal/cgroups"
 	"github.com/dcimorra/the-middleware/internal/settings"
 )
 
@@ -118,9 +119,12 @@ func TestTheDefaultProviderComesFromTheSettingsUnlessPinned(t *testing.T) {
 	if s, _ := pinned.Resolve("x.test"); s.Provider != "fake" {
 		t.Fatalf("pinned provider = %s", s.Provider)
 	}
-	// A zero value takes the defaults rather than "nothing may run".
+	// A zero value takes the defaults rather than "nothing may run": the
+	// cap computed from the machine, 24 GiB giving 5.
+	defer func(f func() cgroups.Machine) { settings.Machine = f }(settings.Machine)
+	settings.Machine = func() cgroups.Machine { return cgroups.Machine{CPUs: 8, Memory: 24 << 30} }
 	bare := New(Options{Root: root, Registry: reg})
-	if c := bare.Capacity(); c.Max != 8 || c.Reserved != 1 {
+	if c := bare.Capacity(); c.Max != 5 || !c.MaxComputed || c.Reserved != 1 {
 		t.Fatalf("defaults = %+v", c)
 	}
 	if s, _ := bare.Resolve("x.test"); s.Provider != "claude" {
