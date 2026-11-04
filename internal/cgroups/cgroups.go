@@ -11,8 +11,10 @@
 // So the unit's cgroup is split in two siblings:
 //
 //	middleware.service/
-//	├── house/   the supervisor, the sites and the tasks
-//	└── agents/  every agent turn and whatever it starts
+//	├── house/   the supervisor and the house's own tasks
+//	├── agents/  every agent turn and whatever it starts
+//	└── sites/
+//	    └── example.com/  the site's instances, workers, services, tasks
 //
 // and agents get a low CPU weight and a ceiling. A weight is not a cap: with
 // the machine idle they use every core as before, and only when a site asks
@@ -20,7 +22,11 @@
 // directly (clone into the cgroup), so nothing a turn starts is ever
 // briefly outside it.
 //
-// It needs Delegate=cpu memory in the unit: without delegation the cgroup
+// Sites came later (sites.go): one runaway process site took all of
+// house/'s memory and every core, and CPU was shared per process rather
+// than per site, so a site with thirty processes had thirty shares.
+//
+// It needs Delegate=cpu memory pids in the unit (pids is optional): without delegation the cgroup
 // is root's and the supervisor cannot create a folder in it, and everything
 // runs as before, said once at start. DelegateSubgroup=house (systemd 254
 // or newer) has systemd start the supervisor in house/ already; an older
@@ -47,6 +53,7 @@ import (
 const (
 	HouseName  = "house"
 	AgentsName = "agents"
+	SitesName  = "sites"
 	// UnitName is the house's service, whose cgroup an older systemd
 	// starts it in.
 	UnitName = "middleware.service"
@@ -115,11 +122,23 @@ func (m Machine) DefaultLimits() Limits {
 }
 
 // ErrNotDelegated is a unit without delegation.
-var ErrNotDelegated = errors.New("the supervisor's cgroup is not delegated (the unit needs Delegate=cpu memory: run middleware install again); agent turns share the sites' CPU and memory")
+var ErrNotDelegated = errors.New("the supervisor's cgroup is not delegated (the unit needs Delegate=cpu memory pids: run middleware install again); agent turns share the sites' CPU and memory")
 
 // Tree is the split, once made.
 type Tree struct {
 	agents string
+	house  string
+	// sites is the sites' branch, "" when it could not be made: then
+	// every site runs in house/ as before.
+	sites string
+	// pids is the pids controller delegated to the unit.
+	pids  bool
+	notes []string
+
+	mu sync.Mutex
+	// desired is each site's limits as last set, written again to a
+	// group made after them (the site was stopped, or a move brought it).
+	desired map[string]SiteLimits
 }
 
 // Root is where the unified hierarchy is mounted; tests use a folder.
@@ -154,19 +173,58 @@ func Setup(self string, l Limits) (*Tree, error) {
 	}
 	// Controllers have to be enabled on the parent for the children to
 	// have the files; "+cpu +memory" on a cgroup that already has them is
-	// a no-op.
-	if err := os.WriteFile(filepath.Join(unit, "cgroup.subtree_control"), []byte("+cpu +memory"), 0o644); err != nil {
+	// a no-op. pids only where the unit delegates it: a unit installed
+	// before Delegate= named it has cgroup.controllers without pids, and
+	// asking for it there fails the whole write.
+	ctrl := "+cpu +memory"
+	pids := hasController(unit, "pids")
+	if pids {
+		ctrl += " +pids"
+	}
+	if err := os.WriteFile(filepath.Join(unit, "cgroup.subtree_control"), []byte(ctrl), 0o644); err != nil {
 		return nil, fmt.Errorf("cgroups: enable controllers: %w", err)
 	}
 	agents := filepath.Join(unit, AgentsName)
 	if err := os.MkdirAll(agents, 0o755); err != nil {
 		return nil, err
 	}
-	t := &Tree{agents: agents}
+	t := &Tree{agents: agents, house: filepath.Join(unit, HouseName), pids: pids, desired: map[string]SiteLimits{}}
 	if err := t.SetAgents(l); err != nil {
 		return nil, err
 	}
+	// The sites' branch is a sibling of house/, not a child: house/ holds
+	// the supervisor, and a cgroup with processes cannot hand controllers
+	// to children of its own ("no internal processes"). A failure here
+	// leaves the agents' split in force and the sites where they were.
+	sites := filepath.Join(unit, SitesName)
+	if err := os.MkdirAll(sites, 0o755); err == nil {
+		if err := os.WriteFile(filepath.Join(sites, "cgroup.subtree_control"), []byte(ctrl), 0o644); err == nil {
+			t.sites = sites
+		} else {
+			t.notes = append(t.notes, "sites run in house/ without a budget of their own: "+err.Error())
+		}
+	} else {
+		t.notes = append(t.notes, "sites run in house/ without a budget of their own: "+err.Error())
+	}
+	if t.sites != "" && !pids {
+		t.notes = append(t.notes, "the unit does not delegate pids (it needs Delegate=cpu memory pids: run middleware install again); sites get CPU and memory budgets without a process cap")
+	}
 	return t, nil
+}
+
+// hasController reads a cgroup's cgroup.controllers. A folder without the
+// file (the tests' tree) has cpu and memory, as Setup has always assumed.
+func hasController(cg, name string) bool {
+	raw, err := os.ReadFile(filepath.Join(cg, "cgroup.controllers"))
+	if err != nil {
+		return name == "cpu" || name == "memory"
+	}
+	for _, f := range strings.Fields(string(raw)) {
+		if f == name {
+			return true
+		}
+	}
+	return false
 }
 
 // SetAgents writes the agents' limits, at start and whenever the settings

@@ -19,6 +19,17 @@ import (
 // Process runs an instance as a child of the supervisor.
 type Process struct{}
 
+// SiteGroups, when set, is the sites' cgroup branch (internal/cgroups):
+// every process a site starts here (its instances, its process workers
+// and services, its tasks) is cloned straight into the site's group, and
+// one re-adopted from a supervisor that started it in house/ is moved
+// there. Nil runs them where the supervisor is. Exec is left out on
+// purpose: an install or a migration runs uncapped (see Exec).
+var SiteGroups interface {
+	SiteAttr(domain string) (*syscall.SysProcAttr, func(), error)
+	AdoptSite(domain string, pid int) error
+}
+
 // Name implements Runtime.
 func (Process) Name() string { return "process" }
 
@@ -76,6 +87,16 @@ func (Process) Start(ctx context.Context, spec *manifest.Spec, port int, logFile
 	cmd.Stderr = out
 	cmd.Stdin = nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// A house task (no domain) stays with the house. A group that cannot
+	// be made leaves the site running uncapped, as before groups existed,
+	// rather than not running: the wiring reports it.
+	if g := SiteGroups; g != nil && spec.Domain != "" {
+		if attr, release, err := g.SiteAttr(spec.Domain); err == nil && attr != nil {
+			defer release()
+			cmd.SysProcAttr = attr
+		}
+	}
+	// The jail keeps the SysProcAttr it is given, the cgroup with it.
 	if err := enclose(cmd, spec, home); err != nil {
 		return nil, err
 	}
@@ -124,6 +145,12 @@ func (Process) Adopt(ctx context.Context, st State) (Instance, error) {
 				return nil, ErrGone
 			}
 		}
+	}
+	// Started by a supervisor from before site groups: it and everything
+	// it started are in house/ and move to the site's group now. One
+	// started by this version is there already and nothing moves.
+	if g := SiteGroups; g != nil && st.Domain != "" {
+		_ = g.AdoptSite(st.Domain, st.PID)
 	}
 	p := &procInstance{pid: st.PID, port: st.Port, revision: st.Revision, domain: st.Domain, logFile: st.LogFile, started: st.StartedAt, adopted: true, done: make(chan error, 1),
 		ticks: st.StartTicks, boot: st.BootID}

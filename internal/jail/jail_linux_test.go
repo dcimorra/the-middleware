@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -178,5 +179,23 @@ func TestJailCommandHoldsNoCapabilities(t *testing.T) {
 		if v != want {
 			t.Errorf("%s = %s, want %s", k, v, want)
 		}
+	}
+}
+
+// A site's process is cloned into its site's cgroup (internal/cgroups):
+// the attributes the runtime set before the jail wraps the command, the
+// cgroup descriptor and the process group, must reach the clone, or the
+// jailed site would start in house/ with no budget. Checked on the
+// attributes without needing a jail on the machine; the live cgroup test
+// (internal/runtime, MIDDLEWARE_TEST_CGROUPS) starts a jailed one.
+func TestWrapKeepsTheCgroupItIsGiven(t *testing.T) {
+	cmd := exec.Command("/bin/true")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, UseCgroupFD: true, CgroupFD: 42}
+	if err := Wrap(cmd, &Plan{Dir: "/"}); err != nil {
+		t.Fatal(err)
+	}
+	a := cmd.SysProcAttr
+	if !a.UseCgroupFD || a.CgroupFD != 42 || !a.Setpgid || a.Cloneflags == 0 {
+		t.Fatalf("attributes after Wrap: %+v", a)
 	}
 }
