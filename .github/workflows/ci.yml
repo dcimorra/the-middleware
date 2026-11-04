@@ -37,7 +37,8 @@ jobs:
             sudo systemd-run --wait --pipe --collect --quiet \
               -p Delegate=yes -p DelegateSubgroup=house \
               --setenv=MIDDLEWARE_TEST_CGROUPS=1 \
-              "$RUNNER_TEMP/$pkg.test" -test.run Cgroup -test.v
+              "$RUNNER_TEMP/$pkg.test" -test.run Cgroup -test.v -test.count=5 \
+              || { sudo dmesg | grep -iE "oom|killed process" | tail -40; exit 1; }
           done
       - name: build
         run: go build -o middleware ./cmd/middleware
