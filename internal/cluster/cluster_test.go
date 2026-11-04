@@ -330,14 +330,16 @@ func TestAClusteredSiteIsCopiedAndSharesItsRequestsWhenSaturated(t *testing.T) {
 	delete(man, "cluster")
 	raw, _ := json.Marshal(man)
 	_ = os.WriteFile(filepath.Join(a.root, "sites", "shop.example", manifest.FileName), raw, 0o644)
-	b.cl.mu.Lock()
-	for _, j := range b.cl.jobs {
-		j.placed = time.Now().Add(-time.Hour)
-	}
-	b.cl.mu.Unlock()
-	old := time.Now().Add(-time.Hour)
-	_ = os.Chtimes(filepath.Join(replica, manifest.FileName), old, old)
 	waitFor(t, "the replica to go", 10*time.Second, func() bool {
+		// The grace is moved back on every look: a copy of v2 still being
+		// put in place when the cluster was switched off sets it again.
+		b.cl.mu.Lock()
+		for _, j := range b.cl.jobs {
+			j.placed = time.Now().Add(-time.Hour)
+		}
+		b.cl.mu.Unlock()
+		old := time.Now().Add(-time.Hour)
+		_ = os.Chtimes(filepath.Join(replica, manifest.FileName), old, old)
 		_, err := os.Stat(replica)
 		return os.IsNotExist(err)
 	})
