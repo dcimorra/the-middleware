@@ -69,3 +69,30 @@ func TestTheRequirementsRunIsFollowedByItsLog(t *testing.T) {
 		t.Fatalf("a quiet log: %v", st)
 	}
 }
+
+// A run's report lines reach the panel as steps, so it checks every node
+// by them without reading a log: a name padded to its column, one too
+// long for it, an optional step that failed and one that stopped the run.
+func TestTheRequirementsRunSaysEachStep(t *testing.T) {
+	log := "Installing\n" +
+		installer.Check{Name: "docker", OK: true, Detail: "present"}.String() + "\n" +
+		"✓ git, curl, wireguard, nftables, libatomic present\n" +
+		"! headless browser           the panel works without the pictures: no network\n" +
+		installer.Check{Name: "cgroups", OK: false, Detail: "permission denied"}.String() + "\n" +
+		installer.PanelFailed + "cgroups\n"
+	got := stepsOf(log)
+	want := []RequirementsStep{
+		{Name: "docker", OK: true, Detail: "present"},
+		{Name: "git, curl, wireguard, nftables, libatomic present", OK: true},
+		{Name: "headless browser", Optional: true, Detail: "the panel works without the pictures: no network"},
+		{Name: "cgroups", Detail: "permission denied"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("steps %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("step %d: %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}

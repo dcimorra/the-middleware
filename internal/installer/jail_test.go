@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/dcimorra/the-middleware/internal/cgroups"
 )
 
 // On a machine that wants a profile for user namespaces, the binary gets
@@ -130,5 +132,35 @@ func TestCgroupsStepGivesOldUnitsTheirCgroup(t *testing.T) {
 	os.WriteFile(in.pathFor(ServiceUnit), []byte(files[ServiceUnit]), 0o644)
 	if changed, _, err := in.stepCgroups(); err != nil || changed {
 		t.Errorf("current unit: changed %v, err %v", changed, err)
+	}
+}
+
+// The doctor says whether the running supervisor split its cgroup, and
+// what to do when it did not: install the drop-in for a unit that keeps
+// it out, restart for one that allows it.
+func TestTheDoctorSaysWhetherTheHouseSplitItsCgroup(t *testing.T) {
+	in, rec, _ := testInstaller(t)
+	defer func(r string) { cgroups.Root = r }(cgroups.Root)
+	cgroups.Root = t.TempDir()
+	if c := in.checkCgroups(); !c.OK {
+		t.Fatalf("no unified hierarchy is not a failure: %+v", c)
+	}
+	os.WriteFile(filepath.Join(cgroups.Root, "cgroup.controllers"), []byte("cpu memory pids"), 0o644)
+	rec.Set("systemctl show -p ControlGroup --value "+ServiceUnit, "/system.slice/middleware.service", nil)
+	unit := filepath.Join(cgroups.Root, "system.slice", "middleware.service")
+	os.MkdirAll(filepath.Join(unit, "house"), 0o755)
+	os.MkdirAll(in.Paths.SystemdDir, 0o755)
+	os.WriteFile(in.pathFor(ServiceUnit), []byte("[Service]\nProtectControlGroups=yes\nDelegate=yes\n"), 0o644)
+	if c := in.checkCgroups(); c.OK || !strings.Contains(c.Detail, "Install requirements") {
+		t.Fatalf("an old unit: %+v", c)
+	}
+	os.MkdirAll(filepath.Join(in.Paths.SystemdDir, "middleware.service.d"), 0o755)
+	os.WriteFile(filepath.Join(in.Paths.SystemdDir, CgroupsDropIn), []byte(cgroupsDropInContent), 0o644)
+	if c := in.checkCgroups(); c.OK || !strings.Contains(c.Detail, "restart the house") || strings.Contains(c.Detail, "Install") {
+		t.Fatalf("the drop-in written, not restarted: %+v", c)
+	}
+	os.MkdirAll(filepath.Join(unit, "sites"), 0o755)
+	if c := in.checkCgroups(); !c.OK {
+		t.Fatalf("split: %+v", c)
 	}
 }

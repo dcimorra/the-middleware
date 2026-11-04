@@ -29,7 +29,9 @@ export function checklist(lines) {
     },
     add(line) {
       const s = stateOf(line);
-      ul.append(h("li", { class: s },
+      // "skip" is the page's skip link, positioned off screen: a skipped
+      // line carrying that class was never seen.
+      ul.append(h("li", { class: s === "skip" ? "skipped" : s },
         h("span", { class: "mark", "aria-hidden": "true" }, MARK[s] ? icon(MARK[s]) : null),
         h("span", { class: "word" }, t(WORD[s])),
         h("span", { class: "text" }, line.text || line.message || ""),

@@ -103,8 +103,13 @@ Since v2.0.0-alpha.109 every site runs in a cgroup of its own
 `Delegate=cpu memory pids` with `ProtectControlGroups=no`. The binary
 updates itself and the unit does not: «Instalar requisitos» in Sistema
 writes a drop-in (`middleware.service.d/cgroups.conf`) that gives an older
-unit both lines and restarts the supervisor, and `middleware install` (or
-the one-liner) rewrites the unit. Units up to alpha.109 had
+unit both lines and asks for a restart of the house, and `middleware
+install` (or the one-liner) rewrites the unit. In a network, «Requisitos en
+todos los nodos» in Sistema runs it on every node at once, says which steps
+went wrong where, and once every run has ended offers each node's restart
+on its own, confirmed one by one (the panel's own node last), then runs
+`middleware doctor` on the node that came back. The doctor's `cgroups`
+line says whether the running supervisor did split its cgroup. Units up to alpha.109 had
 `ProtectControlGroups=yes`, which mounts the cgroups read-only for the
 whole unit: on those the split never happened, the agents' included, and
 the start says `cgroups.off` ("read-only"). Until then:
