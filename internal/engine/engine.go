@@ -917,7 +917,17 @@ func (e *Engine) retireLegacy(ctx context.Context, s *Site, m *manifest.Manifest
 // claimed, once, after adoption: what a supervisor that died mid-start left.
 func (e *Engine) reapContainers(ctx context.Context) {
 	d, ok := e.opts.Runtimes["docker"].(runtime.Docker)
-	if !ok || d.House == "" {
+	if !ok {
+		return
+	}
+	// After adoption, so the followers this supervisor has just started
+	// are there to be told apart (by their parent) from the earlier
+	// supervisor's, which would otherwise follow the same containers for
+	// as long as the machine runs.
+	if n := d.ReapFollowers(); n > 0 {
+		e.emit("docker.followers.reaped", "", "warn", fmt.Sprintf("%d docker logs/wait processes left by an earlier supervisor were stopped", n), map[string]any{"count": n})
+	}
+	if d.House == "" {
 		return
 	}
 	keep := map[string]bool{}
