@@ -207,3 +207,40 @@ func TestASiteThatSaysNodeRunsWithTheNodeItWasGiven(t *testing.T) {
 		t.Fatalf("log: %q", data)
 	}
 }
+
+type fakeGroups struct{ asked, adopted []string }
+
+func (f *fakeGroups) SiteAttr(domain string) (*syscall.SysProcAttr, func(), error) {
+	f.asked = append(f.asked, domain)
+	return &syscall.SysProcAttr{Setpgid: true}, func() {}, nil
+}
+func (f *fakeGroups) AdoptSite(domain string, pid int) error {
+	f.adopted = append(f.adopted, domain)
+	return nil
+}
+
+// A site's process asks for its site's group; the house's own task (no
+// domain) does not, and stays with the supervisor.
+func TestASitesProcessAsksForItsGroupAndAHouseTaskDoesNot(t *testing.T) {
+	f := &fakeGroups{}
+	SiteGroups = f
+	defer func() { SiteGroups = nil }()
+	dir := t.TempDir()
+	for _, d := range []string{"a.test/queue", ""} {
+		spec := &manifest.Spec{Domain: d, SiteDir: dir, Cwd: dir, Command: []string{"/bin/true"}, Env: map[string]string{}, Revision: "r"}
+		inst, err := Process{}.Start(context.Background(), spec, 0, filepath.Join(dir, "out.log"), filepath.Join(dir, "home"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		<-inst.Done()
+	}
+	if strings.Join(f.asked, ",") != "a.test/queue" {
+		t.Fatalf("asked for %v", f.asked)
+	}
+	if _, err := (Process{}).Adopt(context.Background(), State{Domain: "a.test", PID: os.Getpid()}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(f.adopted, ",") != "a.test" {
+		t.Fatalf("adopted %v", f.adopted)
+	}
+}

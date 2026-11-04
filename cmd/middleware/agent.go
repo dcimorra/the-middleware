@@ -128,6 +128,9 @@ func newChatHook(a *app.App) app.Hook {
 	} else {
 		agent.SpawnAttr = tree.AgentsAttr
 		a.Bus.Emit(events.Event{Type: "cgroups.on", Actor: "engine", Message: "agent turns run in " + tree.Agents()})
+		// Each site gets a group of its own beside house/ and agents/:
+		// CPU shared per site, not per process.
+		wireSiteGroups(a, tree)
 	}
 	onLimits := func(ag settings.Agents) {
 		if err := tree.SetAgents(ag.Limits(machine)); err != nil {

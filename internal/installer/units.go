@@ -161,11 +161,13 @@ RestartSec=2
 KillMode=process
 TimeoutStopSec=20
 
-# The unit's cgroup is the supervisor's to split: house/ (itself, the sites,
-# the tasks) and agents/ (every agent turn and what it starts), the latter
-# with a low CPU weight and a ceiling. DelegateSubgroup is where systemd
-# puts the supervisor at start. See internal/cgroups.
-Delegate=cpu memory
+# The unit's cgroup is the supervisor's to split: house/ (itself and the
+# house's tasks), agents/ (every agent turn and what it starts, with a low
+# CPU weight and a ceiling) and sites/<domain>/ (each site's processes,
+# with its own share and budget). pids caps each site's processes; a unit
+# without it still runs, without that cap. DelegateSubgroup is where
+# systemd puts the supervisor at start. See internal/cgroups.
+Delegate=cpu memory pids
 DelegateSubgroup=house
 
 # 80/443 without root: the supervisor opens them itself when the ports door
