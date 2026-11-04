@@ -270,7 +270,7 @@ serving untouched. The leaf's ceiling is lifted at the switch, and empty
 leaves are swept.
 
 The block applies to process-runtime pieces: a docker piece lives in the
-daemon's cgroup and keeps `docker.*`. The site's page has a «Recursos» card
+daemon's cgroup and keeps `docker.*`. The site's page has a «Recursos» tab
 that sets `memory`, `cpus` and `cpu_weight` with a bar each, the machine as
 its scale and what the site uses now marked on it, and keeps the rest of the
 block; only the owner changes it. Changes take effect live, on the next
