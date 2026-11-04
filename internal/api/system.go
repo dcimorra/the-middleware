@@ -93,6 +93,9 @@ func (s *Server) settingsPut(w http.ResponseWriter, r *http.Request) (any, error
 	if err := st.Update.Validate(); err != nil {
 		return nil, Errorf(http.StatusBadRequest, "%s", err.Error())
 	}
+	if err := st.Sites.Validate(); err != nil {
+		return nil, Errorf(http.StatusBadRequest, "%s", err.Error())
+	}
 	if err := s.opts.SaveSettings(st); err != nil {
 		return nil, err
 	}

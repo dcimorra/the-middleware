@@ -330,6 +330,7 @@ The settings object (`data/settings.json`):
   "ports": { "from": 33000, "to": 47000 },
   "pages": { "stopped": ["Title", "Message"] },
   "update": { "auto": false, "every_minutes": 60 },
+  "sites": { "default_limits": { "memory": "2g", "pids": 2048 } },
   "agents": {
     "max_concurrent": 0,
     "reserved_for_house": 1,
@@ -340,6 +341,14 @@ The settings object (`data/settings.json`):
   }
 }
 ```
+
+`sites.default_limits` is every site's cgroup budget where its manifest's
+`limits` leaves a field out (the same block and rules,
+[manifest.md](manifest.md#limits-limits)); absent by default, so no site
+has a memory ceiling it did not ask for. A change applies to every site
+within seconds, without a restart. When the kernel kills inside a site's
+group at its ceiling, a `site.oom` event (warn) carries `kills`, `limit`
+and `held` (the most the site held, in bytes).
 
 `update` is the self-update: `every_minutes` (1 to 10080, an hour when
 absent) is how often a new release is looked for, and `auto` whether one

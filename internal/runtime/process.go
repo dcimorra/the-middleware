@@ -351,3 +351,49 @@ func processStart(pid int) (time.Time, bool) {
 	}
 	return time.Time{}, false
 }
+
+// TrialScore is the oom_score_adj an instance on trial gets: the new
+// generation during a handover, the old one while it drains. Both run in
+// the site's cgroup and share its memory.max, and without it the kernel
+// picks its victim by size, which may be the generation still serving:
+// a deploy at the limit would then drop the site's requests instead of
+// failing the new generation's health check. Raising a score needs no
+// privilege, and lowering it back to where it started (0) does not
+// either, since the house never sets a minimum.
+const TrialScore = 500
+
+// PreferOOMKill marks the instance (its leader and every process under
+// it) as the one the kernel kills first inside its group, or clears the
+// mark. A process it forks later inherits what it has then.
+func (p *procInstance) PreferOOMKill(on bool) {
+	v := []byte("0")
+	if on {
+		v = []byte(strconv.Itoa(TrialScore))
+	}
+	for _, pid := range descendants(p.pid) {
+		_ = os.WriteFile("/proc/"+strconv.Itoa(pid)+"/oom_score_adj", v, 0o644)
+	}
+}
+
+// descendants is pid and every process under it, from /proc.
+func descendants(pid int) []int {
+	children := map[int][]int{}
+	if entries, err := os.ReadDir("/proc"); err == nil {
+		for _, ent := range entries {
+			n, err := strconv.Atoi(ent.Name())
+			if err != nil {
+				continue
+			}
+			if f, ok := statFields(n); ok && len(f) > 1 {
+				if pp, err := strconv.Atoi(f[1]); err == nil {
+					children[pp] = append(children[pp], n)
+				}
+			}
+		}
+	}
+	out := []int{pid}
+	for i := 0; i < len(out) && i < 10000; i++ {
+		out = append(out, children[out[i]]...)
+	}
+	return out
+}

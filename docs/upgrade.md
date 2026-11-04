@@ -96,6 +96,25 @@ Two things do not survive a supervisor restart:
   the site and finishes the handover: the healthy newer one wins, the other
   is drained.
 
+### The unit and the sites' cgroups
+
+Since v2.0.0-alpha.109 every site runs in a cgroup of its own
+([architecture.md](architecture.md#resources)) and the unit says
+`Delegate=cpu memory pids`. The binary updates itself; the unit is
+rewritten by `middleware install` (or the one-liner). Until then:
+
+- A unit with `Delegate=cpu memory` (from before): sites get their groups,
+  CPU shares and memory limits; the process cap is off, and the start says
+  so once (`cgroups.sites`).
+- A unit without delegation: everything runs as before (`cgroups.off`).
+
+Sites already running when the new version starts are in `house/`; at
+re-adoption each one is moved into its group with everything it started,
+without a restart. Afterwards `house/` holds only the supervisor and the
+house's own tasks. No site gets a memory ceiling it did not ask for: the
+manifest's `limits` and the settings' `sites.default_limits` are empty
+unless someone writes them.
+
 ## Roll the sites over
 
 A re-adopted instance still carries the environment it was born with and

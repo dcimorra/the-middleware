@@ -115,6 +115,9 @@ type Manifest struct {
 	// Replica marks this one as such a copy, written by the house.
 	Cluster *Cluster `json:"cluster,omitempty"`
 	Replica *Replica `json:"replica,omitempty"`
+	// Limits are the site's cgroup budget, for every process-runtime
+	// piece of it together (limits.go).
+	Limits *Limits `json:"limits,omitempty"`
 }
 
 // Static serves files.
@@ -664,6 +667,9 @@ func (m *Manifest) Validate() error {
 		return err
 	}
 	if err := m.validCluster(); err != nil {
+		return err
+	}
+	if err := m.Limits.Validate("limits"); err != nil {
 		return err
 	}
 	if m.Chat != nil {

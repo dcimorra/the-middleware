@@ -121,7 +121,32 @@ func (t *Tree) write(dir string, l SiteLimits) error {
 			return fmt.Errorf("cgroups: %s/%s: %w", filepath.Base(dir), w[0], err)
 		}
 	}
+	// A ceiling is a ceiling: with swap the kernel would page the site
+	// out at memory.max instead of stopping it, and a site past its
+	// budget would crawl, slowing the disk for everyone, rather than be
+	// killed and said (site.oom). Without a ceiling the site swaps as
+	// the machine does. A kernel without swap accounting has no file.
+	swap := "max"
+	if l.MemoryMax > 0 {
+		swap = "0"
+	}
+	if f := filepath.Join(dir, "memory.swap.max"); t.real(dir) {
+		if _, err := os.Stat(f); err == nil {
+			if err := os.WriteFile(f, []byte(swap), 0o644); err != nil {
+				return fmt.Errorf("cgroups: %s/memory.swap.max: %w", filepath.Base(dir), err)
+			}
+		}
+	} else {
+		_ = os.WriteFile(f, []byte(swap), 0o644)
+	}
 	return nil
+}
+
+// real says dir is a cgroup the kernel made (it has cgroup.procs), not a
+// test's folder, where files are written as they come.
+func (t *Tree) real(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "cgroup.procs"))
+	return err == nil
 }
 
 // SiteAttr is a SysProcAttr that starts a process inside its site's
@@ -289,4 +314,66 @@ func (t *Tree) SweepSites(exists func(site string) bool) {
 			_ = t.RemoveSite(e.Name())
 		}
 	}
+}
+
+// SiteMemory is what a site's group says of its memory: oom_kill from
+// memory.events (how many processes the kernel killed inside it for
+// going over memory.max, ever), the ceiling, and the most it held
+// (memory.peak, or memory.current on a kernel without it).
+type SiteMemory struct {
+	OOMKills int64
+	Max      int64 // 0 is no ceiling
+	Held     int64
+}
+
+// Memory reads a site's group; false when it has none.
+func (t *Tree) Memory(domain string) (SiteMemory, bool) {
+	dir := t.SitePath(domain)
+	if dir == "" {
+		return SiteMemory{}, false
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "memory.events"))
+	if err != nil {
+		return SiteMemory{}, false
+	}
+	var m SiteMemory
+	for _, line := range strings.Split(string(raw), "\n") {
+		if v, ok := strings.CutPrefix(line, "oom_kill "); ok {
+			m.OOMKills, _ = strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		}
+	}
+	num := func(f string) int64 {
+		b, err := os.ReadFile(filepath.Join(dir, f))
+		if err != nil {
+			return -1
+		}
+		n, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+		if err != nil {
+			return 0 // "max"
+		}
+		return n
+	}
+	m.Max = max(num("memory.max"), 0)
+	if m.Held = num("memory.peak"); m.Held < 0 {
+		m.Held = max(num("memory.current"), 0)
+	}
+	return m, true
+}
+
+// SiteNames lists the groups there are, by site.
+func (t *Tree) SiteNames() []string {
+	if !t.Sites() {
+		return nil
+	}
+	entries, err := os.ReadDir(t.sites)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			out = append(out, e.Name())
+		}
+	}
+	return out
 }

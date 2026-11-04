@@ -180,6 +180,35 @@ not by the adapter. The CLIs that can be pointed elsewhere keep their own
 settings and sessions in `data/agents/config/<domain>/`, not in the site's
 HOME, which a container can write.
 
+## Resources
+
+The unit's cgroup is the supervisor's to split (`Delegate=cpu memory pids`,
+`DelegateSubgroup=house`), into three branches beside each other:
+
+```
+middleware.service/
+├── house/            the supervisor and the house's own tasks
+├── agents/           every agent turn and whatever it starts
+└── sites/
+    ├── example.com/  the site's instances, process workers and services, its tasks
+    └── api.example.com/
+```
+
+Sites cannot go under `house/`: cgroup v2 gives no controllers to the
+children of a group that holds processes, and `house/` holds the
+supervisor. Processes start inside their group directly (clone into the
+cgroup), so nothing a site starts is ever briefly outside it, jailed or
+not. `agents/` has a CPU weight of 10 and a ceiling sized from the machine
+(every core but a quarter, a third of the memory; `agents.cpu_cores` and
+`agents.memory_max` replace them). Each site's group has weight 100, 4096
+processes and the manifest's `limits` (see [manifest.md](manifest.md#limits-limits)).
+What stays out: commands run for a site (`runtime.Exec`: installs and
+migrations run uncapped), docker containers (the daemon's cgroup, with
+`docker.*`), and the house's own tasks. A site re-adopted from a version
+that started it in `house/` is moved, with everything it started, into its
+group. Without delegation everything runs in the unit's cgroup as before,
+said once at start (`cgroups.off`).
+
 ## API and panel
 
 Everything the panel does goes through `/api/v1`, versioned JSON, with a

@@ -24,7 +24,9 @@ import (
 	"github.com/dcimorra/the-middleware/internal/chat"
 	"github.com/dcimorra/the-middleware/internal/cli"
 	"github.com/dcimorra/the-middleware/internal/events"
+	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/settings"
+	"github.com/dcimorra/the-middleware/internal/sitegroups"
 	"github.com/dcimorra/the-middleware/internal/tasks"
 )
 
@@ -130,7 +132,7 @@ func newChatHook(a *app.App) app.Hook {
 		a.Bus.Emit(events.Event{Type: "cgroups.on", Actor: "engine", Message: "agent turns run in " + tree.Agents()})
 		// Each site gets a group of its own beside house/ and agents/:
 		// CPU shared per site, not per process.
-		wireSiteGroups(a, tree)
+		sitegroups.Wire(filepath.Join(a.Root, "sites"), a.Bus, a.Engine, tree, func() *manifest.Limits { return a.CurrentSettings().Sites.DefaultLimits })
 	}
 	onLimits := func(ag settings.Agents) {
 		if err := tree.SetAgents(ag.Limits(machine)); err != nil {
