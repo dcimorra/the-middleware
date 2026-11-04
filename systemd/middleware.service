@@ -51,9 +51,13 @@ LimitNOFILE=65536
 # including under the operator's home, and sites build inside it.
 # ProtectKernelTunables is off too: it over-mounts parts of /proc, and the
 # kernel then refuses the sites' jails a /proc of their own.
+# ProtectControlGroups is off: it mounts /sys/fs/cgroup read-only for the
+# whole unit, the delegated cgroup included (systemd 255 makes no
+# exception for it), and the supervisor could split nothing: the agents'
+# and the sites' cgroups were never made on a node with it on.
 NoNewPrivileges=no
 ProtectKernelModules=yes
-ProtectControlGroups=yes
+ProtectControlGroups=no
 RestrictRealtime=yes
 
 [Install]

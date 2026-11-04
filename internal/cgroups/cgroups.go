@@ -124,6 +124,9 @@ func (m Machine) DefaultLimits() Limits {
 // ErrNotDelegated is a unit without delegation.
 var ErrNotDelegated = errors.New("the supervisor's cgroup is not delegated (the unit needs Delegate=cpu memory pids: run middleware install again); agent turns share the sites' CPU and memory")
 
+// ErrReadOnly is a delegated cgroup the unit mounts read-only.
+var ErrReadOnly = errors.New("the supervisor's cgroup is read-only (the unit has ProtectControlGroups=yes: press «Instalar requisitos» in Sistema, or run middleware install again); agent turns and sites share the house's CPU and memory")
+
 // Tree is the split, once made.
 type Tree struct {
 	agents string
@@ -163,7 +166,14 @@ func Setup(self string, l Limits) (*Tree, error) {
 		unitPath = self
 	}
 	unit := filepath.Join(Root, unitPath)
-	if syscall.Access(filepath.Join(unit, "cgroup.subtree_control"), 2) != nil {
+	if err := syscall.Access(filepath.Join(unit, "cgroup.subtree_control"), 2); err != nil {
+		if errors.Is(err, syscall.EROFS) {
+			// Delegated, but the unit mounts /sys/fs/cgroup read-only
+			// (ProtectControlGroups=yes, which units up to alpha.109
+			// had): said apart, since "not delegated" sent the operator
+			// to a Delegate= line that was already right.
+			return nil, ErrReadOnly
+		}
 		return nil, ErrNotDelegated
 	}
 	if unitPath == self {

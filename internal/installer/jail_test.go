@@ -90,3 +90,45 @@ func TestJailStepTurnsOffProtectKernelTunablesOfOldUnits(t *testing.T) {
 		t.Errorf("current unit: changed %v, err %v", changed, err)
 	}
 }
+
+// A unit that mounts the cgroups read-only or does not delegate pids gets
+// a drop-in that hands the supervisor its cgroup, and the supervisor is
+// told to restart; a unit rendered now needs none.
+func TestCgroupsStepGivesOldUnitsTheirCgroup(t *testing.T) {
+	for name, body := range map[string]string{
+		"read-only": "[Service]\nDelegate=cpu memory pids\nProtectControlGroups=yes\n",
+		"no pids":   "[Service]\nDelegate=cpu memory\nProtectControlGroups=no\n",
+	} {
+		in, rec, _ := testInstaller(t)
+		unit := in.pathFor(ServiceUnit)
+		os.MkdirAll(filepath.Dir(unit), 0o755)
+		os.WriteFile(unit, []byte(body), 0o644)
+		changed, _, err := in.stepCgroups()
+		if err != nil || !changed {
+			t.Fatalf("%s: changed %v, err %v", name, changed, err)
+		}
+		b, _ := os.ReadFile(filepath.Join(in.Paths.SystemdDir, CgroupsDropIn))
+		if !strings.Contains(string(b), "ProtectControlGroups=no") || !strings.Contains(string(b), "Delegate=cpu memory pids") {
+			t.Fatalf("%s: drop-in %q", name, b)
+		}
+		if !slices.Contains(rec.Mutations(), "sudo systemctl daemon-reload") {
+			t.Errorf("%s: no daemon-reload: %v", name, rec.Mutations())
+		}
+		if changed, _, _ := in.stepCgroups(); changed {
+			t.Errorf("%s: written twice", name)
+		}
+	}
+	in, _, _ := testInstaller(t)
+	files, err := Render(in.Params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(files[ServiceUnit], "ProtectControlGroups=yes") || !strings.Contains(files[ServiceUnit], "\nDelegate=cpu memory pids") {
+		t.Fatal("the rendered unit keeps the supervisor from its cgroup")
+	}
+	os.MkdirAll(filepath.Dir(in.pathFor(ServiceUnit)), 0o755)
+	os.WriteFile(in.pathFor(ServiceUnit), []byte(files[ServiceUnit]), 0o644)
+	if changed, _, err := in.stepCgroups(); err != nil || changed {
+		t.Errorf("current unit: changed %v, err %v", changed, err)
+	}
+}
