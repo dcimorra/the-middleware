@@ -19,9 +19,12 @@ import (
 type fakeProvider struct {
 	key    string
 	script []agent.Event
-	hold   chan struct{}
-	mu     sync.Mutex
-	reqs   []agent.Request
+	// scripts, when set, are the script of each run in turn; the last one
+	// is repeated.
+	scripts [][]agent.Event
+	hold    chan struct{}
+	mu      sync.Mutex
+	reqs    []agent.Request
 }
 
 func (f *fakeProvider) Key() string               { return f.key }
@@ -31,12 +34,20 @@ func (f *fakeProvider) Models() []string          { return []string{"fake-1"} }
 func (f *fakeProvider) Start(ctx context.Context, req agent.Request) (agent.Run, error) {
 	f.mu.Lock()
 	f.reqs = append(f.reqs, req)
+	script := f.script
+	if len(f.scripts) > 0 {
+		script = f.scripts[min(len(f.reqs), len(f.scripts))-1]
+	}
 	f.mu.Unlock()
+	// Where a CLI would write its output, as the real ones do.
+	if req.Stream != "" && os.MkdirAll(filepath.Dir(req.Stream), 0o700) == nil {
+		_ = os.WriteFile(req.Stream, []byte("{\"type\":\"fake\"}\n"), 0o600)
+	}
 	r := &fakeRun{ch: make(chan agent.Event), stop: make(chan struct{})}
 	go func() {
 		defer close(r.ch)
-		for i, ev := range f.script {
-			if i == len(f.script)-1 && f.hold != nil {
+		for i, ev := range script {
+			if i == len(script)-1 && f.hold != nil {
 				select {
 				case <-f.hold:
 				case <-r.stop:

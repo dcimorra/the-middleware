@@ -925,12 +925,54 @@ func (m *Manager) SendWith(name, text string, o SendOptions) (string, error) {
 		_ = fsx.WriteJSON(m.runningPath(name), runningFile{Name: name, TurnID: turnID, PID: pr.PID(), Stream: req.Stream, Provider: s.Provider, Model: model, Origin: c.Origin, Started: time.Now()}, 0o600)
 	}
 	m.emit("agent.started", name, "", "", map[string]any{"turn_id": turnID, "provider": s.Provider, "model": model})
-	go m.follow(name, turnID, s, run, cancel)
+	// A second run of the same turn, on the same session, for an answer
+	// that came back empty (see follow).
+	again := func(note, session string) (agent.Run, error) {
+		r := req
+		r.Prompt = note + req.Prompt
+		if session != "" {
+			r.SessionID = session
+		}
+		return provider.Start(ctx, r)
+	}
+	go m.follow(name, turnID, s, run, cancel, again)
 	return turnID, nil
 }
 
-// follow consumes a run to its end and records the outcome.
-func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel context.CancelFunc) {
+// EmptyRetry is what the agent is told when its answer came back empty:
+// the message again, so it is there even when the CLI compacted the
+// conversation around it.
+const EmptyRetry = "[The middleware: your answer to this message came back empty, with nothing said and nothing done, and the operator saw no reply. Answer it now.]\n\n"
+
+// keepEmpty keeps the output of a run that answered nothing, in
+// data/chat/empty/, the last few only: the stream is deleted when the turn
+// ends, and it is the one thing that says why the agent was silent.
+func (m *Manager) keepEmpty(name, turnID string) {
+	dir := filepath.Join(m.opts.Root, "data", "chat", "empty")
+	if os.MkdirAll(dir, 0o700) != nil {
+		return
+	}
+	data, err := os.ReadFile(m.streamPath(name, turnID))
+	if err != nil {
+		return
+	}
+	stamp := time.Now().UTC().Format("20060102T150405Z")
+	_ = os.WriteFile(filepath.Join(dir, stamp+"-"+strings.ReplaceAll(name, "/", "_")+"-"+turnID+".out"), data, 0o600)
+	ents, _ := os.ReadDir(dir)
+	for len(ents) > 10 {
+		_ = os.Remove(filepath.Join(dir, ents[0].Name()))
+		ents = ents[1:]
+	}
+}
+
+// follow consumes a run to its end and records the outcome. again, when
+// set, starts the turn once more on the same session: a run that ends well
+// having said nothing and done nothing is run again with the same message,
+// once. Claude Code does that now and then on a long conversation (the
+// answer is empty, the result a success with no text), and the operator
+// saw a turn begin and stop with no reply and had to write the same thing
+// a second time, which then worked: the house does that second time.
+func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel context.CancelFunc, again func(note, session string) (agent.Run, error)) {
 	defer cancel()
 	domain, _ := split(name)
 	origin, model := "", s.Model
@@ -989,121 +1031,154 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 		}
 		return (*stepsOf(w.thread))[w.i].Tool
 	}
-	for ev := range run.Events() {
-		all = append(all, ev)
-		if ev.SessionID != "" {
-			sessionID = ev.SessionID
-		}
-		switch ev.Kind {
-		case agent.KindText:
-			ss := stepsOf(ev.Thread)
-			*ss = append(*ss, Step{Kind: "text", Text: ev.Text})
-			if ev.Thread != "" {
-				th := thread(ev.Thread)
-				if th.Text != "" {
-					th.Text += "\n\n"
+	// cost is the turn's: each run reports its own total, so the runs of
+	// one turn add up.
+	var total float64
+	retried := false
+	for {
+		for ev := range run.Events() {
+			all = append(all, ev)
+			if ev.SessionID != "" {
+				sessionID = ev.SessionID
+			}
+			switch ev.Kind {
+			case agent.KindText:
+				ss := stepsOf(ev.Thread)
+				*ss = append(*ss, Step{Kind: "text", Text: ev.Text})
+				if ev.Thread != "" {
+					th := thread(ev.Thread)
+					if th.Text != "" {
+						th.Text += "\n\n"
+					}
+					th.Text += ev.Text
+					m.progress("agent.text", name, "", map[string]any{"turn_id": turnID, "text": ev.Text, "thread": ev.Thread})
+					continue
 				}
-				th.Text += ev.Text
-				m.progress("agent.text", name, "", map[string]any{"turn_id": turnID, "text": ev.Text, "thread": ev.Thread})
-				continue
-			}
-			if text.Len() > 0 {
-				text.WriteString("\n\n")
-			}
-			text.WriteString(ev.Text)
-			m.progress("agent.text", name, "", map[string]any{"turn_id": turnID, "text": ev.Text})
-			ask(ev.Text)
-			continue
-		case agent.KindTool:
-			tu := &ToolUse{ID: ev.ToolID, Name: ev.Tool, Input: clipInput(ev.Input)}
-			data := map[string]any{"turn_id": turnID, "id": ev.ToolID, "tool": ev.Tool, "input": tu.Input}
-			if isAgentTool(ev.Tool) && ev.ToolID != "" {
-				tu.Run = RunRunning
-				th := thread(ev.ToolID)
-				th.Run = RunRunning
-				th.Description, _ = ev.Input["description"].(string)
-				if pr, ok := ev.Input["prompt"].(string); ok {
-					th.Prompt = clipText(pr)
+				if text.Len() > 0 {
+					text.WriteString("\n\n")
 				}
-				th.Background, _ = ev.Input["run_in_background"].(bool)
-				data["run"] = RunRunning
-			}
-			ss := stepsOf(ev.Thread)
-			*ss = append(*ss, Step{Kind: "tool", Tool: tu})
-			if ev.ToolID != "" {
-				calls[ev.ToolID] = at{ev.Thread, len(*ss) - 1}
-			}
-			if ev.Thread != "" {
-				th := thread(ev.Thread)
-				th.Tools = append(th.Tools, ev.Tool)
-				data["thread"] = ev.Thread
-			} else {
-				tools = append(tools, ev.Tool)
-			}
-			m.progress("agent.tool", name, "", data)
-			continue
-		case agent.KindToolResult:
-			tu := toolOf(ev.ToolID)
-			if tu == nil {
-				continue
-			}
-			tu.Output, tu.Error, tu.Done = clipText(ev.Output), ev.IsError, true
-			data := map[string]any{"turn_id": turnID, "id": ev.ToolID, "output": tu.Output, "error": tu.Error}
-			if ev.Thread != "" {
-				data["thread"] = ev.Thread
-			}
-			if tu.Run != "" {
-				// A subagent in the foreground is done when its call
-				// answers; one in the background answers "launched" and
-				// goes on, so only a failure ends it here.
-				th := thread(ev.ToolID)
-				switch {
-				case ev.IsError:
-					tu.Run = "failed"
-				case !th.Background:
-					tu.Run = "completed"
-				}
-				th.Run = tu.Run
-				data["run"] = tu.Run
-			}
-			m.progress("agent.tool.result", name, "", data)
-			continue
-		case agent.KindLimits:
-			m.opts.Usage.Record(s.Provider, "", "turn", ev.Limits)
-			continue
-		case agent.KindAgentStatus:
-			tu := toolOf(ev.ToolID)
-			if tu == nil || tu.Run == "" {
-				continue // a background shell, not a subagent
-			}
-			tu.Run = ev.Status
-			thread(ev.ToolID).Run = ev.Status
-			m.progress("agent.subagent", name, "", map[string]any{"turn_id": turnID, "id": ev.ToolID, "run": ev.Status})
-			continue
-		}
-		switch ev.Kind {
-		case agent.KindCost:
-			if ev.Cost > cost {
-				cost = ev.Cost
-			}
-		case agent.KindResult:
-			ended = true
-			if ev.Cost > cost {
-				cost = ev.Cost
-			}
-			if text.Len() == 0 && ev.Text != "" {
 				text.WriteString(ev.Text)
-				steps = append(steps, Step{Kind: "text", Text: ev.Text})
+				m.progress("agent.text", name, "", map[string]any{"turn_id": turnID, "text": ev.Text})
 				ask(ev.Text)
+				continue
+			case agent.KindTool:
+				tu := &ToolUse{ID: ev.ToolID, Name: ev.Tool, Input: clipInput(ev.Input)}
+				data := map[string]any{"turn_id": turnID, "id": ev.ToolID, "tool": ev.Tool, "input": tu.Input}
+				if isAgentTool(ev.Tool) && ev.ToolID != "" {
+					tu.Run = RunRunning
+					th := thread(ev.ToolID)
+					th.Run = RunRunning
+					th.Description, _ = ev.Input["description"].(string)
+					if pr, ok := ev.Input["prompt"].(string); ok {
+						th.Prompt = clipText(pr)
+					}
+					th.Background, _ = ev.Input["run_in_background"].(bool)
+					data["run"] = RunRunning
+				}
+				ss := stepsOf(ev.Thread)
+				*ss = append(*ss, Step{Kind: "tool", Tool: tu})
+				if ev.ToolID != "" {
+					calls[ev.ToolID] = at{ev.Thread, len(*ss) - 1}
+				}
+				if ev.Thread != "" {
+					th := thread(ev.Thread)
+					th.Tools = append(th.Tools, ev.Tool)
+					data["thread"] = ev.Thread
+				} else {
+					tools = append(tools, ev.Tool)
+				}
+				m.progress("agent.tool", name, "", data)
+				continue
+			case agent.KindToolResult:
+				tu := toolOf(ev.ToolID)
+				if tu == nil {
+					continue
+				}
+				tu.Output, tu.Error, tu.Done = clipText(ev.Output), ev.IsError, true
+				data := map[string]any{"turn_id": turnID, "id": ev.ToolID, "output": tu.Output, "error": tu.Error}
+				if ev.Thread != "" {
+					data["thread"] = ev.Thread
+				}
+				if tu.Run != "" {
+					// A subagent in the foreground is done when its call
+					// answers; one in the background answers "launched" and
+					// goes on, so only a failure ends it here.
+					th := thread(ev.ToolID)
+					switch {
+					case ev.IsError:
+						tu.Run = "failed"
+					case !th.Background:
+						tu.Run = "completed"
+					}
+					th.Run = tu.Run
+					data["run"] = tu.Run
+				}
+				m.progress("agent.tool.result", name, "", data)
+				continue
+			case agent.KindLimits:
+				m.opts.Usage.Record(s.Provider, "", "turn", ev.Limits)
+				continue
+			case agent.KindAgentStatus:
+				tu := toolOf(ev.ToolID)
+				if tu == nil || tu.Run == "" {
+					continue // a background shell, not a subagent
+				}
+				tu.Run = ev.Status
+				thread(ev.ToolID).Run = ev.Status
+				m.progress("agent.subagent", name, "", map[string]any{"turn_id": turnID, "id": ev.ToolID, "run": ev.Status})
+				continue
 			}
-		case agent.KindError:
-			ended = true
-			errText = ev.Text
-			if ev.Cost > cost {
-				cost = ev.Cost
+			switch ev.Kind {
+			case agent.KindCost:
+				if ev.Cost > cost {
+					cost = ev.Cost
+				}
+			case agent.KindResult:
+				ended = true
+				if ev.Cost > cost {
+					cost = ev.Cost
+				}
+				if text.Len() == 0 && ev.Text != "" {
+					text.WriteString(ev.Text)
+					steps = append(steps, Step{Kind: "text", Text: ev.Text})
+					ask(ev.Text)
+				}
+			case agent.KindError:
+				ended = true
+				errText = ev.Text
+				if ev.Cost > cost {
+					cost = ev.Cost
+				}
 			}
 		}
+		if ended && errText == "" && again != nil && !retried && text.Len() == 0 && len(steps) == 0 && len(threads) == 0 {
+			retried = true
+			total += cost
+			m.keepEmpty(name, turnID)
+			m.emit("agent.empty", name, "warn", "the agent answered nothing; the message goes to it again", map[string]any{"turn_id": turnID, "cost": cost})
+			session := sessionID
+			if next, err := again(EmptyRetry, session); err == nil {
+				run, cost, ended = next, 0, false
+				m.mu.Lock()
+				if r := m.running[name]; r != nil {
+					r.run = next
+				}
+				m.mu.Unlock()
+				if pr, ok := next.(interface{ PID() int }); ok {
+					var rf runningFile
+					if fsx.ReadJSON(m.runningPath(name), &rf) == nil && rf.TurnID == turnID {
+						rf.PID = pr.PID()
+						_ = fsx.WriteJSON(m.runningPath(name), rf, 0o600)
+					}
+				}
+				continue
+			} else {
+				m.emit("agent.error", name, "warn", "the empty answer could not be asked again: "+err.Error(), map[string]any{"turn_id": turnID})
+			}
+		}
+		break
 	}
+	cost += total
 	if !ended && errText == "" {
 		errText = "the agent ended without a result"
 	}
@@ -1467,7 +1542,7 @@ func (m *Manager) Recover(ctx context.Context) {
 		m.running[rf.Name] = &running{turnID: rf.TurnID, provider: rf.Provider, origin: rf.Origin, model: rf.Model, started: rf.Started, deadline: deadline, cancel: cancel, done: make(chan struct{}), run: run, queued: q.Messages, queuedModel: q.Model, queuedProvider: q.Provider}
 		m.mu.Unlock()
 		m.emit("agent.adopted", rf.Name, "", "a turn from before the restart, picked up", map[string]any{"turn_id": rf.TurnID, "pid": rf.PID})
-		go m.follow(rf.Name, rf.TurnID, s, run, cancel)
+		go m.follow(rf.Name, rf.TurnID, s, run, cancel, nil)
 	}
 	// What waited for a turn that is not coming back (it could not be
 	// picked up, or it ended as the old supervisor went) is sent now: it
