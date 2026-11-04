@@ -433,7 +433,11 @@ where the copies are and how they are. Details: docs/cluster.md.
 is what every process-runtime piece of the site (instances, process
 workers and services, tasks) may hold together, in the site's own cgroup;
 a docker piece keeps `docker.*`. `cpu_weight` is 1..10000 with 100 an equal
-share (not docker's 1024). During a deploy both generations run inside the
+share (not docker's 1024). `cpus` is a hard cap that holds even on an idle
+machine; `cpu_weight` only counts when sites compete, so a site asked to
+"use less CPU" gets a lower weight first, and a cap only when it must never
+go past a number. No `memory` means no ceiling (the house's
+`sites.default_limits` aside). During a deploy both generations run inside the
 same `memory`, so leave room for two: a new one that does not fit is killed
 and fails its health check while the old one serves. A kill at the ceiling
 is a `site.oom` event: read it before raising the limit. Applied live.
