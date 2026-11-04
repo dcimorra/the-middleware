@@ -40,13 +40,21 @@ import { specsTab } from "./site-specs.js";
 // so instead of offering a button that fails.
 let shotsOff = false;
 
-const TABS = ["overview", "activity", "visits", "manifest", "logs", "files", "chat", "tasks", "backups", "specs", "access", "security", "cache", "moves"];
-const TAB_ICON = { overview: "gauge", activity: "activity", visits: "chart", manifest: "code", logs: "list", files: "folder", chat: "chat", tasks: "clock", backups: "history", specs: "file", access: "lock", security: "shield", cache: "box", moves: "upload" };
+const TABS = ["overview", "activity", "visits", "resources", "manifest", "logs", "files", "chat", "tasks", "backups", "specs", "access", "security", "cache", "cluster", "moves"];
+const TAB_ICON = { overview: "gauge", activity: "activity", visits: "chart", resources: "cpu", manifest: "code", logs: "list", files: "folder", chat: "chat", tasks: "clock", backups: "history", specs: "file", access: "lock", security: "shield", cache: "box", cluster: "server", moves: "upload" };
 
 // The tabs a delegated user sees, by what opens them: the WAF, the edge
-// cache, the house's guard and the moves are the operator's, and the
-// access tab writes the manifest.
+// cache, the house's guard, the site's resources, its cluster and the
+// moves are the operator's, and the access tab writes the manifest.
 const DELEGATE_TABS = { overview: "view", visits: "view", manifest: "view", logs: "view", files: "view", tasks: "view", backups: "view", specs: "view", chat: "agents", access: "code" };
+
+// The site's resources tab: the bars when something of it runs on the
+// machine, a word when nothing does (a static site is served by the house).
+function resourcesTab(domain, s) {
+  const m = (s && s.manifest) || {};
+  if (!(m.run || m.services || m.workers)) return { el: empty(t("res.staticTitle"), t("res.staticHint"), null, "cpu") };
+  return { el: resourcesCard(domain) };
+}
 
 export function siteScreen({ domain, tab, query }) {
   const shownTabs = delegate() ? TABS.filter((k) => DELEGATE_TABS[k] && can(domain, DELEGATE_TABS[k])) : TABS;
@@ -126,6 +134,10 @@ export function siteScreen({ domain, tab, query }) {
       case "activity": view = activityTab(domain, pickWorker); break;
       case "visits": view = visitsTab(domain); break;
       case "cache": view = cacheTab(domain); break;
+      // Each in a tab of its own: on the overview they made a page that
+      // had to be scrolled past to find anything else.
+      case "resources": view = resourcesTab(domain, s); break;
+      case "cluster": view = { el: clusterCard(domain) }; break;
       // Its own tab, the last: a move's operations are read when one is
       // under way or went wrong, not every time the site is opened.
       case "moves": view = movesCard(domain, { empty: true }); break;
@@ -194,9 +206,7 @@ function overviewTab(domain) {
   const owner = !delegate();
   const door = owner ? doorCard(domain) : null;
   // Built once, like the door: it keeps its own form and refreshes itself.
-  const clusterEl = owner ? clusterCard(domain) : null;
-  // Built once too: the bars keep what is being dragged across re-renders.
-  const resourcesEl = owner ? resourcesCard(domain) : null;
+
   // The names the house published for this site, from GET /publish:
   // [name, record] pairs, refreshed on publish.* events.
   let published = [];
@@ -662,9 +672,7 @@ function overviewTab(domain) {
       serves && can(domain, "code") ? redirectsCard(m) : null,
       serves && can(domain, "code") ? httpsCard(m) : null,
       unmanaged || !door ? null : door,
-      unmanaged || !clusterEl || !serves ? null : clusterEl,
-      // What runs on the machine: a static site has nothing to limit.
-      unmanaged || !resourcesEl || !(m.run || m.services || m.workers) ? null : resourcesEl,
+
       unmanaged ? null : envCard,
     ]);
   }
