@@ -329,9 +329,22 @@ func TestCgroupLiveAHandoverAtTheMemoryLimitDropsNoRequest(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, ".current"), []byte("build-2\n"), 0o644)
 	deadline := time.After(30 * time.Second)
 	var sawOOM, sawFail bool
+	// Everything the site said, to read when it fails: which generation
+	// went, and in what order.
+	var said []string
+	defer func() {
+		if t.Failed() {
+			t.Logf("events:\n%s", strings.Join(said, "\n"))
+			log, _ := os.ReadFile(filepath.Join(filepath.Dir(h.sites), "data", "logs", "full.test", "site.log"))
+			t.Logf("site.log:\n%s", log)
+		}
+	}()
 	for !sawOOM || !sawFail {
 		select {
 		case e := <-ch:
+			if e.Subject == "full.test" {
+				said = append(said, fmt.Sprintf("%s %s %s %v", e.Time.Format("15:04:05.000"), e.Type, e.Message, e.Data))
+			}
 			switch e.Type {
 			case "site.oom":
 				sawOOM = true
@@ -344,7 +357,18 @@ func TestCgroupLiveAHandoverAtTheMemoryLimitDropsNoRequest(t *testing.T) {
 			t.Fatalf("oom %v, failed start %v", sawOOM, sawFail)
 		}
 	}
-	time.Sleep(500 * time.Millisecond)
+	sleepUntil := time.After(500 * time.Millisecond)
+drain:
+	for {
+		select {
+		case e := <-ch:
+			if e.Subject == "full.test" {
+				said = append(said, fmt.Sprintf("%s %s %s %v", e.Time.Format("15:04:05.000"), e.Type, e.Message, e.Data))
+			}
+		case <-sleepUntil:
+			break drain
+		}
+	}
 	close(stop)
 	wg.Wait()
 	sn, _ := h.eng.Lookup("full.test")

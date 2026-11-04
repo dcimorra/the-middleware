@@ -90,7 +90,7 @@ func TestCgroupLiveASitesProcessesAreInItsGroup(t *testing.T) {
 			defer inst.Stop(context.Background(), 2*time.Second)
 			pid := inst.State().PID
 			time.Sleep(300 * time.Millisecond)
-			site := procsOf(t, tree.SitePath(domain))
+			site := procsOf(t, filepath.Join(tree.SitePath(domain), cgroups.MainName))
 			if !site[pid] || len(site) < 2 {
 				t.Fatalf("site group holds %v, want %d and its child", site, pid)
 			}
@@ -121,7 +121,7 @@ func TestCgroupLiveAnOldSiteMovesAtAdoption(t *testing.T) {
 	if _, err := (Process{}).Adopt(context.Background(), State{Domain: "old.test", Runtime: "process", PID: pid}); err != nil {
 		t.Fatal(err)
 	}
-	site := procsOf(t, tree.SitePath("old.test"))
+	site := procsOf(t, filepath.Join(tree.SitePath("old.test"), cgroups.MainName))
 	if !site[pid] || len(site) < 2 {
 		t.Fatalf("site group after adoption holds %v, want %d and its child", site, pid)
 	}

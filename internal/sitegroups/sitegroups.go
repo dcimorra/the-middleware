@@ -91,6 +91,7 @@ func (g *siteGroups) watch(def func() *manifest.Limits) {
 		for _, domain := range known {
 			g.apply(domain, d)
 		}
+		g.tree.SweepTrials()
 		for _, site := range g.tree.SiteNames() {
 			m, ok := g.tree.Memory(site)
 			if !ok {
@@ -143,6 +144,14 @@ func (g *siteGroups) SiteAttr(domain string) (*syscall.SysProcAttr, func(), erro
 		g.warn(domain, "started outside its site's group", err)
 	}
 	return attr, release, err
+}
+
+func (g *siteGroups) TrialAttr(domain string) (*syscall.SysProcAttr, func(), func(), error) {
+	attr, release, promote, err := g.tree.TrialAttr(domain)
+	if err != nil {
+		g.warn(domain, "started on trial without its own ceiling", err)
+	}
+	return attr, release, promote, err
 }
 
 func (g *siteGroups) AdoptSite(domain string, pid int) error {
