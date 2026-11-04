@@ -487,11 +487,15 @@ func (t *Tree) SweepSites(exists func(site string) bool) {
 // SiteMemory is what a site's group says of its memory: oom_kill from
 // memory.events (how many processes the kernel killed inside it for
 // going over memory.max, ever), the ceiling, and the most it held
-// (memory.peak, or memory.current on a kernel without it).
+// (memory.peak, or memory.current on a kernel without it). Current is
+// what it holds now and CPUUsec the CPU time its processes have used
+// (cpu.stat usage_usec), which the panel turns into a rate.
 type SiteMemory struct {
 	OOMKills int64
 	Max      int64 // 0 is no ceiling
 	Held     int64
+	Current  int64
+	CPUUsec  int64
 }
 
 // Memory reads a site's group; false when it has none.
@@ -522,8 +526,16 @@ func (t *Tree) Memory(domain string) (SiteMemory, bool) {
 		return n
 	}
 	m.Max = max(num("memory.max"), 0)
+	m.Current = max(num("memory.current"), 0)
 	if m.Held = num("memory.peak"); m.Held < 0 {
-		m.Held = max(num("memory.current"), 0)
+		m.Held = m.Current
+	}
+	if raw, err := os.ReadFile(filepath.Join(dir, "cpu.stat")); err == nil {
+		for _, line := range strings.Split(string(raw), "\n") {
+			if v, ok := strings.CutPrefix(line, "usage_usec "); ok {
+				m.CPUUsec, _ = strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+			}
+		}
 	}
 	return m, true
 }

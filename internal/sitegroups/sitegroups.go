@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -162,6 +163,10 @@ func (g *siteGroups) AdoptSite(domain string, pid int) error {
 	return err
 }
 
+// Live is the sites' branch once Wire found it working, nil before or
+// without one: what the panel reads a site's use from.
+var Live atomic.Pointer[cgroups.Tree]
+
 // Every is how often the house's defaults are applied again and the
 // groups read for OOM kills; tests shorten it.
 var Every = 5 * time.Second
@@ -177,6 +182,7 @@ func Wire(sitesDir string, bus *events.Bus, eng *engine.Engine, tree *cgroups.Tr
 	if !tree.Sites() {
 		return
 	}
+	Live.Store(tree)
 	g := &siteGroups{tree: tree, bus: bus, said: map[string]bool{}, limits: map[string]*manifest.Limits{}, written: map[string]cgroups.SiteLimits{}, kills: map[string]int64{}}
 	runtime.SiteGroups = g
 	// Before a site's first process: the reconcile that starts it reads

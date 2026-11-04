@@ -152,6 +152,9 @@ var ownerOnly = []string{
 	"POST " + siteBase + "/move",
 	"GET " + siteBase + "/claude-api",
 	"POST " + siteBase + "/claude-api",
+	// Its budget on the machine, and the machine's size with it: the
+	// owner's to set (the manifest's limits are locked for a delegate).
+	"GET " + siteBase + "/limits",
 }
 
 // userRoutes are the routes outside a site a delegate reaches: the

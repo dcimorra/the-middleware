@@ -2506,3 +2506,13 @@ details.site-env[open] > summary { margin-bottom: 10px; }
 .req-all-body:empty { display: none; }
 .req-all-actions { grid-column: 2; grid-row: 1 / span 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: start; justify-content: flex-end; }
 @media (max-width: 600px) { .req-all-row { grid-template-columns: minmax(0, 1fr); } .req-all-actions { grid-column: 1; grid-row: auto; justify-content: flex-start; } }
+/* A site's resources: a bar each, its value large beside its name, the
+   two ends of the scale under it. */
+.site-res-bar { display: flex; flex-direction: column; gap: 4px; margin: 14px 0; }
+.site-res-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.site-res-value { font-size: 15px; }
+.site-res-bar input[type="range"] { width: 100%; accent-color: var(--accent); margin: 4px 0 0; }
+.site-res-scale { display: flex; justify-content: space-between; }
+.site-res-track { position: relative; }
+/* What the site uses now, a notch on the bar under the thumb. */
+.site-res-mark { position: absolute; top: -2px; width: 3px; height: 22px; margin-left: -1.5px; border-radius: 2px; background: var(--warn); opacity: .85; pointer-events: none; }

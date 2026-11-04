@@ -767,6 +767,7 @@ and refuse anyone else, except the operator's removal.
 
 | method | path | body / result |
 | --- | --- | --- |
+| GET | `/sites/{domain}/limits` | → `{applied, machine: {cpus, memory}, limits, defaults, use?: {memory, peak, oom_kills, cpu_usec}}`: what the panel's «Recursos» card draws; `applied` is false on a node that does not split its cgroup (the limits wait in the manifest), `use` is the site's group now (`cpu_usec` grows; two reads give a rate). `limits` is changed with PATCH `/manifest` and only by the owner: a delegate's change to it is refused |
 | GET | `/sites/{domain}/cluster` | → `{domain, in_network, clustered, blockers, cluster, want, spill_at, gateway, revision, load: {per_core, cores}, sharing, replicas: [{node, node_id, state, alive, load, error, synced, refused}], replica}`; owner only |
 | GET | `/cluster` | → `{load, kept: [{domain, primary, of, revision, alive, state, pending, error, synced}]}` |
 | POST | `/cluster/status` | `{expect}` → `{load, replicas}`; nodes only. Replicas of the caller not in `expect` are removed after two minutes' grace |
