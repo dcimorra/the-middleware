@@ -402,6 +402,27 @@ in one write. The old instance keeps answering until every service with
 names is up, so nothing goes dark; the previous manifest is in the history
 to go back to.
 
+### Copies on other nodes: `cluster`
+
+```json
+"cluster": { "replicas": 1, "spill": 70, "gateway": ["127.0.0.1:3306"] }
+```
+
+Asked for "replicas", "spread the load", "cluster mode": this block, on the
+node the names point at. The house copies the folder to the least loaded
+other nodes (dependencies installed there for that machine) at every
+change, and hands them requests through the mesh only when this node's load
+per core passes `spill` % (70 by default) or its instance is down; the same
+visitor always lands on the same node. `gateway` lists the database
+addresses on this node (loopback only) the copies reach through the mesh,
+so every node uses the one database. It is refused for SQLite, workers,
+services, volumes, an upstream, VPN-only sites, `needs` and `claude_api`:
+say why rather than working around it. Files a copy writes into its folder
+(uploads) are lost at the next copy; put what the site writes as it runs in
+`move.exclude`, or it is copied again and again. Never write `replica`: the
+house writes it on the copies. `GET /api/v1/sites/<domain>/cluster` says
+where the copies are and how they are. Details: docs/cluster.md.
+
 ### Live versus restart
 
 The **revision** hashes what the instance was born from: resolved command,

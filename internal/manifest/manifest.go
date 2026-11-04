@@ -111,6 +111,10 @@ type Manifest struct {
 	Backups map[string]*Backup `json:"backups,omitempty"`
 	Deploy  *Deploy            `json:"deploy,omitempty"`
 	Agent   *Agent             `json:"agent,omitempty"`
+	// Cluster asks for copies of the site on other nodes (cluster.go);
+	// Replica marks this one as such a copy, written by the house.
+	Cluster *Cluster `json:"cluster,omitempty"`
+	Replica *Replica `json:"replica,omitempty"`
 }
 
 // Static serves files.
@@ -657,6 +661,9 @@ func (m *Manifest) Validate() error {
 		return err
 	}
 	if err := m.validBackups(); err != nil {
+		return err
+	}
+	if err := m.validCluster(); err != nil {
 		return err
 	}
 	if m.Chat != nil {

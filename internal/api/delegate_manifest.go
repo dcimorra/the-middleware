@@ -39,6 +39,9 @@ func lockedKeys(m *manifest.Manifest) map[string]any {
 		"claude":     m.Claude,
 		"chat":       m.Chat,
 		"needs":      m.Needs,
+		// Other nodes' machines and this one's databases, opened to them.
+		"cluster": m.Cluster,
+		"replica": m.Replica,
 	}
 	// The agent's provider and model are the user's to pick among those
 	// the operator turned on (the chat picker writes them here on the

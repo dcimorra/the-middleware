@@ -207,6 +207,11 @@ type Mesh struct {
 	applyMu sync.Mutex
 	door    *doorServer
 	api     http.Handler
+	// sites serves the requests another node hands to a replica here
+	// (cluster.go).
+	sites http.Handler
+	// tunnels serves a replica's connections to its primary's database.
+	tunnels http.Handler
 	// trans is the HTTP transport bound to the mesh address, rebuilt when
 	// the address changes.
 	trans   *http.Transport

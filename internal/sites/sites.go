@@ -163,7 +163,14 @@ func (m *Manager) List() ([]Site, error) {
 		if !manifest.ValidName(ent.Name()) {
 			continue
 		}
-		out = append(out, m.describe(ent.Name()))
+		site := m.describe(ent.Name())
+		// Another node's replica is that node's site: listed here it
+		// would be edited, deployed and talked to where every change is
+		// lost at the next copy. Its primary's page shows it.
+		if site.Manifest.IsReplica() {
+			continue
+		}
+		out = append(out, site)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Domain < out[j].Domain })
 	return out, nil

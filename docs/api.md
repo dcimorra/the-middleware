@@ -734,6 +734,22 @@ then the journal waits for the next start.
 | POST | `/relocate/{domain}/commit` | `{manifest, install?}` (base64, the one the site had before it stopped; `install` installs a Node site's dependencies in the staging folder first, `npm ci` with a lockfile) → `{ok}`; the site is put in place and the engine starts it |
 | DELETE | `/relocate/{domain}` | throw away what was received for a site that did not finish moving in: the staging and, once it was put in place and its folder removed, what it put under `data/` (HOME, conversations, history), with what was there before under that name put back; refused while the site's folder is here |
 
+## Cluster
+
+Replicas of a site on other nodes, handed requests when its node is
+saturated (the manifest's `cluster`; see [cluster.md](cluster.md)). The
+`/cluster/…` routes below the first two are what nodes call on each other
+and refuse anyone else, except the operator's removal.
+
+| method | path | body / result |
+| --- | --- | --- |
+| GET | `/sites/{domain}/cluster` | → `{domain, in_network, clustered, blockers, cluster, want, spill_at, gateway, revision, load: {per_core, cores}, sharing, replicas: [{node, node_id, state, alive, load, error, synced, refused}], replica}`; owner only |
+| GET | `/cluster` | → `{load, kept: [{domain, primary, of, revision, alive, state, pending, error, synced}]}` |
+| POST | `/cluster/status` | `{expect}` → `{load, replicas}`; nodes only. Replicas of the caller not in `expect` are removed after two minutes' grace |
+| PUT | `/cluster/replicas/{domain}` | the site's folder as a `.tar.gz` (raw body); nodes only. 409 when the name is a site of this node or another node's replica |
+| POST | `/cluster/replicas/{domain}/commit` | `{manifest (base64), revision, primary, dirs}` → `{started}`; nodes only. Installs dependencies, then swaps the copy in |
+| DELETE | `/cluster/replicas/{domain}` | → `{ok}`; its primary or the operator |
+
 ## VPN
 
 | method | path | result |
