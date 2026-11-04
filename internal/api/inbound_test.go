@@ -246,9 +246,14 @@ func TestTheDoorForNewSitesAndThePublicAddressAreSetThroughTheAPI(t *testing.T) 
 func TestAMigrationMovesOneDomainAtATimeAndStopsWhenAsked(t *testing.T) {
 	f := newFixture(t).withToken()
 	release := make(chan struct{})
+	// entered says the migration is on a domain. Cancelling right after
+	// releasing a.test raced the start of b.test: a cancel seen before it
+	// began moved one domain, and the send for b.test waited for ever.
+	entered := make(chan string, 3)
 	var moved []string
 	var mu sync.Mutex
 	f.srv.registerMigration(func(ctx context.Context, d string, to inbound.Door) []inbound.Line {
+		entered <- d
 		<-release
 		mu.Lock()
 		moved = append(moved, d)
@@ -262,7 +267,11 @@ func TestAMigrationMovesOneDomainAtATimeAndStopsWhenAsked(t *testing.T) {
 	if resp, _ := f.call("POST", "/api/v1/inbound/migration", map[string]any{"domains": []string{"x.test"}, "to": "ports"}); resp.StatusCode != 409 {
 		t.Fatalf("a second one: %d", resp.StatusCode)
 	}
+	<-entered
 	release <- struct{}{} // a.test
+	if d := <-entered; d != "b.test" {
+		t.Fatalf("second domain %q", d)
+	}
 	f.call("POST", "/api/v1/inbound/migration/cancel", nil)
 	release <- struct{}{} // b.test, the one it was on
 	deadline := time.Now().Add(3 * time.Second)
