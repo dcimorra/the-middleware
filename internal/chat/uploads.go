@@ -136,18 +136,28 @@ func (m *Manager) Uploads(name string) []Upload {
 	return out
 }
 
-// RemoveUpload drops a pending attachment.
+// RemoveUpload drops a pending attachment. One already gone is not an
+// error: the chips in the panel can be a step behind, and an attachment
+// that went with a message has left pending/ by the time its × is
+// pressed. That said "no such file or directory" for a file that, as far
+// as the person was concerned, was exactly where it should be.
 func (m *Manager) RemoveUpload(name, file string) error {
 	file = filepath.Base(file)
 	if file == "." || file == ".." || strings.HasPrefix(file, ".") {
 		return ErrBadName
 	}
 	root, err := m.openHome(name, false)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
 	defer root.Close()
-	return root.Remove(path.Join(uploadsRel(name), "pending", file))
+	if err := root.Remove(path.Join(uploadsRel(name), "pending", file)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // removeUploads drops every attachment of name, for Purge.
@@ -160,38 +170,99 @@ func (m *Manager) removeUploads(name string) {
 	_ = root.RemoveAll(uploadsRel(name))
 }
 
-// attach adds the pending attachments to a prompt and returns the folder
-// to lend.
-func (m *Manager) attach(name, prompt string) (string, string) {
-	ups := m.Uploads(name)
-	if len(ups) == 0 {
+// move moves the plain files of from into to, both inside base, and
+// returns their names. Links are left where they are: they lead nowhere
+// the house should carry.
+func move(root *os.Root, base, from, to string) []string {
+	var names []string
+	for _, e := range readDir(root, path.Join(base, from)) {
+		if !e.Type().IsRegular() {
+			continue
+		}
+		if names == nil && root.MkdirAll(path.Join(base, to), 0o700) != nil {
+			return nil
+		}
+		if root.Rename(path.Join(base, from, e.Name()), path.Join(base, to, e.Name())) == nil {
+			names = append(names, e.Name())
+		}
+	}
+	return names
+}
+
+// hold sets what is pending aside for the queued message just written,
+// in queued/: it belongs to that message, the box is empty again, and
+// what is attached next is not mixed up with it in the panel.
+func (m *Manager) hold(name string) {
+	root, err := m.openHome(name, false)
+	if err != nil {
+		return
+	}
+	defer root.Close()
+	move(root, uploadsRel(name), "pending", "queued")
+}
+
+// attach moves what goes with this turn (what queued messages held and
+// what is pending) to sent/<turn>/, adds it to the prompt and returns the
+// folder to lend.
+//
+// The files used to stay in pending/ until the turn ended. The panel kept
+// showing them in the box as if still to be sent, the × on them failed
+// once the turn moved them, and a file attached while the turn ran was
+// swept into that turn's sent/ without ever reaching the agent.
+func (m *Manager) attach(name, turnID, prompt string) (string, string) {
+	root, err := m.openHome(name, false)
+	if err != nil {
 		return prompt, ""
 	}
-	dir := filepath.Join(m.uploadsDir(name), "pending")
+	defer root.Close()
+	base := uploadsRel(name)
+	dst := path.Join("sent", turnID)
+	seen := map[string]bool{}
+	for _, from := range []string{"queued", "pending"} {
+		for _, n := range move(root, base, from, dst) {
+			seen[n] = true
+		}
+	}
+	if len(seen) == 0 {
+		return prompt, ""
+	}
+	names := make([]string, 0, len(seen))
+	for n := range seen {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	dir := filepath.Join(m.uploadsDir(name), "sent", turnID)
 	var b strings.Builder
 	b.WriteString(prompt)
 	b.WriteString("\n\nAttached files (read them with the Read tool):\n")
-	for _, u := range ups {
-		b.WriteString("- " + filepath.Join(dir, u.Name) + "\n")
+	for _, n := range names {
+		b.WriteString("- " + filepath.Join(dir, n) + "\n")
 	}
 	return b.String(), m.uploadsDir(name)
 }
 
-// sent moves what went with a turn to sent/<turn>/ and sweeps what was
-// sent more than a day ago.
-func (m *Manager) sent(name, turnID string) {
+// giveBack returns a turn's attachments to pending/ when the agent did
+// not start: the message is in the conversation, unanswered, and sending
+// it again should carry them again.
+func (m *Manager) giveBack(name, turnID string) {
 	root, err := m.openHome(name, false)
 	if err != nil {
 		return
 	}
 	defer root.Close()
 	base := uploadsRel(name)
-	pending := path.Join(base, "pending")
-	if len(readDir(root, pending)) > 0 {
-		if root.MkdirAll(path.Join(base, "sent"), 0o700) == nil {
-			_ = root.Rename(pending, path.Join(base, "sent", turnID))
-		}
+	move(root, base, path.Join("sent", turnID), "pending")
+	_ = root.Remove(path.Join(base, "sent", turnID))
+}
+
+// sweep removes what was sent more than a day ago.
+func (m *Manager) sweep(name string) {
+	root, err := m.openHome(name, false)
+	if err != nil {
+		return
 	}
+	defer root.Close()
+	base := uploadsRel(name)
 	for _, e := range readDir(root, path.Join(base, "sent")) {
 		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) > 24*time.Hour {
 			_ = root.RemoveAll(path.Join(base, "sent", e.Name()))

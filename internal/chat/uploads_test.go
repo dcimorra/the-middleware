@@ -45,7 +45,7 @@ func TestLinksPlantedInTheHomeDoNotLeadTheHouseOut(t *testing.T) {
 	write(filepath.Join(victim, "keep", "index.html"), "b's page")
 	os.Chtimes(filepath.Join(victim, "keep"), old, old)
 	link(victim, filepath.Join(home, "uploads", "main", "sent"))
-	m.sent("a.test", "t1")
+	m.sweep("a.test")
 	intact(filepath.Join(victim, "keep", "index.html"), "b's page")
 
 	// pending/<name> a link to the other site's file: the upload wrote

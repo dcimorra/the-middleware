@@ -850,6 +850,10 @@ export function chatTab(domain) {
       const r = await api.post(cur.path, { text: msg, model: model.value || undefined, provider: provider.value || undefined });
       // The title comes from this message: the list shows it now.
       fillPicker();
+      // What was attached went with it, queued or not: the box is read
+      // again so its chips go. They stayed for good before, and their ×
+      // failed on files no longer there.
+      showUploads();
       if (r && r.queued) {
         // Kept for when the running turn ends; it goes out with any other
         // queued message as the next one.
@@ -939,11 +943,20 @@ export function chatTab(domain) {
     try { await api.del(cur.path); await loadTurns(); } catch (err) { toastError(err); }
   });
 
+  // Several reads can cross now (the send, then started, queued or done
+  // right behind it): only the last one draws, or the chips came twice.
+  let uploadsSeq = 0;
+  // A chip still on its way stays: a read that crosses an upload would
+  // otherwise wipe it and leave Send held with nothing to say why.
+  const drop = () => { for (const c of [...chips.children]) if (!c.classList.contains("chat-uploading")) c.remove(); };
   async function showUploads() {
-    clear(chips);
+    const seq = ++uploadsSeq;
+    drop();
     let ups = [];
     if (cur.draft) return;
     try { ups = await api.get(`${cur.path}/files`); } catch { ups = []; }
+    if (seq !== uploadsSeq) return;
+    drop();
     for (const u of ups) {
       const x = h("button", { type: "button", class: "btn sm ghost", "aria-label": t("chat.removeFile", { name: u.name }) }, "×");
       x.addEventListener("click", async () => { try { await api.del(`${cur.path}/files/${enc(u.name)}`); showUploads(); } catch (e) { toastError(e); } });
@@ -1000,7 +1013,7 @@ export function chatTab(domain) {
   const onVisible = () => { if (document.visibilityState === "visible" && !held) loadTurns(true); };
   document.addEventListener("visibilitychange", onVisible);
   subs.push(() => document.removeEventListener("visibilitychange", onVisible));
-  subs.push(onEvent("agent.started", (ev) => { if (ev.subject === cur.name) showUploads(); }));
+  subs.push(onEvent("agent.", (ev) => { if (/^agent\.(started|queued|done)$/.test(ev.type) && ev.subject === cur.name) showUploads(); }));
   // The running mark beside each conversation follows the turns.
   subs.push(onEvent("agent.", (ev) => { if (/^agent\.(started|done|error)$/.test(ev.type) && ev.subject && ev.subject.split("#")[0] === domain) fillPicker(); }));
 

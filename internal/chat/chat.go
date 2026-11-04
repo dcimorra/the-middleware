@@ -778,6 +778,7 @@ func (m *Manager) SendWith(name, text string, o SendOptions) (string, error) {
 			}
 			n := len(r.queued)
 			werr := fsx.WriteJSON(m.queuePath(name), queueFile{Messages: r.queued, Model: r.queuedModel, Provider: r.queuedProvider}, 0o600)
+			m.hold(name)
 			m.mu.Unlock()
 			if werr != nil {
 				m.emit("agent.error", name, "warn", "the queued message is kept in memory only: "+werr.Error(), nil)
@@ -841,7 +842,7 @@ func (m *Manager) SendWith(name, text string, o SendOptions) (string, error) {
 		return fail(fmt.Errorf("skill not installed: %w", err))
 	}
 	var system string
-	prompt, lend := m.attach(name, catchUp+text)
+	prompt, lend := m.attach(name, turnID, catchUp+text)
 	req := agent.Request{
 		Workdir:   s.Workdir,
 		Prompt:    prompt,
@@ -905,6 +906,7 @@ func (m *Manager) SendWith(name, text string, o SendOptions) (string, error) {
 	run, err := provider.Start(ctx, req)
 	if err != nil {
 		m.emit("agent.error", name, "error", err.Error(), map[string]any{"turn_id": turnID})
+		m.giveBack(name, turnID)
 		return fail(err)
 	}
 	m.mu.Lock()
@@ -1160,7 +1162,7 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 	// The turn counts as running until its file is written, and the final
 	// event goes out only after that: whoever reacts to agent.done can
 	// Send again and read the turn from History at once.
-	m.sent(name, turnID)
+	m.sweep(name)
 	_ = os.Remove(m.runningPath(name))
 	_ = os.Remove(m.streamPath(name, turnID))
 	_ = os.Remove(m.streamPath(name, turnID) + ".err")

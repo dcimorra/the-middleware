@@ -176,7 +176,7 @@ func TestAQueueSurvivesARestart(t *testing.T) {
 }
 
 // An attachment goes with the next message, readable and not writable,
-// and moves out of the way when the turn ends.
+// and leaves the box as soon as it goes.
 func TestAnAttachmentGoesWithTheNextMessage(t *testing.T) {
 	p := &fakeProvider{key: "fake", script: []agent.Event{{Kind: agent.KindResult, Text: "ok"}}}
 	m, root, bus := newManager(t, p)
@@ -197,9 +197,16 @@ func TestAnAttachmentGoesWithTheNextMessage(t *testing.T) {
 	}
 	waitFor(t, ch, "agent.done")
 	req := p.last()
-	pending := root + "/data/homes/a.test/uploads/main/pending/notes.txt"
-	if !strings.Contains(req.Prompt, pending) {
+	turnID := ""
+	if c, _ := m.History("a.test"); len(c.Turns) > 0 {
+		turnID = c.Turns[0].ID
+	}
+	sent := root + "/data/homes/a.test/uploads/main/sent/" + turnID + "/notes.txt"
+	if !strings.Contains(req.Prompt, sent) {
 		t.Fatalf("prompt: %s", req.Prompt)
+	}
+	if got, err := os.ReadFile(sent); err != nil || string(got) != "hello" {
+		t.Fatalf("the attachment is not where the prompt says: %q %v", got, err)
 	}
 	if len(req.Jail.Lent) == 0 || !strings.HasSuffix(req.Jail.Lent[len(req.Jail.Lent)-1], "uploads/main") {
 		t.Fatalf("lent: %v", req.Jail.Lent)
@@ -227,5 +234,66 @@ func TestASubagentsWordsAreKeptApart(t *testing.T) {
 	last := c.Turns[len(c.Turns)-1]
 	if last.Text != "let me delegate\n\ndone" || len(last.Threads) != 1 || last.Threads[0].Text != "sub: found it" || last.Threads[0].Tools[0] != "Grep" {
 		t.Fatalf("%+v", last)
+	}
+}
+
+// What is attached leaves the box the moment it goes, not when the turn
+// ends: the panel showed it there for the whole turn, its × then failed
+// with "no such file or directory", and a file attached during the turn
+// was swept away with that turn's own instead of going with the next.
+// A message queued meanwhile takes what was attached for it out of the
+// box at once.
+func TestAttachmentsLeaveTheBoxWhenTheyGo(t *testing.T) {
+	hold := make(chan struct{})
+	p := &fakeProvider{key: "fake", script: []agent.Event{{Kind: agent.KindText, Text: "working"}, {Kind: agent.KindResult}}, hold: hold}
+	m, _, bus := newManager(t, p)
+	ch, unsub := bus.Subscribe()
+	defer unsub()
+	if _, err := m.AddUpload("a.test", "one.txt", strings.NewReader("1")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Send("a.test", "first", ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, ch, "agent.started")
+	if ups := m.Uploads("a.test"); len(ups) != 0 {
+		t.Fatalf("still in the box while its turn runs: %+v", ups)
+	}
+	// The × on a chip the panel had not cleared yet does not fail.
+	if err := m.RemoveUpload("a.test", "one.txt"); err != nil {
+		t.Fatalf("removing what already went: %v", err)
+	}
+	if !strings.Contains(p.last().Prompt, "one.txt") {
+		t.Fatalf("first prompt: %q", p.last().Prompt)
+	}
+
+	if _, err := m.AddUpload("a.test", "two.txt", strings.NewReader("2")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.SendWith("a.test", "with two", SendOptions{Queue: true}); err != ErrQueued {
+		t.Fatalf("queue: %v", err)
+	}
+	if ups := m.Uploads("a.test"); len(ups) != 0 {
+		t.Fatalf("a queued message's file is still in the box: %+v", ups)
+	}
+	if _, err := m.AddUpload("a.test", "three.txt", strings.NewReader("3")); err != nil {
+		t.Fatal(err)
+	}
+	close(hold)
+	waitFor(t, ch, "agent.done")
+	waitFor(t, ch, "agent.started")
+	next := p.last().Prompt
+	if !strings.Contains(next, "two.txt") || strings.Contains(next, "one.txt") {
+		t.Fatalf("queued prompt: %q", next)
+	}
+	waitFor(t, ch, "agent.done")
+	// three.txt came after the queued message was written, but the box
+	// sends what it holds with the next message that goes: it went too,
+	// and nothing was swept unsent.
+	if !strings.Contains(next, "three.txt") {
+		t.Fatalf("a file attached during the turn did not go with the next message: %q", next)
+	}
+	if ups := m.Uploads("a.test"); len(ups) != 0 {
+		t.Fatalf("left in the box: %+v", ups)
 	}
 }
