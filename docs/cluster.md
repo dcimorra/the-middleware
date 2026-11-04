@@ -92,8 +92,20 @@ be clustered when (`manifest.Blockers`):
   copy; services are the way to have one, see below);
 - every one of its services is kept (there is nothing left to copy);
 - its container has `volumes`;
-- it forwards to an `upstream`, lives in the VPN, `needs` other sites of its
-  node, or talks to an AI through the house (`claude_api`, `claude`).
+- it forwards to an `upstream`, lives in the VPN, or `needs` other sites of
+  its node;
+- it runs the AI's CLI with the house's subscription (`claude`: a credential
+  of this machine), or talks to the site door from a container.
+
+A site with `claude_api` has copies: a copy's processes find
+`MIDDLEWARE_API` at an address of their own node's loopback, which goes
+through the mesh to the primary, and the primary serves the site door there
+with the site's own token on every call (the copy gets `MIDDLEWARE_TOKEN` =
+`through-the-primary`, a word, not a secret). The rules, the daily cap and
+the spending are the primary's alone; the copy's manifest has no
+`claude_api` and `replica.door: true` instead. The address is kept across
+restarts in `data/cluster/doors.json`. Like the database gateway, it is for
+processes: a container's `127.0.0.1` is its own.
 
 What a site writes into its folder on a replica (an upload) stays there and
 is lost at the next copy. Uploads belong in object storage or a database.

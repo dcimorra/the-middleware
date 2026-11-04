@@ -165,6 +165,11 @@ type Manager struct {
 	orphans map[string]time.Time
 	gws     map[string]*gw    // address listened at
 	gwErrs  map[string]string // domain → why its gateway is not there
+	doors   doorState
+	// door is the site door for one site, its token put on each request:
+	// what a copy's processes reach through the mesh (door.go). Nil
+	// refuses them. Set once the door is wired (SetDoor).
+	door func(site string) http.Handler
 }
 
 type nodeView struct {
@@ -275,6 +280,7 @@ func (m *Manager) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			m.closeGateways()
+			m.closeDoors()
 			return
 		case <-t.C:
 		}
@@ -292,11 +298,13 @@ func (m *Manager) Round(ctx context.Context) {
 	mesh := m.getMesh()
 	if mesh == nil || !mesh.InNetwork() {
 		m.closeGateways()
+		m.closeDoors()
 		return
 	}
 	// Before settling: a replica that restarts with the house needs its
 	// database at once.
 	m.reconcileGateways(mesh)
+	m.reconcileDoors()
 	if !settled {
 		return
 	}

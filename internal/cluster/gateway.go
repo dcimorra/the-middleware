@@ -205,6 +205,9 @@ func (m *Manager) TunnelHandler() http.Handler {
 			return
 		}
 		var allowed []string
+		if sn.Manifest.ClaudeAPI != nil {
+			allowed = append(allowed, DoorTarget)
+		}
 		for _, g := range sn.Manifest.Cluster.Gateway {
 			if a, err := manifest.GatewayAddr(g); err == nil {
 				allowed = append(allowed, a)
@@ -222,6 +225,20 @@ func (m *Manager) TunnelHandler() http.Handler {
 		m.mu.Unlock()
 		if !placed {
 			tunnelRefuse(w, http.StatusForbidden, "that node keeps no replica of the site")
+			return
+		}
+		if addr == DoorTarget {
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				tunnelRefuse(w, http.StatusInternalServerError, "the door cannot hand the connection over")
+				return
+			}
+			c, brw, err := hj.Hijack()
+			if err != nil {
+				return
+			}
+			_, _ = io.WriteString(c, "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: "+nodes.TunnelProtocol+"\r\n\r\n")
+			m.serveDoor(c, brw.Reader, site)
 			return
 		}
 		dial, err := addr, error(nil)
