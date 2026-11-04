@@ -244,3 +244,27 @@ func TestASitesProcessAsksForItsGroupAndAHouseTaskDoesNot(t *testing.T) {
 		t.Fatalf("adopted %v", f.adopted)
 	}
 }
+
+// A generation on trial is born with TrialScore, not given it once it
+// runs, and the supervisor's own score is back where it was.
+func TestATrialIsBornMarkedForTheOOMKiller(t *testing.T) {
+	before, err := os.ReadFile("/proc/self/oom_score_adj")
+	if err != nil {
+		t.Skip("no /proc")
+	}
+	dir := t.TempDir()
+	spec := &manifest.Spec{Domain: "a.test", SiteDir: dir, Cwd: dir, Command: []string{"/bin/sh", "-c", "cat /proc/self/oom_score_adj"}, Env: map[string]string{}, Revision: "r"}
+	inst, err := Process{}.Start(WithTrial(context.Background()), spec, 0, filepath.Join(dir, "out.log"), filepath.Join(dir, "home"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-inst.Done()
+	out, _ := os.ReadFile(filepath.Join(dir, "out.log"))
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if got := lines[len(lines)-1]; got != strconv.Itoa(TrialScore) {
+		t.Fatalf("the child started with %q, want %d", got, TrialScore)
+	}
+	if after, _ := os.ReadFile("/proc/self/oom_score_adj"); string(after) != string(before) {
+		t.Fatalf("supervisor's score %q, was %q", after, before)
+	}
+}

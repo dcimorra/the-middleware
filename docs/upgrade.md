@@ -100,8 +100,14 @@ Two things do not survive a supervisor restart:
 
 Since v2.0.0-alpha.109 every site runs in a cgroup of its own
 ([architecture.md](architecture.md#resources)) and the unit says
-`Delegate=cpu memory pids`. The binary updates itself; the unit is
-rewritten by `middleware install` (or the one-liner). Until then:
+`Delegate=cpu memory pids` with `ProtectControlGroups=no`. The binary
+updates itself and the unit does not: «Instalar requisitos» in Sistema
+writes a drop-in (`middleware.service.d/cgroups.conf`) that gives an older
+unit both lines and restarts the supervisor, and `middleware install` (or
+the one-liner) rewrites the unit. Units up to alpha.109 had
+`ProtectControlGroups=yes`, which mounts the cgroups read-only for the
+whole unit: on those the split never happened, the agents' included, and
+the start says `cgroups.off` ("read-only"). Until then:
 
 - A unit with `Delegate=cpu memory` (from before): sites get their groups,
   CPU shares and memory limits; the process cap is off, and the start says
