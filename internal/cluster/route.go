@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"math"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/dcimorra/the-middleware/internal/edge"
@@ -45,9 +46,16 @@ func weight(l Load) float64 {
 // a member is the replica there. key keeps one visitor on one node (their
 // address), so a session the site keeps in its memory is not lost from
 // one page to the next.
-func (m *Manager) Pick(domain string, sn engine.Snapshot, key string) (nodes.Member, bool) {
-	c := sn.Manifest.Cluster
-	if c == nil || sn.Manifest.Replica != nil {
+//
+// site is the site's own manifest; sn is what answers the request (for a
+// site with services, the service's view): a service kept on the primary
+// is never handed over.
+func (m *Manager) Pick(domain string, site *manifest.Manifest, sn engine.Snapshot, key string) (nodes.Member, bool) {
+	c := site.Cluster
+	if c == nil || site.Replica != nil {
+		return nodes.Member{}, false
+	}
+	if sn.Service != "" && slices.Contains(site.KeptServices(), sn.Service) {
 		return nodes.Member{}, false
 	}
 	if sn.Mode != manifest.ModeRun && sn.Mode != manifest.ModeStatic {
@@ -67,7 +75,14 @@ func (m *Manager) Pick(domain string, sn engine.Snapshot, key string) (nodes.Mem
 			continue
 		}
 		rs, ok := v.status.Replicas[domain]
-		if !ok || rs.Revision != p.fingerprint || !rs.Alive {
+		if !ok || rs.Revision != p.fingerprint {
+			continue
+		}
+		if sn.Service != "" {
+			if !rs.Services[sn.Service] {
+				continue
+			}
+		} else if !rs.Alive {
 			continue
 		}
 		opts = append(opts, option{member: v.member, weight: weight(v.status.Load)})
@@ -180,17 +195,22 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		sn, ok := m.opts.Sites.Site(domain)
-		if !ok || sn.Manifest == nil {
+		site, ok := m.opts.Sites.Site(domain)
+		if !ok || site.Manifest == nil {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if sn.Manifest.IsReplica() {
+		if site.Manifest.IsReplica() {
 			// The closed door: a replica exists only for its primary.
 			pages.Write(w, r, "unknown", http.StatusNotFound)
 			return
 		}
-		if !sn.Manifest.Clustered() {
+		if !site.Manifest.Clustered() {
+			next.ServeHTTP(w, r)
+			return
+		}
+		sn, ok := m.opts.Sites.LookupPath(proxy.Host(r), r.URL.Path)
+		if !ok {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -203,7 +223,7 @@ func (m *Manager) Wrap(next http.Handler) http.Handler {
 		if ip := edge.ClientIP(r); ip != nil {
 			key = ip.String()
 		}
-		x, ok := m.Pick(domain, sn, key)
+		x, ok := m.Pick(domain, site.Manifest, sn, key)
 		if !ok {
 			next.ServeHTTP(w, r)
 			return

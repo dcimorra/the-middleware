@@ -20,8 +20,49 @@ import (
 	"github.com/dcimorra/the-middleware/internal/engine"
 	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/nodes"
+	"github.com/dcimorra/the-middleware/internal/ports"
 	"github.com/dcimorra/the-middleware/internal/proxy"
 )
+
+// TestMain makes the test binary the services of the tests' sites: with
+// MW_CLUSTER_ROLE=db a line server that answers "db", with web an HTTP
+// server that asks its database ($DB) and says what it answered.
+func TestMain(m *testing.M) {
+	switch os.Getenv("MW_CLUSTER_ROLE") {
+	case "db":
+		ln, err := net.Listen("tcp", "127.0.0.1:"+os.Getenv("PORT"))
+		if err != nil {
+			os.Exit(1)
+		}
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				os.Exit(0)
+			}
+			go func() {
+				defer c.Close()
+				if _, err := bufio.NewReader(c).ReadString('\n'); err == nil {
+					_, _ = c.Write([]byte("db\n"))
+				}
+			}()
+		}
+	case "web":
+		_ = http.ListenAndServe("127.0.0.1:"+os.Getenv("PORT"), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			c, err := net.DialTimeout("tcp", os.Getenv("DB"), 3*time.Second)
+			if err != nil {
+				http.Error(w, "no db: "+err.Error(), 500)
+				return
+			}
+			defer c.Close()
+			_ = c.SetDeadline(time.Now().Add(3 * time.Second))
+			_, _ = c.Write([]byte("q\n"))
+			line, _ := bufio.NewReader(c).ReadString('\n')
+			_, _ = w.Write([]byte("db said: " + strings.TrimSpace(line)))
+		}))
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
 
 func freePort(t *testing.T) int {
 	t.Helper()
@@ -53,7 +94,11 @@ func newHouse(t *testing.T, ctx context.Context, name string, port int) *house {
 			t.Fatal(err)
 		}
 	}
-	eng := engine.New(engine.Options{SitesDir: filepath.Join(root, "sites"), DataDir: filepath.Join(root, "data"), Tick: 50 * time.Millisecond})
+	from := 42000 + 200*len(name) // a range of its own per house: both run on this machine
+	if name == "beta" {
+		from += 100
+	}
+	eng := engine.New(engine.Options{SitesDir: filepath.Join(root, "sites"), DataDir: filepath.Join(root, "data"), Tick: 50 * time.Millisecond, Ports: ports.New(from, from+99)})
 	go eng.Run(ctx)
 	m, err := nodes.Open(nodes.Options{Dir: filepath.Join(root, "data", "nodes"), Hostname: name, Version: "test", Net: nodes.LoopbackNetwork{}, Subnet: netip.MustParsePrefix("127.77.0.0/16"), APIPort: port})
 	if err != nil {
@@ -64,6 +109,7 @@ func newHouse(t *testing.T, ctx context.Context, name string, port int) *house {
 		Load: func() Load { h.loadM.Lock(); defer h.loadM.Unlock(); return *h.load }})
 	h.cl.SetMesh(m)
 	px := proxy.New(eng.Lookup)
+	px.ByPath = eng.LookupPath
 	h.site = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Served-By", name)
 		w.Header().Set("X-Seen-Client", r.Header.Get("CF-Connecting-IP"))
@@ -401,7 +447,9 @@ func (f fakeSites) Site(d string) (engine.Snapshot, bool) {
 	}
 	return engine.Snapshot{}, false
 }
-func (f fakeSites) Sites() []engine.Snapshot { return f.sn }
+func (f fakeSites) Sites() []engine.Snapshot                       { return f.sn }
+func (f fakeSites) LookupPath(h, _ string) (engine.Snapshot, bool) { return f.Site(h) }
+func (f fakeSites) ServicePort(string, string) (int, bool)         { return 0, false }
 func (f fakeSites) Owner(h string) (string, bool) {
 	_, ok := f.Site(h)
 	return h, ok
@@ -437,13 +485,13 @@ func TestPickServesHereUnlessSaturatedOrDown(t *testing.T) {
 	m.views["b"] = &nodeView{member: nodes.Member{ID: "b", Name: "beta"}, at: now,
 		status: Status{Load: Load{PerCore: 0.1, Cores: 4}, Replicas: map[string]ReplicaStatus{"s.example": {Revision: "f2", Alive: true}}}}
 	m.local = Load{PerCore: 0.3, Cores: 4}
-	if _, ok := m.Pick("s.example", sn, "1.2.3.4"); ok {
+	if _, ok := m.Pick("s.example", man, sn, "1.2.3.4"); ok {
 		t.Fatal("comfortable, a request left")
 	}
 	m.local.PerCore = 2
 	left := 0
 	for i := range 100 {
-		if _, ok := m.Pick("s.example", sn, "10.0.0."+itoa(i)); ok {
+		if _, ok := m.Pick("s.example", man, sn, "10.0.0."+itoa(i)); ok {
 			left++
 		}
 	}
@@ -452,20 +500,20 @@ func TestPickServesHereUnlessSaturatedOrDown(t *testing.T) {
 	}
 	m.views["b"].status.Replicas["s.example"] = ReplicaStatus{Revision: "f1", Alive: true}
 	for i := range 50 {
-		if _, ok := m.Pick("s.example", sn, "10.0.0."+itoa(i)); ok {
+		if _, ok := m.Pick("s.example", man, sn, "10.0.0."+itoa(i)); ok {
 			t.Fatal("a replica behind the primary was chosen")
 		}
 	}
 	m.views["b"].status.Replicas["s.example"] = ReplicaStatus{Revision: "f2", Alive: true}
 	m.views["b"].at = now.Add(-time.Hour)
-	if _, ok := m.Pick("s.example", sn, "10.0.0.1"); ok {
+	if _, ok := m.Pick("s.example", man, sn, "10.0.0.1"); ok {
 		t.Fatal("a silent node was chosen")
 	}
 	m.views["b"].at = now
 	m.local.PerCore = 0.1
 	sn.Alive = false
 	for i := range 20 {
-		if _, ok := m.Pick("s.example", sn, "10.0.0."+itoa(i)); !ok {
+		if _, ok := m.Pick("s.example", man, sn, "10.0.0."+itoa(i)); !ok {
 			t.Fatal("the primary's instance is down and a request stayed")
 		}
 	}
@@ -546,3 +594,66 @@ func b64(s string) string {
 }
 
 func base64Std(s string) string { return base64.StdEncoding.EncodeToString([]byte(s)) }
+
+// A site with services in a cluster: the replica runs its web service and
+// not its database, kept on the primary, and the web service there
+// reaches that database through the mesh at the same $SERVICE_db_…, as
+// if it were beside it.
+func TestAServicesSiteReplicatesItsWebAndKeepsItsDatabaseOnThePrimary(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	port := freePort(t)
+	a := newHouse(t, ctx, "alpha", port)
+	b := newHouse(t, ctx, "beta", port)
+	join(t, ctx, a, b)
+	bin := os.Args[0]
+	man := map[string]any{"version": 2,
+		"services": map[string]any{
+			"web": map[string]any{"domains": []string{"app2.example"}, "depends_on": []string{"db"},
+				"run": map[string]any{"command": []string{bin}, "env": map[string]string{"MW_CLUSTER_ROLE": "web", "DB": "$SERVICE_db_HOST:$SERVICE_db_PORT"}}},
+			"db": map[string]any{"internal": true, "handover": false,
+				"run": map[string]any{"command": []string{bin}, "env": map[string]string{"MW_CLUSTER_ROLE": "db"}, "health": map[string]any{"timeout": "5s"}}},
+		},
+		"cluster": map[string]any{"replicas": 1, "keep": []string{"db"}, "mode": "spread"}}
+	writeSite(t, a.root, "app2.example", man, map[string]string{"README": "x"})
+	defer func() {
+		if t.Failed() {
+			v, _ := a.cl.View("app2.example")
+			sa, _ := a.eng.Site("app2.example")
+			sb, _ := b.eng.Site("app2.example")
+			t.Logf("view %+v\nalpha %+v\nbeta %+v\nkept %+v", v, sa.Services, sb.Services, b.cl.Kept())
+		}
+	}()
+	waitFor(t, "the replica's web to be up", 20*time.Second, func() bool {
+		v, _ := a.cl.View("app2.example")
+		if len(v.Replicas) != 1 || v.Replicas[0].State != StateReady {
+			return false
+		}
+		st := b.cl.Replicas("")["app2.example"]
+		return st.Services["web"]
+	})
+	sb, _ := b.eng.Site("app2.example")
+	if sb.Services["db"].Stopped != "elsewhere" || sb.Services["db"].Alive {
+		t.Fatalf("beta runs the kept database: %+v", sb.Services["db"])
+	}
+	front := a.cl.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Served-By", "alpha")
+		px := proxy.New(a.eng.Lookup)
+		px.ByPath = a.eng.LookupPath
+		px.ServeHTTP(w, r)
+	}))
+	seen := map[string]int{}
+	waitFor(t, "requests on both nodes, every one with the database", 20*time.Second, func() bool {
+		for i := range 30 {
+			req := httptest.NewRequest("GET", "http://app2.example/", nil)
+			req.RemoteAddr = "198.51.100." + itoa(i) + ":4000"
+			rec := httptest.NewRecorder()
+			front.ServeHTTP(rec, req)
+			if rec.Body.String() != "db said: db" {
+				return false
+			}
+			seen[rec.Header().Get("X-Served-By")]++
+		}
+		return seen["alpha"] > 0 && seen["beta"] > 0
+	})
+}

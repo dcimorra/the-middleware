@@ -2160,5 +2160,7 @@
   "cluster.state.copying": "Copiando",
   "cluster.state.syncing": "Instalando",
   "cluster.state.failed": "Falló",
-  "cluster.state.unreachable": "Sin respuesta"
+  "cluster.state.unreachable": "Sin respuesta",
+  "cluster.keep": "Services que se quedan aquí",
+  "cluster.keepHint": "Los que tienen datos: las copias no los arrancan y llegan a los de este nodo por la malla con el mismo nombre y las mismas $SERVICE_x. Los que tienen volúmenes se quedan siempre. Services: {services}. Se quedan ahora: {kept}."
 }

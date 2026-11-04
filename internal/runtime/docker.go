@@ -133,6 +133,15 @@ func (d Docker) Start(ctx context.Context, spec *manifest.Spec, port int, logFil
 			return nil, err
 		}
 		args = append(args, "--network", spec.Network, "--network-alias", spec.Service)
+		if len(spec.AddHosts) > 0 {
+			gw, err := d.NetworkGateway(ctx, spec.Network)
+			if err != nil {
+				return nil, err
+			}
+			for _, n := range spec.AddHosts {
+				args = append(args, "--add-host", n+":"+gw)
+			}
+		}
 	}
 	if d.House != "" {
 		args = append(args, "--label", HouseLabel+"="+d.House)

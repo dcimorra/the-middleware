@@ -11,7 +11,8 @@ the **primary**: it is still the only way in, and nothing changes in DNS.
   "nodes": ["oracle"],
   "mode": "overflow",
   "spill": 70,
-  "gateway": ["127.0.0.1:3306"]
+  "gateway": ["127.0.0.1:3306"],
+  "keep": ["db"]
 }
 ```
 
@@ -22,6 +23,7 @@ the **primary**: it is still the only way in, and nothing changes in DNS.
 | `mode` | `overflow` (default): the primary serves everything until saturated; `spread`: always shared by free capacity |
 | `spill` | the primary's load per core, in percent (one-minute average), from which it shares; default 70 |
 | `gateway` | the primary's database addresses the replicas reach through the mesh (below) |
+| `keep` | for a site with services: the ones that run only on the primary (below); a service whose container has volumes is kept anyway |
 
 The panel's site page has a **Cluster** card that writes this block and
 shows each replica's state and load.
@@ -86,8 +88,9 @@ that both write are two databases from the first write on. So a site cannot
 be clustered when (`manifest.Blockers`):
 
 - its database is SQLite (a `backups` entry with `engine: sqlite`);
-- it has `workers` or `services` (a database or a queue beside it would run
-  once per copy);
+- it has `workers` (a database or a queue beside it would run once per
+  copy; services are the way to have one, see below);
+- every one of its services is kept (there is nothing left to copy);
 - its container has `volumes`;
 - it forwards to an `upstream`, lives in the VPN, `needs` other sites of its
   node, or talks to an AI through the house (`claude_api`, `claude`).
@@ -115,6 +118,29 @@ does not change.
   on 3306), the replica reports it and is not used.
 - When the primary is down, the replicas have no database; but then no
   request reaches them either, since everything enters by the primary.
+
+## Sites with services
+
+A site with `services` is clustered service by service. The ones with data
+are **kept** on the primary: every service whose container has `volumes`,
+and the ones `cluster.keep` names (a database run as a process, a queue, a
+CMS that writes uploads to its folder). The replicas run the rest and do
+not start the kept ones; those reach the kept services on the primary
+through the mesh **under the same names**, without a change to the site:
+
+- a process reads `$SERVICE_db_HOST:$SERVICE_db_PORT` as on the primary;
+  on the replica that is `127.0.0.1:<port>`, where the house listens and
+  passes the connection to the primary's `db`;
+- a container reaches `db` by name, as on the primary: on the replica its
+  hosts file points `db` at the machine on the site's docker network, where
+  the house listens on `db`'s port inside and passes the connection on.
+
+On the primary the connection reaches `db` where the machine reaches it:
+its loopback port when it has one, else its container's address on the
+site's network. A `depends_on` on a kept service does not wait on the
+replica. The primary hands a replica only the requests of a service the
+replica runs and has up; a request for a kept service with names is always
+served by the primary.
 
 ## Events
 

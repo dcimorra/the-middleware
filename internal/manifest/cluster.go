@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -39,6 +40,11 @@ type Cluster struct {
 	// Loopback only: the gateway opens to the other nodes nothing but
 	// what the site itself already reaches here.
 	Gateway []string `json:"gateway,omitempty"`
+	// Keep are the services that run only here, the ones with data: the
+	// replicas run the others, and reach these through the mesh by the
+	// same name and the same $SERVICE_<name>_HOST/_PORT. A service whose
+	// container has volumes is kept whether named or not (KeptServices).
+	Keep []string `json:"keep,omitempty"`
 }
 
 // Cluster modes.
@@ -67,6 +73,32 @@ type Replica struct {
 	// Gateway are the primary's addresses this replica reaches through
 	// the mesh (Cluster.Gateway), listened at here.
 	Gateway []string `json:"gateway,omitempty"`
+	// Keep are the services that run only on the primary
+	// (KeptServices): not started here, reached through the mesh.
+	Keep []string `json:"keep,omitempty"`
+}
+
+// Keeps says service runs only on the primary.
+func (r *Replica) Keeps(service string) bool {
+	return r != nil && slices.Contains(r.Keep, service)
+}
+
+// KeptServices are the services a clustered site runs only where it is:
+// the ones cluster.keep names and every one whose container has volumes
+// (its data), sorted.
+func (m *Manifest) KeptServices() []string {
+	var out []string
+	for _, name := range m.ServiceNames() {
+		sv := m.Services[name]
+		kept := m.Cluster != nil && slices.Contains(m.Cluster.Keep, name)
+		if sv != nil && sv.Run != nil && sv.Run.Docker != nil && len(sv.Run.Docker.Volumes) > 0 {
+			kept = true
+		}
+		if kept {
+			out = append(out, name)
+		}
+	}
+	return out
 }
 
 // GatewayAddr is a gateway entry as an address: "3306" and
@@ -137,8 +169,8 @@ func (m *Manifest) Blockers() []string {
 	if len(m.Workers) > 0 {
 		out = append(out, "it has workers: a database or a queue that runs beside it would run once per copy")
 	}
-	if len(m.Services) > 0 {
-		out = append(out, "it has services: several processes, some of them usually a database")
+	if len(m.Services) > 0 && len(m.KeptServices()) == len(m.Services) {
+		out = append(out, "every one of its services keeps data (volumes, or cluster.keep): there is nothing left to copy")
 	}
 	if m.Run != nil && m.Run.Docker != nil && len(m.Run.Docker.Volumes) > 0 {
 		out = append(out, "its container has volumes: what it keeps there would differ on each node")
@@ -203,6 +235,11 @@ func (m *Manifest) validCluster() error {
 			return fmt.Errorf("cluster.gateway: %s twice", a)
 		}
 		seenAddr[a] = true
+	}
+	for _, k := range c.Keep {
+		if m.Services[k] == nil {
+			return fmt.Errorf("cluster.keep: %q is not one of the site's services", k)
+		}
 	}
 	if c.Spill < 0 || c.Spill > 400 {
 		return fmt.Errorf("cluster.spill: %d is not a load per core in percent (1 to 400)", c.Spill)

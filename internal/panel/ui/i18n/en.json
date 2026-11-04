@@ -2160,5 +2160,7 @@
   "cluster.state.copying": "Copying",
   "cluster.state.syncing": "Installing",
   "cluster.state.failed": "Failed",
-  "cluster.state.unreachable": "Not answering"
+  "cluster.state.unreachable": "Not answering",
+  "cluster.keep": "Services kept here",
+  "cluster.keepHint": "The ones with data: the copies do not start them and reach this node's through the mesh, by the same name and $SERVICE_x. Those with volumes are always kept. Services: {services}. Kept now: {kept}."
 }

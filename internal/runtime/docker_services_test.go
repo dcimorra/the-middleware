@@ -23,6 +23,9 @@ func fakeServicesDocker(t *testing.T, arch string) (bin, calls string) {
 	bin = filepath.Join(dir, "docker")
 	script := `#!/bin/sh
 echo "$*" >> ` + calls + `
+case "$1 $2 $3" in
+  "network inspect -f") echo "172.30.0.1 " ; exit 0 ;;
+esac
 case "$1 $2" in
   "network inspect") exit 1 ;;
   "image inspect") echo ` + arch + ` ;;
@@ -147,5 +150,32 @@ func TestACommandInAServiceJoinsTheSitesNetwork(t *testing.T) {
 	}
 	if len(callsOf(t, calls, "network")) == 0 {
 		t.Error("the network was not made sure of first")
+	}
+}
+
+// On a replica, a container reaches the services kept on the primary by
+// their names, which point at the machine on the site's network, where
+// the house passes them through the mesh (internal/cluster).
+func TestAReplicasContainerFindsTheKeptServicesOnTheMachine(t *testing.T) {
+	bin, calls := fakeServicesDocker(t, goruntime.GOARCH)
+	site := t.TempDir()
+	m, err := manifest.Parse([]byte(`{"version":2,"services":{
+		"web":{"run":{"runtime":"docker","docker":{"image":"nginx:1.27"},"env":{"DB":"$SERVICE_db_HOST"}},"domains":["bakery.test"]},
+		"db":{"run":{"runtime":"docker","docker":{"image":"mariadb:11.4","port":3306,"volumes":["data:/var/lib/mysql"]}},"internal":true}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, err := manifest.ServiceSpec("bakery.test", site, "web", m, func(target string, _ bool) (string, int, bool) { return target, 3306, true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec.AddHosts = []string{"db"}
+	d := Docker{Bin: bin, House: "/srv/test"}
+	if _, err := d.Start(context.Background(), spec, 41235, filepath.Join(t.TempDir(), "web.log"), t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	runs := callsOf(t, calls, "run ")
+	if len(runs) != 1 || !strings.Contains(runs[0], "--add-host db:172.30.0.1") {
+		t.Fatalf("runs: %q", runs)
 	}
 }

@@ -620,9 +620,11 @@ Copies of the site on other nodes of the network, which this node hands
 requests to when its load per core passes `spill` (70 % by default) or its
 own instance is down. The names keep pointing here. `nodes` names the
 nodes to use first, `mode: "spread"` shares always by free capacity, and
-`gateway` lets the copies use this node's database through the mesh.
-Refused for a site whose data a copy would fork (SQLite, workers,
-services, volumes). `replica` is what the house writes on a copy; never
+`gateway` lets the copies use this node's database through the mesh. In a
+site with services, `keep` names the services that stay here (those with
+volumes stay anyway); the copies run the others and reach the kept ones
+through the mesh by the same names. Refused for a site whose data a copy
+would fork (SQLite, workers, volumes on its own run). `replica` is what the house writes on a copy; never
 write it by hand. See [cluster.md](cluster.md).
 
 ## Workers

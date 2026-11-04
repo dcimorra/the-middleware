@@ -32,11 +32,14 @@ type SiteView struct {
 	Want      int               `json:"want"`
 	SpillAt   float64           `json:"spill_at"`
 	Gateway   []string          `json:"gateway"`
-	Revision  string            `json:"revision,omitempty"`
-	Error     string            `json:"error,omitempty"`
-	Load      Load              `json:"load"`
-	Sharing   bool              `json:"sharing"`
-	Replicas  []ReplicaView     `json:"replicas"`
+	// Services are the site's services, Kept the ones that run only here.
+	Services []string      `json:"services"`
+	Kept     []string      `json:"kept"`
+	Revision string        `json:"revision,omitempty"`
+	Error    string        `json:"error,omitempty"`
+	Load     Load          `json:"load"`
+	Sharing  bool          `json:"sharing"`
+	Replicas []ReplicaView `json:"replicas"`
 	// Replica is set when the site here is another node's copy.
 	Replica *manifest.Replica `json:"replica,omitempty"`
 }
@@ -50,6 +53,13 @@ func (m *Manager) View(domain string) (SiteView, bool) {
 	man := sn.Manifest
 	v := SiteView{Domain: domain, Clustered: man.Clustered(), Blockers: man.Blockers(), Cluster: man.Cluster,
 		Want: man.Cluster.Want(), SpillAt: man.Cluster.SpillAt(), Gateway: []string{}, Replicas: []ReplicaView{}, Replica: man.Replica}
+	v.Services, v.Kept = man.ServiceNames(), man.KeptServices()
+	if v.Services == nil {
+		v.Services = []string{}
+	}
+	if v.Kept == nil {
+		v.Kept = []string{}
+	}
 	if v.Blockers == nil {
 		v.Blockers = []string{}
 	}

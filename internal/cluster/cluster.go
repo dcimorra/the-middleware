@@ -60,6 +60,11 @@ type Sites interface {
 	Site(domain string) (engine.Snapshot, bool)
 	Sites() []engine.Snapshot
 	Owner(host string) (string, bool)
+	// LookupPath is what answers a request: for a site with services,
+	// the service's view.
+	LookupPath(host, urlPath string) (engine.Snapshot, bool)
+	// ServicePort is where a site's process reaches one of its services.
+	ServicePort(domain, service string) (int, bool)
 }
 
 // Load is a node's load as the cluster weighs it.
@@ -83,7 +88,10 @@ type ReplicaStatus struct {
 	// Revision is the primary's fingerprint the replica serves now.
 	Revision string `json:"revision"`
 	Alive    bool   `json:"alive"`
-	State    string `json:"state"`
+	// Services are, for a site with services, each one the replica runs
+	// and whether it is up: a request is handed over only for one that is.
+	Services map[string]bool `json:"services,omitempty"`
+	State    string          `json:"state"`
 	// Pending is the fingerprint being installed, Error why the last
 	// one was not.
 	Pending string    `json:"pending,omitempty"`
@@ -130,6 +138,11 @@ type Options struct {
 	// Gap is the least time between two copies of a site to one node,
 	// and a failed copy's wait (default retryAfter).
 	Gap time.Duration
+	// NetworkGateway and ContainerIP read docker (nil asks the docker CLI):
+	// the machine's address on a site's network, and a service
+	// container's.
+	NetworkGateway func(ctx context.Context, network string) (string, error)
+	ContainerIP    func(ctx context.Context, site, service string) (string, error)
 }
 
 // Manager is this node's side of every cluster: primary of some sites,

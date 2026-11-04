@@ -415,8 +415,12 @@ change, and hands them requests through the mesh only when this node's load
 per core passes `spill` % (70 by default) or its instance is down; the same
 visitor always lands on the same node. `gateway` lists the database
 addresses on this node (loopback only) the copies reach through the mesh,
-so every node uses the one database. It is refused for SQLite, workers,
-services, volumes, an upstream, VPN-only sites, `needs` and `claude_api`:
+so every node uses the one database. With `services`, the ones with data
+stay on this node (`keep: ["db"]`; any with volumes stays anyway) and the
+copies run the rest, reaching the kept ones through the mesh by the same
+name and `$SERVICE_<name>_…`: nothing in the site changes. It is refused
+for SQLite, workers, volumes on the site's own run, an upstream, VPN-only
+sites, `needs` and `claude_api`:
 say why rather than working around it. Files a copy writes into its folder
 (uploads) are lost at the next copy; put what the site writes as it runs in
 `move.exclude`, or it is copied again and again. Never write `replica`: the

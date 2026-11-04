@@ -5,7 +5,7 @@
 // state. Everything is written into the manifest (cluster); the server
 // does the rest in its rounds.
 
-import { h, clear } from "../lib/dom.js";
+import { h, clear, append } from "../lib/dom.js";
 import { t } from "../lib/i18n.js";
 import { api, enc } from "../lib/api.js";
 import { notice, table, cell } from "../components/page.js";
@@ -42,6 +42,7 @@ export function clusterCard(domain) {
       h("option", { value: "spread" }, t("cluster.modeSpread")));
     mode.value = c.mode || "overflow";
     const gateway = h("input", { type: "text", placeholder: "127.0.0.1:3306", value: (d.gateway || []).join(", ") });
+    const keep = h("input", { type: "text", placeholder: "db", value: (c.keep || []).join(", ") });
     const save = h("button", { class: "btn primary", type: "button" }, t("common.save"));
     save.addEventListener("click", () => {
       const next = { ...c, replicas: Number(replicas.value) || 1, mode: mode.value === "overflow" ? undefined : mode.value };
@@ -49,14 +50,17 @@ export function clusterCard(domain) {
       next.spill = sp && sp !== 70 ? sp : undefined;
       const gw = gateway.value.split(",").map((x) => x.trim()).filter(Boolean);
       next.gateway = gw.length ? gw : undefined;
+      const kp = keep.value.split(",").map((x) => x.trim()).filter(Boolean);
+      next.keep = kp.length ? kp : undefined;
       patch(next);
     });
-    clear(form).append(
+    append(clear(form), [
       field(t("cluster.replicas"), replicas, t("cluster.replicasHint")),
       field(t("cluster.mode"), mode, t("cluster.modeHint")),
       field(t("cluster.spill"), spill, t("cluster.spillHint")),
       field(t("cluster.gateway"), gateway, t("cluster.gatewayHint")),
-      h("div", { class: "row" }, save));
+      (d.services || []).length ? field(t("cluster.keep"), keep, t("cluster.keepHint", { services: d.services.join(", "), kept: (d.kept || []).join(", ") || "—" })) : null,
+      h("div", { class: "row" }, save)]);
   }
 
   function drawRows(d) {
@@ -65,7 +69,7 @@ export function clusterCard(domain) {
       " ", d.sharing ? h("strong", null, t("cluster.sharing")) : t("cluster.notSharing"));
     const list = d.replicas || [];
     const missing = Math.max(0, (d.want || 0) - list.length);
-    clear(rows).append(head,
+    append(clear(rows), [head,
       list.length ? table([
         { label: t("cluster.col.node") }, { label: t("cluster.col.state") }, { label: t("cluster.col.load") }, { label: t("cluster.col.detail") },
       ], list.map((r) => h("tr", null,
@@ -74,7 +78,7 @@ export function clusterCard(domain) {
         cell(r.load ? `${pct(r.load.per_core)} · ${r.load.cores}` : "—", t("cluster.col.load")),
         cell(r.refused || r.error || "—", t("cluster.col.detail")),
       )), { responsive: true }).el : null,
-      missing ? notice("warn", t("cluster.missing", { n: missing })) : null);
+      missing ? notice("warn", t("cluster.missing", { n: missing })) : null]);
   }
 
   async function load() {

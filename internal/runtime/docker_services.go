@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +40,42 @@ func (d Docker) ensureNetwork(ctx context.Context, name, site string) error {
 		return fmt.Errorf("docker network create %s: %w: %s", name, err, bytes.TrimSpace(out))
 	}
 	return nil
+}
+
+// NetworkGateway is the machine's address on a docker network: what a
+// container on it reaches the machine at.
+func (d Docker) NetworkGateway(ctx context.Context, name string) (string, error) {
+	out, err := exec.CommandContext(ctx, d.bin(), "network", "inspect", "-f", "{{range .IPAM.Config}}{{.Gateway}} {{end}}", name).Output()
+	if err != nil {
+		return "", fmt.Errorf("docker network inspect %s: %w", name, err)
+	}
+	for _, f := range strings.Fields(string(out)) {
+		if ip := net.ParseIP(f); ip != nil && ip.To4() != nil {
+			return f, nil
+		}
+	}
+	return "", fmt.Errorf("docker network %s has no IPv4 gateway", name)
+}
+
+// ServiceIP is a running service container's address on the site's
+// network, found by its label (the site and the service).
+func (d Docker) ServiceIP(ctx context.Context, site, service, network string) (string, error) {
+	out, err := exec.CommandContext(ctx, d.bin(), "ps", "-q", "--filter", "label="+domainLabel+"="+site+"/"+service).Output()
+	if err != nil {
+		return "", fmt.Errorf("docker ps: %w", err)
+	}
+	ids := strings.Fields(string(out))
+	if len(ids) == 0 {
+		return "", fmt.Errorf("no container of %s/%s is running", site, service)
+	}
+	ip, err := exec.CommandContext(ctx, d.bin(), "inspect", "-f", "{{with index .NetworkSettings.Networks \""+network+"\"}}{{.IPAddress}}{{end}}", ids[0]).Output()
+	if err != nil {
+		return "", fmt.Errorf("docker inspect: %w", err)
+	}
+	if a := strings.TrimSpace(string(ip)); net.ParseIP(a) != nil {
+		return a, nil
+	}
+	return "", fmt.Errorf("the container of %s/%s is not on %s", site, service, network)
 }
 
 // BuildLog is where a service's image build writes, next to its log.

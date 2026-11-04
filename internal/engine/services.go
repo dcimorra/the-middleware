@@ -60,6 +60,16 @@ type ServiceSnapshot struct {
 	Checks    []Check  `json:"checks,omitempty"`
 }
 
+// serviceNameOf is sv's name in m.
+func serviceNameOf(m *manifest.Manifest, sv *manifest.Service) string {
+	for n, x := range m.Services {
+		if x == sv {
+			return n
+		}
+	}
+	return ""
+}
+
 func serviceKey(domain, name string) string { return domain + "/" + name }
 
 // serviceSubject is a service's events' subject: the site, then the
@@ -81,6 +91,10 @@ func serviceStopped(m *manifest.Manifest, sv *manifest.Service) string {
 		return "disabled"
 	case (m.Hold != nil && m.Hold.Enabled) || (sv.Hold != nil && sv.Hold.Enabled):
 		return "hold"
+	case m.Replica.Keeps(serviceNameOf(m, sv)):
+		// A replica's service with data runs on the primary only, and is
+		// reached through the mesh (internal/cluster).
+		return "elsewhere"
 	}
 	return ""
 }
@@ -138,6 +152,9 @@ func (e *Engine) reconcileServices(ctx context.Context, s *Site, m *manifest.Man
 			continue
 		}
 		e.addSiteEnv(s.Domain, m, spec)
+		if m.IsReplica() && spec.Network != "" {
+			spec.AddHosts = m.Replica.Keep
+		}
 		if svc.inst != nil && svc.inst.Revision() == spec.Revision {
 			svc.spec = spec
 			continue
@@ -183,6 +200,9 @@ func restartMax(spec *manifest.Spec, sv *manifest.Service) time.Duration {
 func (e *Engine) dependsWaitLocked(s *Site, sv *manifest.Service) string {
 	var missing []string
 	for _, dep := range sv.DependsOn {
+		if s.Manifest.Replica.Keeps(dep) {
+			continue // on the primary, through the mesh
+		}
 		d := s.Services[dep]
 		if d == nil || d.inst == nil || d.starting || d.health.status == HealthDown {
 			missing = append(missing, dep)
@@ -599,6 +619,9 @@ func (e *Engine) serviceView(s *Site, sn Snapshot, host, urlPath string) (Snapsh
 	case "hold":
 		sn.Mode = manifest.ModeHold
 		return sn, true
+	case "elsewhere":
+		sn.Mode = manifest.ModeDisabled
+		return sn, true
 	}
 	if svc != nil {
 		sn.Handing, sn.Error, sn.Failures = svc.starting, svc.lastErr, svc.failures
@@ -752,4 +775,23 @@ func (e *Engine) ServiceSpec(domain, name string) (*manifest.Spec, error) {
 		s.Services = map[string]*service{}
 	}
 	return manifest.ServiceSpec(domain, s.Dir, name, s.Manifest, e.serviceAddrLocked(s, s.Manifest))
+}
+
+// ServicePort is the port service keeps on the machine (a written one,
+// or the one claimed for it), and whether it has one: where a process of
+// the site reaches it.
+func (e *Engine) ServicePort(domain, service string) (int, bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	s, ok := e.sites[domain]
+	if !ok || s.Manifest == nil || s.Manifest.Services[service] == nil {
+		return 0, false
+	}
+	if r := s.Manifest.Services[service].Run; r != nil && r.Port != 0 {
+		return r.Port, true
+	}
+	if svc := s.Services[service]; svc != nil && svc.port != 0 {
+		return svc.port, true
+	}
+	return 0, false
 }

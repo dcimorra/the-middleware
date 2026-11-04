@@ -104,6 +104,7 @@ func replicaManifest(raw []byte, from nodes.Member, req CommitRequest) (*manifes
 	if b := man.Blockers(); len(b) > 0 {
 		return nil, fmt.Errorf("this site cannot have replicas: %s", strings.Join(b, "; "))
 	}
+	keep := man.KeptServices()
 	var gw []string
 	if man.Cluster != nil {
 		for _, g := range man.Cluster.Gateway {
@@ -123,7 +124,7 @@ func replicaManifest(raw []byte, from nodes.Member, req CommitRequest) (*manifes
 	if primary == "" {
 		primary = from.Name
 	}
-	man.Replica = &manifest.Replica{Of: from.ID, Primary: primary, Revision: req.Revision, Gateway: gw}
+	man.Replica = &manifest.Replica{Of: from.ID, Primary: primary, Revision: req.Revision, Gateway: gw, Keep: keep}
 	return man, man.Validate()
 }
 
@@ -315,6 +316,13 @@ func (m *Manager) Replicas(of string) map[string]ReplicaStatus {
 			st.Alive = sn.Alive && sn.Port != 0 && !sn.Handing
 		case manifest.ModeStatic:
 			st.Alive = true
+		case manifest.ModeServices:
+			st.Alive, st.Services = sn.Alive, map[string]bool{}
+			for name, v := range sn.Services {
+				if !r.Replica.Keeps(name) {
+					st.Services[name] = v.Alive && v.Stopped == ""
+				}
+			}
 		}
 		m.mu.Lock()
 		if e := m.gwErrs[sn.Domain]; e != "" {
