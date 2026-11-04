@@ -68,8 +68,10 @@ import (
 // browsers and countries: two lists are cheaper than a password), attack
 // (the proof of work: outside the password, so a flood never reaches a
 // key derivation without paying first), access
-// (the door the operator closed), traffic (count whatever came out, error pages included), then
-// the proxy. Everything after traffic wraps nothing and only runs: the
+// (the door the operator closed), traffic (count whatever came out, error pages included),
+// cache, cluster (a clustered site's request handed to a replica on
+// another node, after the cache so a kept page costs no hop), then the
+// proxy. Everything after traffic wraps nothing and only runs: the
 // api hangs from the proxy's panel slot, the chat, the tasks and the
 // modules are services, the guard is a watchdog. The wire hook goes last
 // because it reaches into every instance the others created.
@@ -81,6 +83,7 @@ const (
 	orderAccess   = 30
 	orderTraffic  = 40
 	orderCache    = 45
+	orderCluster  = 47
 	orderAPI      = 50
 	orderChat     = 60
 	orderTasks    = 70
@@ -270,7 +273,16 @@ func buildWire(a *app.App) app.Hook {
 			return nil
 		})
 		w.mesh.Serve(srv)
+		if theCluster != nil {
+			theCluster.SetMesh(w.mesh)
+			// The closed door: what a primary hands a replica here goes
+			// straight to the router, past this node's own chain (the
+			// primary's already ran on it).
+			w.mesh.ServeSites(theCluster.ReplicaHandler(a.Proxy))
+			w.mesh.ServeTunnels(theCluster.TunnelHandler())
+		}
 	}
+	srv.RegisterCluster(theCluster)
 	w.shots = shots.New(shots.Options{
 		Root:    a.Root,
 		DataDir: dataDir(a),

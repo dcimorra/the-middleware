@@ -49,6 +49,11 @@ type Spec struct {
 	// Unpublished keeps the container's port off the machine: only the
 	// site's network reaches it (an internal database).
 	Unpublished bool
+	// AddHosts are names that, inside the container, mean the site's
+	// network's gateway (the machine): on a replica, the services kept on
+	// the primary, which the house passes through the mesh
+	// (internal/cluster).
+	AddHosts []string
 	// Fingerprint is what the files a built image comes from look like
 	// now (docker.watch); a change is a new generation.
 	Fingerprint string

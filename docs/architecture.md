@@ -213,6 +213,19 @@ door: a build, a chat turn, an agent run on the machine that owns the
 site. The dashboard is one request, `/nodes/overview`, which asks every
 node's `/node/summary` in parallel.
 
+## Cluster
+
+A site with `cluster` in its manifest has replicas on other nodes
+(`internal/cluster`). Its primary keeps where they are, copies its folder
+to them at every change (dependencies installed there for that machine),
+and, after the cache in the request chain, hands a request to one of them
+through the mesh door when it is saturated or its instance is down, by
+weighted rendezvous hashing on the visitor's address. A replica is behind a
+closed door: not published, not served by its node's own doors, reached
+only by its primary with the network's secret. The database gateway passes
+a replica's connections to `127.0.0.1:<port>` through the mesh to the
+primary's database. See [cluster.md](cluster.md).
+
 ## Jails
 
 Every process a site has runs in a jail of the site's own

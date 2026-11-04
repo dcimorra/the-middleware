@@ -146,6 +146,8 @@ var ownerOnly = []string{
 	"GET " + siteBase + "/containerize",
 	"POST " + siteBase + "/containerize",
 	"GET " + siteBase + "/move",
+	// Its cluster names the other nodes, as a move does.
+	"GET " + siteBase + "/cluster",
 	"GET " + siteBase + "/move/plan",
 	"POST " + siteBase + "/move",
 	"GET " + siteBase + "/claude-api",

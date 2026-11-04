@@ -18,6 +18,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/auth"
 	"github.com/dcimorra/the-middleware/internal/events"
 	"github.com/dcimorra/the-middleware/internal/fsx"
+	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/nodes"
 	"github.com/dcimorra/the-middleware/internal/sites"
 )
@@ -151,7 +152,12 @@ func (s *Server) locate(ctx context.Context, m *nodes.Mesh, domain string) (node
 		wg.Add(1)
 		go func(x nodes.Member) {
 			defer wg.Done()
-			if err := m.Call(ctx, x, "GET", "/sites/"+domain, nil, nil); err == nil {
+			// A replica (internal/cluster) has the name too, and is not
+			// where the site is: its folder is replaced at every copy.
+			var got struct {
+				Manifest *manifest.Manifest `json:"manifest"`
+			}
+			if err := m.Call(ctx, x, "GET", "/sites/"+domain, nil, &got); err == nil && !got.Manifest.IsReplica() {
 				found <- x
 			}
 		}(x)

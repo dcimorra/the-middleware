@@ -31,6 +31,7 @@ import { cacheTab } from "./site-cache.js";
 import { siteTasksTab } from "./tasks.js";
 import { backupsTab } from "./site-backups.js";
 import { doorCard } from "./site-door.js";
+import { clusterCard } from "./site-cluster.js";
 import { specsTab } from "./site-specs.js";
 
 // No browser to take pictures with on this machine: learnt from the
@@ -191,6 +192,8 @@ function overviewTab(domain) {
   // The gateway spends the operator's money: theirs alone.
   const owner = !delegate();
   const door = owner ? doorCard(domain) : null;
+  // Built once, like the door: it keeps its own form and refreshes itself.
+  const clusterEl = owner ? clusterCard(domain) : null;
   // The names the house published for this site, from GET /publish:
   // [name, record] pairs, refreshed on publish.* events.
   let published = [];
@@ -656,6 +659,7 @@ function overviewTab(domain) {
       serves && can(domain, "code") ? redirectsCard(m) : null,
       serves && can(domain, "code") ? httpsCard(m) : null,
       unmanaged || !door ? null : door,
+      unmanaged || !clusterEl || !serves ? null : clusterEl,
       unmanaged ? null : envCard,
     ]);
   }

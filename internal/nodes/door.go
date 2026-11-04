@@ -95,8 +95,12 @@ func remoteAddr(r *http.Request) netip.Addr {
 // network's secret, which a process on this same machine dialling the
 // door does not have.
 func (m *Mesh) authenticate(r *http.Request) (Member, bool) {
-	from := remoteAddr(r)
 	tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return m.authenticateWith(r, tok, ok)
+}
+
+func (m *Mesh) authenticateWith(r *http.Request, tok string, ok bool) (Member, bool) {
+	from := remoteAddr(r)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !ok || m.st.Secret == "" || subtle.ConstantTimeCompare([]byte(tok), []byte(m.st.Secret)) != 1 {
@@ -118,6 +122,16 @@ func doorJSON(w http.ResponseWriter, status int, v any) {
 
 func (m *Mesh) doorHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A site's request comes first, before the API's no-store: what
+		// the site answers about caching is the site's.
+		if r.Header.Get(ClusterHeader) != "" {
+			m.serveSite(w, r)
+			return
+		}
+		if r.Header.Get(TunnelHeader) != "" {
+			m.serveTunnel(w, r)
+			return
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		// The join is the one request without the network's secret: the
 		// newcomer has only its invitation, and only from the address the

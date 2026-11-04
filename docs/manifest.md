@@ -610,6 +610,23 @@ installed inside what is left out, and the plan a move or an import shows
 first counts without it. A pattern that leaves the folder, or that would
 leave out `site.json`, is refused.
 
+## Cluster: `cluster`
+
+```json
+"cluster": { "replicas": 2, "spill": 70, "gateway": ["127.0.0.1:3306"] }
+```
+
+Copies of the site on other nodes of the network, which this node hands
+requests to when its load per core passes `spill` (70 % by default) or its
+own instance is down. The names keep pointing here. `nodes` names the
+nodes to use first, `mode: "spread"` shares always by free capacity, and
+`gateway` lets the copies use this node's database through the mesh. In a
+site with services, `keep` names the services that stay here (those with
+volumes stay anyway); the copies run the others and reach the kept ones
+through the mesh by the same names. Refused for a site whose data a copy
+would fork (SQLite, workers, volumes on its own run). `replica` is what the house writes on a copy; never
+write it by hand. See [cluster.md](cluster.md).
+
 ## Workers
 
 A worker is a process that must always be up and answers no domain: a backend

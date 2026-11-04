@@ -785,7 +785,10 @@ func (e *Engine) Hosts() map[string]string {
 	defer e.mu.RUnlock()
 	out := map[string]string{}
 	for domain, s := range e.sites {
-		if s.Manifest == nil {
+		// A replica of another node's site answers only through the mesh
+		// (internal/cluster): none of its names is this node's to
+		// publish, certify or open a door for.
+		if s.Manifest == nil || s.Manifest.IsReplica() {
 			continue
 		}
 		taken := func(h string) bool {
