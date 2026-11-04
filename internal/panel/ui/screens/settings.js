@@ -10,7 +10,7 @@ import { page, load, table, cell } from "../components/page.js";
 import { open, confirm, field, toggle, checkbox } from "../components/dialog.js";
 import { toast, toastError } from "../components/toast.js";
 import { getTheme, setTheme, setLang } from "../lib/theme.js";
-import { fmtTime, fmtAgo } from "../lib/dom.js";
+import { fmtTime, fmtAgo, fmtBytes } from "../lib/dom.js";
 import { passkeysCard, panelAccessCard } from "./settings-access.js";
 import { usersCard } from "./settings-users.js";
 import { pushCard } from "./settings-push.js";
@@ -123,7 +123,12 @@ export function settingsScreen({ query } = {}) {
     const providers = (agents.providers || []).map((x) => x.provider);
     for (const k of Object.keys(a.per_provider || {})) if (!providers.includes(k)) providers.push(k);
     if (a.default_provider && !providers.includes(a.default_provider)) providers.push(a.default_provider);
-    const max = h("input", { type: "number", min: "1", max: "64", value: a.max_concurrent || 8 });
+    // Empty fields are computed from the machine: the placeholder is the
+    // number that applies, and the hint says where it came from.
+    const comp = agents.computed || {};
+    const max = h("input", { type: "number", min: "1", max: "64", value: a.max_concurrent || "", placeholder: comp.max_concurrent ? String(comp.max_concurrent) : "" });
+    const cores = h("input", { type: "number", min: "1", max: comp.cpus ? String(comp.cpus) : "", value: a.cpu_cores || "", placeholder: comp.cpu_cores ? String(comp.cpu_cores) : "" });
+    const memMax = h("input", { type: "text", class: "mono", value: a.memory_max || "", placeholder: comp.memory_max ? fmtBytes(comp.memory_max) : "", autocapitalize: "off" });
     const reserved = h("input", { type: "number", min: "0", max: "63", value: a.reserved_for_house ?? 1 });
     const def = h("select", null, ...providers.map((k) => h("option", { value: k, selected: k === a.default_provider }, k)));
     // What a site may spend a day through its door when its manifest says
@@ -148,7 +153,7 @@ export function settingsScreen({ query } = {}) {
     ].join(" · ");
     const form = h("form", { novalidate: true },
       h("div", { class: "form-row" },
-        field(t("settings.maxConcurrent"), max, t("settings.maxConcurrentHint")),
+        field(t("settings.maxConcurrent"), max, a.max_concurrent ? t("settings.maxConcurrentHint") : t("settings.maxConcurrentComputed", { n: comp.max_concurrent || "?" })),
         field(t("settings.defaultProvider"), def, t("settings.defaultProviderHint")),
       ),
       fold(t("settings.advanced"), moreNote, [
@@ -156,6 +161,9 @@ export function settingsScreen({ query } = {}) {
           field(t("settings.reservedForHouse"), reserved, t("settings.reservedForHouseHint")),
           field(t("settings.siteDailyUSD"), siteDaily, t("settings.siteDailyUSDHint"))),
         h("div", { class: "form-row" }, ...perFields),
+        h("div", { class: "form-row" },
+          field(t("settings.agentsCores"), cores, t("settings.agentsCoresHint", { n: comp.cpu_cores || "?", cpus: comp.cpus || "?" })),
+          field(t("settings.agentsMemory"), memMax, t("settings.agentsMemoryHint", { size: comp.memory_max ? fmtBytes(comp.memory_max) : "?" }))),
       ]),
       err,
       bar.el,
@@ -164,9 +172,13 @@ export function settingsScreen({ query } = {}) {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       err.hidden = true;
-      const m = Number(max.value), r = Number(reserved.value);
+      // An empty cap is 0, computed; the reserved slots are then held to
+      // the computed number, which the server checks again.
+      const m = max.value.trim() === "" ? 0 : Number(max.value), r = Number(reserved.value);
+      const eff = m || comp.max_concurrent || 64;
+      const c = cores.value.trim() === "" ? 0 : Number(cores.value);
       const perOut = {};
-      let bad = !(Number.isInteger(m) && m >= 1 && m <= 64 && Number.isInteger(r) && r >= 0 && r < m);
+      let bad = !(Number.isInteger(m) && m >= 0 && m <= 64 && Number.isInteger(r) && r >= 0 && r < eff && Number.isInteger(c) && c >= 0);
       for (const k of providers) {
         const v = Number(per[k].value);
         if (!(Number.isInteger(v) && v >= 0 && v <= 64)) bad = true;
@@ -180,7 +192,7 @@ export function settingsScreen({ query } = {}) {
         const cur = await api.get("/settings");
         // Spread over what is saved, so a field this card does not show
         // survives its save instead of being dropped.
-        await api.put("/settings", { ...cur, agents: { ...(cur.agents || {}), max_concurrent: m, reserved_for_house: r, per_provider: perOut, default_provider: def.value, site_daily_usd: daily } });
+        await api.put("/settings", { ...cur, agents: { ...(cur.agents || {}), max_concurrent: m, reserved_for_house: r, per_provider: perOut, default_provider: def.value, site_daily_usd: daily, cpu_cores: c, memory_max: memMax.value.trim() } });
         bar.saved(t("settings.inForce"));
       } catch (ex) { err.textContent = ex.message; err.hidden = false; }
       finally { save.classList.remove("busy"); }

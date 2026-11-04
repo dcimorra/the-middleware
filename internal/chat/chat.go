@@ -214,6 +214,10 @@ type Options struct {
 	// Limits is the concurrency section of the settings; a zero value
 	// takes the defaults. SetLimits changes it live.
 	Limits settings.Agents
+	// OnLimits, when set, is told every section SetLimits receives: the
+	// agents' cgroup ceiling lives in the same section and changes live
+	// with it.
+	OnLimits func(settings.Agents)
 	// Path, when set, is the PATH a turn runs with instead of the
 	// supervisor's: the wiring puts the managed CLIs and their Node first.
 	Path func() string
@@ -244,6 +248,8 @@ type Manager struct {
 	mu      sync.Mutex
 	running map[string]*running
 	limits  settings.Agents
+	// computed is limits.MaxConcurrent having come from the machine.
+	computed bool
 }
 
 type running struct {
@@ -404,21 +410,20 @@ func New(opts Options) *Manager {
 func (m *Manager) SetLimits(a settings.Agents) {
 	d := settings.DefaultAgents()
 	if a.MaxConcurrent == 0 && a.DefaultProvider == "" && a.PerProvider == nil {
-		a = d
+		a.MaxConcurrent, a.ReservedForHouse, a.PerProvider, a.DefaultProvider = d.MaxConcurrent, d.ReservedForHouse, d.PerProvider, d.DefaultProvider
 	}
-	if a.Validate() != nil {
-		if a.MaxConcurrent < 1 || a.MaxConcurrent > settings.MaxAgents {
-			a.MaxConcurrent = d.MaxConcurrent
-		}
-		if a.ReservedForHouse < 0 || a.ReservedForHouse >= a.MaxConcurrent {
-			a.ReservedForHouse = 0
-			if a.MaxConcurrent > 1 {
-				a.ReservedForHouse = d.ReservedForHouse
-			}
-		}
-		if a.DefaultProvider == "" {
-			a.DefaultProvider = d.DefaultProvider
-		}
+	if m.opts.OnLimits != nil {
+		m.opts.OnLimits(a)
+	}
+	if a.MaxConcurrent < 0 || a.MaxConcurrent > settings.MaxAgents {
+		a.MaxConcurrent = 0
+	}
+	// Zero is computed from the machine; the reserved slots are kept
+	// under whatever number that gives.
+	computed := a.MaxConcurrent == 0
+	a = a.Resolved(settings.Machine())
+	if a.DefaultProvider == "" {
+		a.DefaultProvider = d.DefaultProvider
 	}
 	if m.opts.DefaultProvider != "" {
 		a.DefaultProvider = m.opts.DefaultProvider
@@ -432,17 +437,21 @@ func (m *Manager) SetLimits(a settings.Agents) {
 	a.PerProvider = per
 	m.mu.Lock()
 	m.limits = a
+	m.computed = computed
 	m.mu.Unlock()
 }
 
 // Capacity is the live picture: slots used and available, per provider,
 // and which conversations hold them.
 type Capacity struct {
-	Used      int                         `json:"used"`
-	Max       int                         `json:"max"`
-	Reserved  int                         `json:"reserved_for_house"`
-	Providers map[string]ProviderCapacity `json:"providers"`
-	Running   []RunningTurn               `json:"running"`
+	Used int `json:"used"`
+	Max  int `json:"max"`
+	// MaxComputed says Max was computed from the machine, the settings
+	// leaving max_concurrent at 0.
+	MaxComputed bool                        `json:"max_computed"`
+	Reserved    int                         `json:"reserved_for_house"`
+	Providers   map[string]ProviderCapacity `json:"providers"`
+	Running     []RunningTurn               `json:"running"`
 }
 
 // ProviderCapacity is one provider's share; Max 0 means no cap of its own.
@@ -467,7 +476,7 @@ func (m *Manager) Capacity() Capacity {
 }
 
 func (m *Manager) capacityLocked() Capacity {
-	c := Capacity{Used: len(m.running), Max: m.limits.MaxConcurrent, Reserved: m.limits.ReservedForHouse, Providers: map[string]ProviderCapacity{}, Running: []RunningTurn{}}
+	c := Capacity{Used: len(m.running), Max: m.limits.MaxConcurrent, MaxComputed: m.computed, Reserved: m.limits.ReservedForHouse, Providers: map[string]ProviderCapacity{}, Running: []RunningTurn{}}
 	for _, key := range m.opts.Registry.Keys() {
 		c.Providers[key] = ProviderCapacity{Max: m.limits.PerProvider[key]}
 	}

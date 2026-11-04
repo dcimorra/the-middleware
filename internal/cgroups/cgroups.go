@@ -38,6 +38,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 )
 
@@ -69,18 +70,46 @@ type Limits struct {
 	MemoryMax int64
 }
 
-// DefaultLimits are sized from the machine: one core always left to the
-// sites, and a third of the memory as the ceiling.
-func DefaultLimits() Limits {
-	cores := runtime.NumCPU() - 1
+// Machine is what the defaults are sized from: logical CPUs and memory.
+type Machine struct {
+	CPUs   int
+	Memory int64
+}
+
+var (
+	thisOnce sync.Once
+	this     Machine
+)
+
+// ThisMachine reads the machine once: neither number moves while the
+// process lives.
+func ThisMachine() Machine {
+	thisOnce.Do(func() { this = Machine{CPUs: runtime.NumCPU(), Memory: totalMemory()} })
+	return this
+}
+
+// DefaultLimits are this machine's.
+func DefaultLimits() Limits { return ThisMachine().DefaultLimits() }
+
+// DefaultLimits keeps a quarter of the cores (at least one) out of the
+// agents' reach, and a third of the memory as their ceiling. The reserve
+// was one core: on two cores that kept half for the sites, on twelve
+// threads 8 %, while the reason for it (the weight turns slowly and a
+// site feels it as latency) grows with the number of sites the machine
+// holds.
+func (m Machine) DefaultLimits() Limits {
+	reserve := m.CPUs / 4
+	if reserve < 1 {
+		reserve = 1
+	}
+	cores := m.CPUs - reserve
 	if cores < 1 {
 		cores = 1
 	}
-	total := totalMemory()
 	l := Limits{CPUWeight: 10, CPUCores: cores}
-	if total > 0 {
-		l.MemoryMax = total / 3
-		l.MemoryHigh = total / 4
+	if m.Memory > 0 {
+		l.MemoryMax = m.Memory / 3
+		l.MemoryHigh = m.Memory / 4
 	}
 	return l
 }
@@ -133,22 +162,49 @@ func Setup(self string, l Limits) (*Tree, error) {
 	if err := os.MkdirAll(agents, 0o755); err != nil {
 		return nil, err
 	}
-	writes := map[string]string{"cpu.weight": strconv.Itoa(l.CPUWeight)}
+	t := &Tree{agents: agents}
+	if err := t.SetAgents(l); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+// SetAgents writes the agents' limits, at start and whenever the settings
+// change them: a cgroup takes new numbers live. A zero is no limit
+// ("max"), so clearing an override the caller did not replace lifts it
+// instead of leaving the old number in force.
+func (t *Tree) SetAgents(l Limits) error {
+	if t == nil {
+		return nil
+	}
+	weight := l.CPUWeight
+	if weight <= 0 {
+		weight = 100
+	}
+	writes := [][2]string{
+		{"cpu.weight", strconv.Itoa(weight)},
+		{"cpu.max", "max 100000"},
+		// high before max on the way down: memory.max under memory.high
+		// is accepted, but the order keeps a lowered pair coherent at
+		// every step.
+		{"memory.high", "max"},
+		{"memory.max", "max"},
+	}
 	if l.CPUCores > 0 {
-		writes["cpu.max"] = strconv.Itoa(l.CPUCores*100000) + " 100000"
+		writes[1][1] = strconv.Itoa(l.CPUCores*100000) + " 100000"
 	}
 	if l.MemoryHigh > 0 {
-		writes["memory.high"] = strconv.FormatInt(l.MemoryHigh, 10)
+		writes[2][1] = strconv.FormatInt(l.MemoryHigh, 10)
 	}
 	if l.MemoryMax > 0 {
-		writes["memory.max"] = strconv.FormatInt(l.MemoryMax, 10)
+		writes[3][1] = strconv.FormatInt(l.MemoryMax, 10)
 	}
-	for f, v := range writes {
-		if err := os.WriteFile(filepath.Join(agents, f), []byte(v), 0o644); err != nil {
-			return nil, fmt.Errorf("cgroups: %s: %w", f, err)
+	for _, w := range writes {
+		if err := os.WriteFile(filepath.Join(t.agents, w[0]), []byte(w[1]), 0o644); err != nil {
+			return fmt.Errorf("cgroups: %s: %w", w[0], err)
 		}
 	}
-	return &Tree{agents: agents}, nil
+	return nil
 }
 
 // movePID moves a process (its whole thread group) into a cgroup; tests

@@ -331,10 +331,12 @@ The settings object (`data/settings.json`):
   "pages": { "stopped": ["Title", "Message"] },
   "update": { "auto": false, "every_minutes": 60 },
   "agents": {
-    "max_concurrent": 8,
+    "max_concurrent": 0,
     "reserved_for_house": 1,
     "per_provider": { "claude": 0, "agy": 0 },
-    "default_provider": "claude"
+    "default_provider": "claude",
+    "cpu_cores": 0,
+    "memory_max": ""
   }
 }
 ```
@@ -347,12 +349,25 @@ moving between nodes (`update.deferred`, once) and is tried again a
 minute later; the `POST` does not wait.
 
 `agents` caps the conversations: `max_concurrent` turns at once across
-every conversation (1..64), of which `reserved_for_house` (fewer than the
-cap) only the `middleware` conversation may take once the rest are busy;
+every conversation (1..64, or 0 for computed: the agents' memory ceiling
+over 1.5 GiB a turn, from 2 to 64, so 4 GB gives 2, 24 GB 5, 64 GB 14 and
+128 GB 28), of which `reserved_for_house` (fewer than the
+cap in force) only the `middleware` conversation may take once the rest are busy;
 `per_provider` caps one provider's share, 0 meaning no cap of its own;
 `default_provider` runs a site whose manifest names none. A `PUT` without
 the section keeps the defaults; one that breaks the rules is a 400 naming
 the field. The new limits apply to the next message, not the next restart.
+`cpu_cores` and `memory_max` (a size as docker writes it, `"8g"`, at least
+`256m`) replace the agents' cgroup ceiling, which is otherwise computed:
+every core but a quarter of them (at least one is always left to the
+sites) and a third of the memory, squeezing from a quarter (three quarters
+of an operator's `memory_max`). Zero and empty are computed, and a change
+is written to the cgroup at once. `GET /agents` answers `computed` with
+this machine's numbers (`cpus`, `memory`, `max_concurrent`, `cpu_cores`,
+`memory_max`) and its `capacity` says `max_computed` when the cap in force
+came from the machine. A file written before this (no `format`) that holds
+the old default `max_concurrent: 8` is read as computed; any other number
+stays the operator's.
 
 ## Modules
 

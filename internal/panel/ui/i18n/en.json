@@ -514,7 +514,7 @@
   "settings.defaultProviderHint": "For a site whose manifest names none.",
   "settings.siteDailyUSD": "Daily dollars per site door",
   "settings.siteDailyUSDHint": "What a site may spend a day through its Claude door when its manifest sets no daily_usd. Empty: 5.",
-  "settings.agentsBad": "The cap must be 1 to 64, the reserved slots fewer than the cap, and a provider's cap 0 to 64.",
+  "settings.agentsBad": "The cap must be empty or 1 to 64, the reserved slots fewer than the cap, a provider's cap 0 to 64 and the cores a whole number.",
   "settings.agentsSaved": "Agent limits saved and in force.",
   "system.version": "Version",
   "system.uptime": "Uptime",
@@ -2162,5 +2162,10 @@
   "cluster.state.failed": "Failed",
   "cluster.state.unreachable": "Not answering",
   "cluster.keep": "Services kept here",
-  "cluster.keepHint": "The ones with data: the copies do not start them and reach this node's through the mesh, by the same name and $SERVICE_x. Those with volumes are always kept. Services: {services}. Kept now: {kept}."
+  "cluster.keepHint": "The ones with data: the copies do not start them and reach this node's through the mesh, by the same name and $SERVICE_x. Those with volumes are always kept. Services: {services}. Kept now: {kept}.",
+  "settings.maxConcurrentComputed": "Empty: computed from this machine's memory, {n} now. 1 to 64 to set your own.",
+  "settings.agentsCores": "Agents' cores",
+  "settings.agentsCoresHint": "The most cores agent turns may use together. Empty: {n} of {cpus}, a quarter always left to the sites.",
+  "settings.agentsMemory": "Agents' memory",
+  "settings.agentsMemoryHint": "Ceiling for every agent turn together (512m, 8g). Empty: a third of the machine, {size}."
 }
