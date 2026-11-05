@@ -1,6 +1,6 @@
 ---
 name: middleware
-description: How to build, run, deploy, publish and check a site, worker or task on a machine served by middleware. Read before creating or changing anything.
+description: How to build, run, deploy, publish and check a site, worker or task on a machine served by middleware, and how to see from a site's conversation why its tasks failed, its events, logs, OOM kills, limits and backups. Read before creating or changing anything, and before saying you cannot see or do something.
 ---
 
 # middleware
@@ -11,6 +11,14 @@ that site's `site.json` describes. There is no pm2, no nginx config, no
 systemd unit per site: **the manifest is the only state a site has**, and the
 engine re-reads it every two seconds. Anything you want the house to do, you
 do by writing a file; anything you want to know, you ask the house.
+
+**Before you say you cannot see or do something, ask the house.** From a
+site's conversation, files outside your folder are denied, but what they
+hold about *your* site is not: why a task failed (`middleware site tasks
+<domain> log <task>`), why the process was killed or restarted
+(`middleware events --subject <domain>`), its backups, its limits, a
+restart, a deploy. The full list is in § 2, "What a site conversation can
+ask the house". Say you cannot only after the command for it has refused.
 
 ## 1. First: what kind of thing is being asked for
 
@@ -45,6 +53,8 @@ must not read, write or run anything outside it: other sites, `data/`,
 `tasks/`, the root. Every tool call is audited, and a denied path that merely
 appears in your transcript is reported as a violation. Your `HOME` is private
 to this site (`data/homes/<domain>`); the site's process gets the same one.
+Denied as files is not out of reach: your site's tasks, their logs, its
+events and its backups are read through the house's CLI (below).
 
 **The house conversation** (named `middleware`). `cwd` is the installation
 root (default `/srv/middleware`). You may edit the installation's own files,
@@ -86,18 +96,44 @@ created, where, and that the project work (code, dependencies, deploy
 recipe) continues from the site's chat. Do not build the project from the
 house conversation.
 
-### Reading state from a site conversation
+### What a site conversation can ask the house
 
 The CLI talks to the supervisor over its socket and is how you look at the
-house without opening `data/` by path:
+house without opening `data/` or `tasks/` by path. From a site's
+conversation it needs no token and is confined to that site: another
+site's name, the house's settings, tokens and the list of every site are
+refused. Everything below works on your own site:
 
 ```sh
-middleware site show shop.example.com     # mode, port, alive, revision, error, workers
-middleware site logs shop.example.com --lines 200 [--worker api]
-middleware events --subject shop.example.com
-middleware site tasks shop.example.com    # its scheduled tasks, next and last run (§ 9)
+middleware site show shop.example.com     # mode, port, alive, revision, last error, workers, services, manifest
+middleware site logs shop.example.com --lines 200 [--worker api | --service web]
+middleware events --subject shop.example.com [--type site.] [--since 24h] [--limit 500]
+                                          # starts, crashes, handovers, OOM kills (site.oom), limits, manifest changes
+                                          # --subject <your domain> is required
+middleware site tasks shop.example.com    # its tasks: schedule, next run, last run ok/failed and how long (§ 9)
+middleware site tasks shop.example.com log <task> [--lines 200]   # why a task failed
+middleware site tasks shop.example.com save <task> - <<'JSON' … JSON   # create or change one
+middleware site tasks shop.example.com run <task>      # now; then read its log and the list
+middleware site tasks shop.example.com stop <task>
+middleware site tasks shop.example.com rm <task>
+middleware site backups shop.example.com [log|run <name> | restore <name> <copy>]   # § 9
+middleware site restart shop.example.com [--service web]
+middleware site deploy shop.example.com
+middleware site validate shop.example.com [--file draft.json]
+middleware site routes shop.example.com
+middleware exec shop.example.com [--service db] -- <command>
 curl -s -o /dev/null -w '%{http_code}\n' -H "Host: shop.example.com" http://127.0.0.1:46100/
 ```
+
+Asked "why did the tasks fail?": `site tasks <domain>` for which ones and
+when, `site tasks <domain> log <task>` for each, and when a log just stops
+with no error, `events --subject <domain>` around that time (a `site.oom`
+there means the site's memory limit killed it; § 3, `limits`). Never answer
+that the logs are out of reach and ask for them to be pasted.
+
+Do not write a denied path (`data/…`, `tasks/…` under the root) in a reply
+or a command, not even to say it is denied: any mention is reported as a
+violation. Say "the task's log" and read it with its command.
 
 ## 3. The manifest, field by field
 
