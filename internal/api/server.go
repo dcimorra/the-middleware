@@ -360,7 +360,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if s.opts.Bus != nil {
 				s.opts.Bus.Emit(events.Event{Type: "api.turn_refused", Subject: caller.Turn, Actor: "agent", Level: "warn", Message: "a turn of this site's conversation asked the socket for " + pattern, Data: map[string]any{"method": r.Method, "path": r.URL.Path}})
 			}
-			s.writeError(w, r, Errorf(http.StatusForbidden, "a turn of %s's conversation may read, restart and deploy that site and manage its tasks, and nothing else; %s is the operator's", caller.Turn, pattern))
+			s.writeError(w, r, Errorf(http.StatusForbidden, "a turn of %s's conversation may read, restart, deploy and exec in that site and manage its tasks and backups, and nothing else; %s is the operator's", caller.Turn, pattern))
 			return
 		}
 		s.writeError(w, r, Errorf(http.StatusForbidden, "this token's scopes (%s) do not open %s", strings.Join(caller.Scopes, ", "), pattern))

@@ -1388,7 +1388,11 @@ func Preamble(domain, workdir string, j agent.Jail) string {
 		// The one exception is named: an agent that does not load skills
 		// is told to read the guide in its HOME, and Codex, given only the
 		// rule, refused to (Claude Code never asked, it loads it itself).
-		b.WriteString("You must not read, write or run anything outside it: other sites, the middleware's data, its tasks or its root are off limits, and every tool call is audited for that. ")
+		// "Off limits" is about paths, and said alone it read as "you
+		// cannot know": asked why its tasks failed, an agent answered
+		// that it could not see them. What the house tells a site about
+		// itself is listed below (turnCommandsText).
+		b.WriteString("You must not read, write or run anything outside it by path: other sites, the middleware's data, its tasks and its root are off limits as files, and every tool call is audited for that. What they hold about your own site, the house tells you through its CLI (listed below). ")
 		// The guide by its full path, not ~: told "~/.claude/…", an agent
 		// on a V2 node went for the root's .claude, which is denied, and
 		// concluded the guide was off limits.
@@ -1410,6 +1414,7 @@ func Preamble(domain, workdir string, j agent.Jail) string {
 			b.WriteString("Your own logs, once the site has run, are in data/logs/" + domain + " under the installation's root, and you may read them.\n")
 		}
 		b.WriteString("When the manifest names deploy.github.repository and the GitHub module has a token, `git push` to that repository works as it is: the house lends the credential through its own address, without showing it, and refuses any other repository and any deletion. Do not ask for a token or write one to a file.\n")
+		b.WriteString(turnCommandsText(domain))
 	}
 	b.WriteString("Do not start long-running processes: the middleware supervises the site's process from its manifest, and a change to the manifest or to a pointer file is how a deployment happens.\n")
 	b.WriteString("When this turn ends, its whole process group is killed. Anything that takes longer than a turn (a build, an install, a deployment) must be started detached, exactly like this: `setsid nohup <cmd> >/tmp/<name>.log 2>&1 </dev/null &`, and your reply must state the log's path so the next message can check how it went.\n")
@@ -1427,8 +1432,15 @@ func Preamble(domain, workdir string, j agent.Jail) string {
 	}
 	if len(j.Deny) > 0 {
 		b.WriteString("Paths you must not touch:\n")
+		root := filepath.Dir(filepath.Dir(workdir))
 		for _, d := range j.Deny {
-			b.WriteString("  - " + d + "\n")
+			line := "  - " + d
+			if domain != Middleware {
+				if h := denyHint(root, domain, d); h != "" {
+					line += " (for " + h + ")"
+				}
+			}
+			b.WriteString(line + "\n")
 		}
 	}
 	return b.String()
