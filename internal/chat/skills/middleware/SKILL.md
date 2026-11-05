@@ -421,9 +421,12 @@ copies run the rest, reaching the kept ones through the mesh by the same
 name and `$SERVICE_<name>_…`: nothing in the site changes. It is refused
 for SQLite, workers, volumes on the site's own run, an upstream, VPN-only
 sites, `needs`, `claude` (the subscription) and `claude_api` from a
-container. `claude_api` from a process is fine: the copies call the door
-through the primary, with its token and its spending, and the code changes
-nothing. When it is refused, say why rather than working around it. Files a copy writes into its folder
+container the copies would run. `claude_api` from a process is fine (a
+database in docker kept on this node does not change that): the copies
+call the door through the primary, with its token and its spending, and
+the code changes nothing. A service that drains a queue or runs on a
+timer (an outbox, a mailer) would run once per copy: put it in `keep`
+too. When it is refused, say why rather than working around it. Files a copy writes into its folder
 (uploads) are lost at the next copy; put what the site writes as it runs in
 `move.exclude`, or it is copied again and again. Never write `replica`: the
 house writes it on the copies. `GET /api/v1/sites/<domain>/cluster` says

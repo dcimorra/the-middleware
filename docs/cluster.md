@@ -95,7 +95,8 @@ be clustered when (`manifest.Blockers`):
 - it forwards to an `upstream`, lives in the VPN, or `needs` other sites of
   its node;
 - it runs the AI's CLI with the house's subscription (`claude`: a credential
-  of this machine), or talks to the site door from a container.
+  of this machine), or talks to the site door from a container
+  the copies would run (one kept on the primary, a database, is fine).
 
 A site with `claude_api` has copies: a copy's processes find
 `MIDDLEWARE_API` at an address of their own node's loopback, which goes

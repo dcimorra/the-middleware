@@ -154,13 +154,18 @@ func (c *Cluster) SpillAt() float64 {
 // Spreads says the requests are always shared, not only on overflow.
 func (c *Cluster) Spreads() bool { return c != nil && c.Mode == ClusterSpread }
 
-// HasContainers says some piece of the site runs in a container.
-func (m *Manifest) HasContainers() bool {
+// CopiedContainers says some piece the copies would run is a container.
+// A kept service runs only on the primary, which calls its own door: a
+// database in docker kept there is no reason to refuse claude_api. (It
+// once counted every container of the site, and a Next app run as a
+// process beside a kept Postgres was refused for its database.)
+func (m *Manifest) CopiedContainers() bool {
 	if m.Run != nil && m.Run.Runtime == "docker" {
 		return true
 	}
-	for _, sv := range m.Services {
-		if sv != nil && sv.Run != nil && sv.Run.Runtime == "docker" {
+	kept := m.KeptServices()
+	for name, sv := range m.Services {
+		if sv != nil && sv.Run != nil && sv.Run.Runtime == "docker" && !slices.Contains(kept, name) {
 			return true
 		}
 	}
@@ -202,12 +207,12 @@ func (m *Manifest) Blockers() []string {
 	if len(m.Needs) > 0 {
 		out = append(out, "it needs other sites of this node, which the other nodes do not have")
 	}
-	// claude_api goes through the primary (Replica.Door), but only from
-	// a process: a container's 127.0.0.1 is its own, as for the database
-	// gateway. The subscription token is a credential of this machine,
+	// claude_api goes through the primary (Replica.Door), but only to
+	// the processes a copy runs: a container's 127.0.0.1 is its own, as
+	// for the database gateway. The subscription token is a credential of this machine,
 	// and is not handed to another one.
-	if m.ClaudeAPI != nil && m.HasContainers() {
-		out = append(out, "it talks to an AI through this house from a container, which cannot reach the address its copies would call it at")
+	if m.ClaudeAPI != nil && m.CopiedContainers() {
+		out = append(out, "it talks to an AI through this house from a container the copies would run, which cannot reach the address they would call it at (a container kept on this node with cluster.keep is fine)")
 	}
 	if m.Claude {
 		out = append(out, "it runs the AI's CLI with this house's subscription, a credential that stays on this machine (claude_api goes through the primary and can have copies)")
