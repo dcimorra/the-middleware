@@ -100,7 +100,22 @@ func newHouse(t *testing.T, ctx context.Context, name string, port int) *house {
 		from += 100
 	}
 	eng := engine.New(engine.Options{SitesDir: filepath.Join(root, "sites"), DataDir: filepath.Join(root, "data"), Tick: 50 * time.Millisecond, Ports: ports.New(from, from+99)})
-	go eng.Run(ctx)
+	// Both loops write under root (doors.json, the engine's state), so
+	// the test waits for them before TempDir removes it: removing a
+	// folder a loop still writes in failed the release build once with
+	// "directory not empty". Registered after TempDir, run before it.
+	var loops sync.WaitGroup
+	t.Cleanup(func() {
+		done := make(chan struct{})
+		go func() { loops.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Error("the house's loops did not stop after the test")
+		}
+	})
+	loops.Add(1)
+	go func() { defer loops.Done(); eng.Run(ctx) }()
 	m, err := nodes.Open(nodes.Options{Dir: filepath.Join(root, "data", "nodes"), Hostname: name, Version: "test", Net: nodes.LoopbackNetwork{}, Subnet: netip.MustParsePrefix("127.77.0.0/16"), APIPort: port})
 	if err != nil {
 		t.Fatal(err)
@@ -119,7 +134,8 @@ func newHouse(t *testing.T, ctx context.Context, name string, port int) *house {
 	m.ServeSites(h.cl.ReplicaHandler(h.site))
 	m.ServeTunnels(h.cl.TunnelHandler())
 	m.Serve(h.api())
-	go h.cl.Run(ctx)
+	loops.Add(1)
+	go func() { defer loops.Done(); h.cl.Run(ctx) }()
 	return h
 }
 
