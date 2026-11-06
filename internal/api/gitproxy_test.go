@@ -55,7 +55,7 @@ func TestAConversationPushesToItsSitesRepositoryAndNowhereElse(t *testing.T) {
 	home := t.TempDir()
 	base := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t"}
-	for _, name := range []string{"repo", "repo-other"} {
+	for _, name := range []string{"repo", "repo-other", "lib"} {
 		bare := filepath.Join(remotes, "owner", name+".git")
 		if out, err := gitRun(t, remotes, base, "init", "-q", "--bare", bare); err != nil {
 			t.Fatal(out)
@@ -65,11 +65,12 @@ func TestAConversationPushesToItsSitesRepositoryAndNowhereElse(t *testing.T) {
 	keys := sitetoken.New(filepath.Join(f.root, "data"))
 	f.srv.RegisterGitProxy(GitProxyOptions{
 		Tokens: keys,
-		Repository: func(d string) string {
+		Repositories: func(d string) []string {
 			if d == "a.example" {
-				return "Owner/Repo"
+				// The deploy repository and one under repositories.
+				return []string{"Owner/Repo", "owner/lib"}
 			}
-			return ""
+			return nil
 		},
 		Token:    func() string { return "module-secret" },
 		Upstream: up.URL,
@@ -78,14 +79,15 @@ func TestAConversationPushesToItsSitesRepositoryAndNowhereElse(t *testing.T) {
 
 	work := t.TempDir()
 	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"commit", "-q", "--allow-empty", "-m", "first"},
-		{"remote", "add", "origin", "https://github.com/owner/repo.git"}, {"remote", "add", "other", "https://github.com/owner/repo-other.git"}} {
+		{"remote", "add", "origin", "https://github.com/owner/repo.git"}, {"remote", "add", "other", "https://github.com/owner/repo-other.git"},
+		{"remote", "add", "lib", "https://github.com/owner/lib.git"}} {
 		if out, err := gitRun(t, work, base, args...); err != nil {
 			t.Fatal(out)
 		}
 	}
 	push := func(token string, args ...string) (string, error) {
 		env := append([]string(nil), base...)
-		for k, v := range GitEnv(f.http.URL, "owner/repo", token) {
+		for k, v := range GitEnv(f.http.URL, []string{"owner/repo", "owner/lib"}, token) {
 			env = append(env, k+"="+v)
 		}
 		return gitRun(t, work, env, append([]string{"push"}, args...)...)
@@ -103,6 +105,14 @@ func TestAConversationPushesToItsSitesRepositoryAndNowhereElse(t *testing.T) {
 	}
 	if head("repo") != local {
 		t.Fatalf("the push did not reach the repository: %q, want %q", head("repo"), local)
+	}
+
+	// A second repository the manifest lists pushes the same way.
+	if out, err := push(tok, "lib", "main"); err != nil {
+		t.Fatalf("the listed repository's push failed: %v\n%s", err, out)
+	}
+	if head("lib") != local {
+		t.Fatal("the push did not reach the listed repository")
 	}
 
 	// A name that only starts like the site's is rewritten to the house
@@ -137,11 +147,14 @@ func TestAConversationPushesToItsSitesRepositoryAndNowhereElse(t *testing.T) {
 }
 
 func TestTheTurnGetsTheGitSettingsAsVariablesWithNoFile(t *testing.T) {
-	env := GitEnv("http://127.0.0.1:46100", "owner/repo", "tok")
-	if env["GIT_CONFIG_COUNT"] != "4" {
+	env := GitEnv("http://127.0.0.1:46100", []string{"owner/repo", "owner/lib"}, "tok")
+	if env["GIT_CONFIG_COUNT"] != "7" {
 		t.Fatalf("count %q", env["GIT_CONFIG_COUNT"])
 	}
-	if env["GIT_CONFIG_KEY_3"] != "http.http://127.0.0.1:46100"+GitPrefix+"/.extraHeader" || env["GIT_CONFIG_VALUE_3"] != "Authorization: Bearer tok" {
+	if env["GIT_CONFIG_KEY_3"] != "url.http://127.0.0.1:46100"+GitPrefix+"/owner/lib.insteadOf" || env["GIT_CONFIG_VALUE_3"] != "https://github.com/owner/lib" {
+		t.Fatalf("the second repository is not rewritten: %v", env)
+	}
+	if env["GIT_CONFIG_KEY_6"] != "http.http://127.0.0.1:46100"+GitPrefix+"/.extraHeader" || env["GIT_CONFIG_VALUE_6"] != "Authorization: Bearer tok" {
 		t.Fatalf("the header goes elsewhere: %v", env)
 	}
 }

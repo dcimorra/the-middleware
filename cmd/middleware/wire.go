@@ -360,11 +360,7 @@ func buildWire(a *app.App) app.Hook {
 		var out []repos.Site
 		for _, sn := range a.Engine.Sites() {
 			if sn.Manifest != nil {
-				s := repos.Site{Domain: sn.Domain, Dir: sn.Dir}
-				if d := sn.Manifest.Deploy; d != nil && d.GitHub != nil {
-					s.Repository = d.GitHub.Repository
-				}
-				out = append(out, s)
+				out = append(out, repos.Site{Domain: sn.Domain, Dir: sn.Dir, Repositories: sn.Manifest.GitRepositories()})
 			}
 		}
 		return out
@@ -1064,29 +1060,29 @@ func wireGitProxy(a *app.App, srv *api.Server, set *moduleSet, tokens *sitetoken
 	if set == nil || set.GitHub == nil {
 		return
 	}
-	repository := func(domain string) string {
+	repositories := func(domain string) []string {
 		sn, ok := a.Engine.Lookup(domain)
-		if !ok || sn.Domain != domain || sn.Manifest == nil || sn.Manifest.Deploy == nil || sn.Manifest.Deploy.GitHub == nil {
-			return ""
+		if !ok || sn.Domain != domain || sn.Manifest == nil {
+			return nil
 		}
-		return sn.Manifest.Deploy.GitHub.Repository
+		return sn.Manifest.GitRepositoryNames()
 	}
 	srv.RegisterGitProxy(api.GitProxyOptions{
-		Tokens:     tokens,
-		Repository: repository,
-		Token:      set.GitHub.PushToken,
-		Bus:        a.Bus,
+		Tokens:       tokens,
+		Repositories: repositories,
+		Token:        set.GitHub.PushToken,
+		Bus:          a.Bus,
 	})
 	chatManager.SetTurnEnv(func(domain string) map[string]string {
-		repo := repository(domain)
-		if repo == "" || set.GitHub.PushToken() == "" {
+		repos := repositories(domain)
+		if len(repos) == 0 || set.GitHub.PushToken() == "" {
 			return nil
 		}
 		tok, err := tokens.GitToken(domain)
 		if err != nil {
 			return nil
 		}
-		return api.GitEnv(listen, repo, tok)
+		return api.GitEnv(listen, repos, tok)
 	})
 }
 

@@ -23,9 +23,10 @@ import (
 // of its owner, so "limited to the site's repository" would have been a
 // promise kept by the agent's good manners. Here the turn carries a token
 // that only this proxy accepts, git is told (through GIT_CONFIG_* in the
-// turn's environment, no file) to send the site's repository here, and
-// the house adds GitHub's credential after checking the repository is the
-// one the site deploys from.
+// turn's environment, no file) to send the site's repositories here, and
+// the house adds GitHub's credential after checking the repository is one
+// the site's manifest names: the one it deploys from and those under
+// `repositories` (a public copy kept in build/oss, say).
 
 // GitPrefix is where the proxy answers: GitPrefix/<owner>/<name>/…
 const GitPrefix = Prefix + "/site/git"
@@ -33,9 +34,10 @@ const GitPrefix = Prefix + "/site/git"
 // GitProxyOptions wire the git proxy.
 type GitProxyOptions struct {
 	Tokens *sitetoken.Keys
-	// Repository is the owner/name a site deploys from (its manifest's
-	// deploy.github.repository), "" when it declares none.
-	Repository func(domain string) string
+	// Repositories are the owner/name a site may reach (its manifest's
+	// deploy.github.repository and repositories), none when it declares
+	// none.
+	Repositories func(domain string) []string
 	// Token is the GitHub module's token, "" when the module is off or
 	// has none. Read per request, so a rotated token is used at once.
 	Token func() string
@@ -45,19 +47,21 @@ type GitProxyOptions struct {
 	Bus      *events.Bus
 }
 
-// GitEnv is what a conversation's turn needs for git to reach repo
+// GitEnv is what a conversation's turn needs for git to reach repos
 // through the proxy at api (http://127.0.0.1:port): the usual remote
-// addresses of the repository are rewritten to the proxy, and the
+// addresses of each repository are rewritten to the proxy, and the
 // proxy's token goes as a header only to the proxy. Any other remote is
 // left alone.
-func GitEnv(api, repo, token string) map[string]string {
+func GitEnv(api string, repos []string, token string) map[string]string {
 	base := strings.TrimSuffix(api, "/") + GitPrefix + "/"
-	pairs := [][2]string{
-		{"url." + base + repo + ".insteadOf", "https://github.com/" + repo},
-		{"url." + base + repo + ".insteadOf", "git@github.com:" + repo},
-		{"url." + base + repo + ".insteadOf", "ssh://git@github.com/" + repo},
-		{"http." + base + ".extraHeader", "Authorization: Bearer " + token},
+	var pairs [][2]string
+	for _, repo := range repos {
+		pairs = append(pairs,
+			[2]string{"url." + base + repo + ".insteadOf", "https://github.com/" + repo},
+			[2]string{"url." + base + repo + ".insteadOf", "git@github.com:" + repo},
+			[2]string{"url." + base + repo + ".insteadOf", "ssh://git@github.com/" + repo})
 	}
+	pairs = append(pairs, [2]string{"http." + base + ".extraHeader", "Authorization: Bearer " + token})
 	env := map[string]string{"GIT_CONFIG_COUNT": strconv.Itoa(len(pairs))}
 	for i, p := range pairs {
 		env["GIT_CONFIG_KEY_"+strconv.Itoa(i)] = p[0]
@@ -108,18 +112,24 @@ func (o GitProxyOptions) serve(w http.ResponseWriter, r *http.Request, op string
 		o.Bus.Emit(events.Event{Type: "git.refused", Subject: domain, Actor: "agent", Level: "warn", Message: msg})
 		return nil, Errorf(http.StatusForbidden, "%s", msg)
 	}
-	repo := ""
-	if o.Repository != nil {
-		repo = o.Repository(domain)
+	var repos []string
+	if o.Repositories != nil {
+		repos = o.Repositories(domain)
 	}
 	asked := r.PathValue("owner") + "/" + strings.TrimSuffix(r.PathValue("repo"), ".git")
-	if repo == "" {
-		return refuse("%s declares no deploy.github.repository in its manifest, so it has no repository to push to", domain)
+	if len(repos) == 0 {
+		return refuse("%s declares no deploy.github.repository nor repositories in its manifest, so it has no repository to push to", domain)
 	}
 	// GitHub's names are not case-sensitive; the manifest and the remote
 	// may well be written differently.
-	if !strings.EqualFold(asked, repo) {
-		return refuse("%s may only reach %s through the house, not %s", domain, repo, asked)
+	repo := ""
+	for _, x := range repos {
+		if strings.EqualFold(asked, x) {
+			repo = x
+		}
+	}
+	if repo == "" {
+		return refuse("%s may only reach %s through the house, not %s; another repository of the site goes in the manifest's repositories", domain, strings.Join(repos, ", "), asked)
 	}
 	token := ""
 	if o.Token != nil {

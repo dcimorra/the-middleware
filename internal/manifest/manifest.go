@@ -93,9 +93,15 @@ type Manifest struct {
 	// one because a site with several names may keep one on plain http
 	// (an old device, a webhook that cannot follow a redirect). The rest
 	// of the house serves http as it comes (https.go).
-	ForceHTTPS []string          `json:"force_https,omitempty"`
-	Headers    map[string]string `json:"headers,omitempty"`
-	Notice     *Notice           `json:"notice,omitempty"`
+	ForceHTTPS []string `json:"force_https,omitempty"`
+	// Repositories are the GitHub repositories the site keeps in its
+	// folder besides the one it deploys from (deploy.github.repository):
+	// a public copy under build/oss, a library vendored as a clone. The
+	// GitHub module's token reaches these and that one, and no other
+	// (repositories.go).
+	Repositories []Repository      `json:"repositories,omitempty"`
+	Headers      map[string]string `json:"headers,omitempty"`
+	Notice       *Notice           `json:"notice,omitempty"`
 	// ClaudeAPI opens the site door: the site's own code may talk to Claude
 	// through the house (see docs/api.md, "The site door").
 	ClaudeAPI *ClaudeAPI `json:"claude_api,omitempty"`
@@ -764,6 +770,9 @@ func (m *Manifest) Validate() error {
 	}
 	if m.Deploy != nil && m.Deploy.GitHub != nil && !strings.Contains(m.Deploy.GitHub.Repository, "/") {
 		return errors.New("deploy.github.repository: want owner/name")
+	}
+	if err := validRepositories(m.Repositories); err != nil {
+		return err
 	}
 	return nil
 }

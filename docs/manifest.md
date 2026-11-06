@@ -101,6 +101,7 @@ never shell strings. Paths are relative to the site folder.
       "pointer": ".next-current"
     }
   },
+  "repositories": [{ "repository": "acme/app-oss", "path": "build/oss" }],
 
   "agent": { "provider": "claude", "model": "", "monthly_cap_usd": 0 }
 }
@@ -342,6 +343,20 @@ command, the resolved environment (including `env_from_file` contents and
 `env_files`), the runtime and docker settings. Anything else in the manifest
 (`access`, `waf`, `headers`, `hold`) is applied live and does not restart the
 process.
+
+## Repositories: `repositories`
+
+The GitHub module's token reaches the repository a site deploys from
+(`deploy.github.repository`) and the ones listed here, and no other: a
+fine-grained token usually opens every repository of its owner, so the
+manifest says which of them are this site's. Each entry is `repository`
+(owner/name) and `path`, the clone's folder inside the site (`.` or empty
+for the site's own). For each of them, a site's conversation can `git push`
+through the house ([modules.md](modules.md), github) and «keep up to date»
+fetches with the token, from that path only. The key is the owner's: a
+delegated user's change to it is refused. A turn's git settings are made
+when it starts, so a repository added during one is reachable from the
+next.
 
 ## Fields worth a line
 

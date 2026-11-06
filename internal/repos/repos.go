@@ -45,16 +45,18 @@ import (
 	"github.com/dcimorra/the-middleware/internal/events"
 	"github.com/dcimorra/the-middleware/internal/fsx"
 	"github.com/dcimorra/the-middleware/internal/hostgit"
+	"github.com/dcimorra/the-middleware/internal/manifest"
 )
 
 // Site is what the manager needs to know about a site.
 type Site struct {
 	Domain string
 	Dir    string
-	// Repository is the owner/name the site deploys from (its manifest's
-	// deploy.github.repository), "" when it declares none. Only that
-	// repository is fetched with the GitHub module's token.
-	Repository string
+	// Repositories are the site's GitHub repositories (its manifest's
+	// deploy.github.repository, Path "" because it may be anywhere in the
+	// folder, and repositories, each at its Path). Only these are fetched
+	// with the GitHub module's token.
+	Repositories []manifest.Repository
 }
 
 // Options configure a Manager.
@@ -171,8 +173,8 @@ func (m *Manager) saveLocked() error { return fsx.WriteJSON(m.path(), m.st, 0o60
 // found is a repository's place, before git is asked anything.
 type found struct {
 	id, domain, rel, dir string
-	// repository is the site's deploy repository (Site.Repository).
-	repository string
+	// repositories are the site's (Site.Repositories).
+	repositories []manifest.Repository
 }
 
 // idOf is stable across restarts and renames nothing: the site and the
@@ -188,7 +190,7 @@ func (m *Manager) find() []found {
 		var walk func(dir, rel string, level int)
 		walk = func(dir, rel string, level int) {
 			if fi, err := os.Stat(filepath.Join(dir, ".git")); err == nil && (fi.IsDir() || fi.Mode().IsRegular()) {
-				out = append(out, found{id: idOf(s.Domain, rel), domain: s.Domain, rel: rel, dir: dir, repository: s.Repository})
+				out = append(out, found{id: idOf(s.Domain, rel), domain: s.Domain, rel: rel, dir: dir, repositories: s.Repositories})
 			}
 			if level == depth {
 				return
@@ -259,8 +261,9 @@ func gitWith(ctx context.Context, dir string, secret [][2]string, args ...string
 	return out.String(), nil
 }
 
-// fetchAuth is the config that lets a fetch of the site's own repository
-// carry the GitHub module's token, nil when it should carry none.
+// fetchAuth is the config that lets a fetch of one of the site's own
+// repositories carry the GitHub module's token, nil when it should carry
+// none.
 //
 // Before this, the watcher only had what the supervisor's HOME offered
 // (an ssh key, an ssh-agent) and a private repository answered "Repository
@@ -270,14 +273,15 @@ func gitWith(ctx context.Context, dir string, secret [][2]string, args ...string
 // The token goes as an http.<url>.extraHeader whose url is the repository
 // itself, so git sends it to that repository on GitHub and nowhere else:
 // not to another remote, not to a host a folder's own insteadOf points
-// at. It is limited to the repository the site deploys from for the same
-// reason the git proxy is: a fine-grained token usually reaches every
+// at. It is limited to the repositories the site's manifest names
+// (deploy.github.repository anywhere in the folder, each of repositories
+// in its own path) for the same reason the git proxy is: a fine-grained token usually reaches every
 // repository of its owner, and a site's folder is one its conversation
 // writes to, remotes included, so "any GitHub remote" would let it pull
 // someone else's private code into a folder it can read. Nothing is
 // written to .git/config and nothing is on the command line.
 func (m *Manager) fetchAuth(ctx context.Context, f found) [][2]string {
-	if f.repository == "" || m.opts.Token == nil {
+	if len(f.repositories) == 0 || m.opts.Token == nil {
 		return nil
 	}
 	token := m.opts.Token()
@@ -302,7 +306,7 @@ func (m *Manager) fetchAuth(ctx context.Context, f found) [][2]string {
 	// GitHub names are not case sensitive; git's URL match is, so the
 	// header is keyed on the remote as written.
 	name := strings.TrimSuffix(strings.TrimSuffix(path, "/"), ".git")
-	if path == "" || !strings.EqualFold(name, f.repository) {
+	if path == "" || !f.declares(name) {
 		return nil
 	}
 	https := base + "/" + name
@@ -318,6 +322,17 @@ func (m *Manager) fetchAuth(ctx context.Context, f found) [][2]string {
 		pairs = append(pairs, [2]string{"url." + https + ".git.insteadOf", remote})
 	}
 	return pairs
+}
+
+// declares says whether the site's manifest names repository for this
+// folder.
+func (f found) declares(repository string) bool {
+	for _, r := range f.repositories {
+		if strings.EqualFold(r.Repository, repository) && (r.Path == "" || filepath.Clean(r.Path) == filepath.Clean(f.rel)) {
+			return true
+		}
+	}
+	return false
 }
 
 // cleanRemote drops credentials from a remote URL: a token written into
