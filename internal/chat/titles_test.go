@@ -69,7 +69,7 @@ func TestTitleOfCutsALongFirstLine(t *testing.T) {
 	}
 }
 
-func TestPurgeForgetsThePanelsConversationsAndKeepsTheSiteDoors(t *testing.T) {
+func TestPurgeForgetsEveryConversationOfTheSiteTheDoorsToo(t *testing.T) {
 	p := &fakeProvider{key: "fake", script: []agent.Event{{Kind: agent.KindResult, Text: "ok"}}}
 	m, root, bus := newManager(t, p)
 	ch, unsub := bus.Subscribe()
@@ -89,14 +89,15 @@ func TestPurgeForgetsThePanelsConversationsAndKeepsTheSiteDoors(t *testing.T) {
 	os.WriteFile(filepath.Join(up, "a.txt"), []byte("x"), 0o600)
 
 	n, err := m.Purge("a.test")
-	if err != nil || n != 2 {
+	if err != nil || n != 3 {
 		t.Fatalf("%d %v", n, err)
 	}
 	if _, ok := m.Main("a.test"); ok {
 		t.Fatal("the first conversation survived")
 	}
-	list := m.List("a.test")
-	if len(list) != 1 || list[0].Origin != OriginSite {
+	// The site door's went too: they filled the site's list after the
+	// operator had deleted everything.
+	if list := m.List("a.test"); len(list) != 0 {
 		t.Fatalf("%+v", list)
 	}
 	if _, err := os.Stat(up); !os.IsNotExist(err) {
@@ -117,5 +118,31 @@ func TestPurgeRefusesWhileATurnIsAtWork(t *testing.T) {
 	defer close(p.hold)
 	if _, err := m.Purge("a.test"); !errors.Is(err, ErrBusy) {
 		t.Fatalf("%v", err)
+	}
+}
+
+// A turn of the site's code at work does not hold the site's purge back:
+// a program calling in a loop would keep the button from ever working.
+// That one stays, the rest go.
+func TestPurgePassesOverADoorTurnAtWork(t *testing.T) {
+	p := &fakeProvider{key: "fake", script: []agent.Event{{Kind: agent.KindResult, Text: "ok"}}, hold: make(chan struct{})}
+	m, _, _ := newManager(t, p)
+	now := time.Now().UTC()
+	write(t, m, "a.test", "", OriginPanel, "la del panel", now, false)
+	write(t, m, "a.test", "d0", OriginSite, "de un programa", now, false)
+	door, _ := m.Create("a.test", CreateOptions{Origin: OriginSite, Provider: "fake"})
+	if _, err := m.Send(door, "otra", ""); err != nil {
+		t.Fatal(err)
+	}
+	defer m.Wait(context.Background(), door, 5*time.Second)
+	defer close(p.hold)
+
+	n, err := m.Purge("a.test")
+	if err != nil || n != 2 {
+		t.Fatalf("%d %v", n, err)
+	}
+	list := m.List("a.test")
+	if len(list) != 1 || list[0].Name != door {
+		t.Fatalf("%+v", list)
 	}
 }
