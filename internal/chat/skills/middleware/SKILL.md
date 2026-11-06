@@ -560,6 +560,15 @@ place and the instance is restarted: both generations share files, so a
 build that deletes what the running instance serves will show as a 503 for
 the length of the build. Prefer a pointer.
 
+A site that keeps another GitHub repository in its folder (a public copy
+in `build/oss`, a vendored library) lists it in the manifest as
+`"repositories": [{"repository": "owner/name", "path": "build/oss"}]`.
+The GitHub module's token then reaches it as it reaches the deploy one:
+`git push` from the conversation and «keep up to date» both work, and no
+repository outside that list ever gets the token. Only the owner may add
+an entry; a turn's git settings are set when it starts, so push from the
+next turn.
+
 ### What breaks a WebSocket
 
 A WebSocket is a TCP connection to one process. On a site handover the old

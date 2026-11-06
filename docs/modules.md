@@ -110,13 +110,15 @@ pointer ([deploy.md](deploy.md)).
   `public`). The site gets `deploy.github`, so every push deploys it.
 - **Pushing from a conversation**: with a token that has Contents: Read and
   write, a site's own conversation (the panel's, not the ones its code
-  opens) can `git push` to `deploy.github.repository` as it is. The turn
+  opens) can `git push` to `deploy.github.repository`, and to each
+  repository the manifest lists under `repositories`, as it is. The turn
   never holds the module's token: it carries a push token only the house
-  accepts, and `GIT_CONFIG_*` variables rewrite that repository's GitHub
+  accepts, and `GIT_CONFIG_*` variables rewrite those repositories' GitHub
   addresses to `/api/v1/site/git/<owner>/<name>`, where the house checks
   the repository against the manifest and adds the credential. Any other
   repository and any branch or tag deletion are refused (`git.refused` in
-  the events); a push that goes through is `git.pushed`.
+  the events); a push that goes through is `git.pushed`. The same
+  repositories are the ones «keep up to date» fetches with the token.
 
 ## openspec
 

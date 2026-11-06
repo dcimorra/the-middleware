@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/dcimorra/the-middleware/internal/events"
+	"github.com/dcimorra/the-middleware/internal/manifest"
 )
 
 func run(t *testing.T, dir string, args ...string) string {
@@ -262,6 +263,13 @@ func TestAPrivateRepositoryIsPulledWithTheModulesTokenAndOnlyItsOwn(t *testing.T
 	run(t, mine, "remote", "set-url", "origin", up.URL+"/Owner/Repo.git")
 	run(t, root, "clone", "-q", bare("repo-other"), theirs)
 	run(t, theirs, "remote", "set-url", "origin", up.URL+"/owner/repo-other.git")
+	// c.example lists owner/repo-other under repositories at oss/, and
+	// has another clone of it in elsewhere/, which it did not declare.
+	third := filepath.Join(root, "sites", "c.example")
+	for _, sub := range []string{"oss", "elsewhere"} {
+		run(t, root, "clone", "-q", bare("repo-other"), filepath.Join(third, sub))
+		run(t, filepath.Join(third, sub), "remote", "set-url", "origin", up.URL+"/owner/repo-other.git")
+	}
 	os.WriteFile(filepath.Join(seed, "index.html"), []byte("two\n"), 0o644)
 	run(t, seed, "commit", "-q", "-am", "two")
 	for _, name := range []string{"repo", "repo-other"} {
@@ -271,12 +279,15 @@ func TestAPrivateRepositoryIsPulledWithTheModulesTokenAndOnlyItsOwn(t *testing.T
 	token := ""
 	m := New(Options{DataDir: filepath.Join(root, "data"), GitHub: up.URL, Token: func() string { return token },
 		Sites: func() []Site {
-			return []Site{{Domain: "a.example", Dir: mine, Repository: "owner/repo"}, {Domain: "b.example", Dir: theirs, Repository: "owner/repo"}}
+			deploy := []manifest.Repository{{Repository: "owner/repo"}}
+			return []Site{{Domain: "a.example", Dir: mine, Repositories: deploy}, {Domain: "b.example", Dir: theirs, Repositories: deploy},
+				{Domain: "c.example", Dir: third, Repositories: (&manifest.Manifest{Repositories: []manifest.Repository{{Repository: "Owner/Repo-Other", Path: "oss/"}}}).GitRepositories()}}
 		}})
 	ctx := context.Background()
 	ids := map[string]string{}
 	for _, r := range m.List(ctx) {
 		ids[r.Domain] = r.ID
+		ids[r.Domain+"/"+r.Path] = r.ID
 	}
 
 	// The module off or without a token: what Daniel saw.
@@ -294,10 +305,20 @@ func TestAPrivateRepositoryIsPulledWithTheModulesTokenAndOnlyItsOwn(t *testing.T
 	if r.Last == nil || r.Last.OK {
 		t.Fatalf("another repository was pulled with the token: %+v", r.Last)
 	}
+	r, _ = m.Pull(ctx, ids["c.example/elsewhere"])
+	if r.Last == nil || r.Last.OK {
+		t.Fatalf("a listed repository was pulled with the token outside its path: %+v", r.Last)
+	}
 	for _, p := range seen {
 		if strings.Contains(p, "repo-other") {
 			t.Fatalf("the token was sent to %s", p)
 		}
+	}
+	// A repository the manifest lists, in its path, pulls like the
+	// deploy one.
+	r, _ = m.Pull(ctx, ids["c.example/oss"])
+	if r.Last == nil || !r.Last.OK || r.Last.Pulled != 1 {
+		t.Fatalf("the listed repository: %+v", r.Last)
 	}
 	// Nothing of the token stays in the folder or reaches the panel.
 	cfg, _ := os.ReadFile(filepath.Join(mine, ".git", "config"))

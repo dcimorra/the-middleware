@@ -58,3 +58,12 @@ func TestADelegateCannotChangeItsSitesLimits(t *testing.T) {
 		t.Fatalf("removing them: lockedChange = %q", got)
 	}
 }
+
+// What the GitHub module's token reaches is the owner's to widen.
+func TestADelegateCannotListARepositoryForTheToken(t *testing.T) {
+	cur, _ := manifest.Parse([]byte(`{"version":2,"run":{"command":["x"]}}`))
+	next, _ := manifest.Parse([]byte(`{"version":2,"run":{"command":["x"]},"repositories":[{"repository":"acme/other","path":"oss"}]}`))
+	if got := lockedChange(cur, next); got != "repositories" {
+		t.Fatalf("lockedChange = %q", got)
+	}
+}

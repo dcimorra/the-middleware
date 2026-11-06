@@ -192,11 +192,12 @@ below, not in dependencies, not through links). Marked ones are pulled every
 two minutes: fetch, then merge the upstream, never reset or force; a merge
 that collides is undone with `merge --abort` and recorded, and the first
 failure of a streak is a `repo.failed` event. Pulling is not deploying.
-A repository whose remote is the one its site deploys from
-(`deploy.github.repository`) is fetched with the GitHub module's token while
-the module is enabled, so a private one pulls; the token goes as a header
-scoped to that repository's URL, never on the command line, in the remote or
-in `.git/config`, and any other remote gets no token.
+A repository whose remote is one its site's manifest names is fetched with
+the GitHub module's token while the module is enabled, so a private one
+pulls: `deploy.github.repository` anywhere in the site's folder, each of
+`repositories` only in its own `path`. The token goes as a header scoped to
+that repository's URL, never on the command line, in the remote or in
+`.git/config`, and any other remote gets no token.
 
 | method | path | result |
 | --- | --- | --- |
@@ -843,8 +844,8 @@ site written for V1 moves without a line changed.
 A site's own conversations push through the house (see the github module in
 [modules.md](modules.md)). git calls these, not a person: `Authorization:
 Bearer <push token>` (the turn's, never the door's), the repository must be
-the manifest's `deploy.github.repository`, and the GitHub module's token is
-added on the way out. Refused: 403 and a `git.refused` event.
+the manifest's `deploy.github.repository` or one of its `repositories`, and
+the GitHub module's token is added on the way out. Refused: 403 and a `git.refused` event.
 
 | method | path | result |
 | --- | --- | --- |

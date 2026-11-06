@@ -228,7 +228,7 @@ type Options struct {
 	Usage *agent.UsageBook
 	// TurnEnv, when set, adds variables to the turns of a site's own
 	// conversations (the panel's, not the ones its code opens through the
-	// door): what lets `git push` reach the site's repository.
+	// door): what lets `git push` reach the site's repositories.
 	TurnEnv func(domain string) map[string]string
 }
 
@@ -1413,7 +1413,7 @@ func Preamble(domain, workdir string, j agent.Jail) string {
 		} else {
 			b.WriteString("Your own logs, once the site has run, are in data/logs/" + domain + " under the installation's root, and you may read them.\n")
 		}
-		b.WriteString("When the manifest names deploy.github.repository and the GitHub module has a token, `git push` to that repository works as it is: the house lends the credential through its own address, without showing it, and refuses any other repository and any deletion. Do not ask for a token or write one to a file.\n")
+		b.WriteString("When the manifest names deploy.github.repository and the GitHub module has a token, `git push` to that repository works as it is: the house lends the credential through its own address, without showing it, and refuses any other repository and any deletion. Another GitHub repository the site keeps in its folder (a public copy in build/oss, say) is reached the same way once the manifest lists it under `repositories` as {\"repository\": \"owner/name\", \"path\": \"build/oss\"}; only the site's owner may add one, and it reaches `git push` from the next turn, since a turn's git settings are made when it starts. Do not ask for a token or write one to a file.\n")
 		b.WriteString(turnCommandsText(domain))
 	}
 	b.WriteString("Do not start long-running processes: the middleware supervises the site's process from its manifest, and a change to the manifest or to a pointer file is how a deployment happens.\n")
