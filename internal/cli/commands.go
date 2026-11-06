@@ -31,11 +31,13 @@ const Usage = `  setup        print a one-time code to create the operator in th
                (--domain panel.example.com [--door ports|tunnel]: the panel's name and door)
                (--password: set the password from the terminal instead)
                (--reset: with an operator already set, a code to set a new one)
-  site         list | show | add | rm | restart | stop | start | hold | unhold | logs | deploy | tasks | backups
+  site         list | show | add | rm | restart | stop | start | hold | unhold | logs | deploy | tasks | backups | security
   site tasks <domain> [list | save <name> <file|-> | rm <name> | run <name> | stop <name> | log <name>]
                the tasks that run in that site's folder, through the API (what a site's agent may manage)
   site backups <domain> [list | run <name> | restore <name> <copy> | download <name> <copy> [file] | rm <name> <copy> | log <name>]
                the site's database copies, as its manifest's backups describe them
+  site security <domain> [seen | blocks | catalog]
+               who calls at the site, what its security rules refused, and what the rules may name
   events       recent events (-f to follow)
   system       version, uptime, load, memory, disk
   token        add | list | rm — API tokens for scripts
@@ -281,6 +283,9 @@ const siteUsage = `usage: middleware site <command> [flags]
   backups <domain> [list | run <name> | restore <name> <copy> [--no-safety-copy] |
           download <name> <copy> [file] | rm <name> <copy> | log <name>]
                               the site's database copies (the manifest's backups)
+  security <domain> [seen | blocks | catalog]
+                              who calls (countries, robots, browsers, User-Agents), the last
+                              requests the manifest's security refused, and what it may name
 `
 
 func (e *Env) site(args []string) error {
@@ -598,6 +603,11 @@ func (e *Env) site(args []string) error {
 			}
 		})
 		return e.siteBackups(c, cl, domain, pos[1:], n, *noSafety)
+	case "security":
+		if err := need(); err != nil {
+			return err
+		}
+		return e.siteSecurity(c, cl, domain, pos[1:])
 	case "logs", "log":
 		if err := need(); err != nil {
 			return err

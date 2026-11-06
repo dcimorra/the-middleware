@@ -26,6 +26,11 @@ var scopeRoutes = map[string][]string{
 		"POST /api/v1/sites/{domain}/validate",
 		"GET /api/v1/sites/{domain}/routes",
 		"GET /api/v1/events",
+		// Who calls and what the manifest's security refused: what a
+		// security rule is written from, and the only way to see what it
+		// did. Without them a site's agent kept crawlers out in the app.
+		"GET /api/v1/sites/{domain}/security/seen",
+		"GET /api/v1/sites/{domain}/security/blocks",
 	},
 	"restart": {
 		"POST /api/v1/sites/{domain}/restart",

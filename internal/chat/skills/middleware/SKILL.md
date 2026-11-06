@@ -1,6 +1,6 @@
 ---
 name: middleware
-description: How to build, run, deploy, publish and check a site, worker or task on a machine served by middleware, and how to see from a site's conversation why its tasks failed, its events, logs, OOM kills, limits and backups. Read before creating or changing anything, and before saying you cannot see or do something.
+description: How to build, run, deploy, publish and check a site, worker or task on a machine served by middleware; what the house already does for a site (blocking robots, User-Agents, browsers and countries, passwords, IP lists, rate limits, redirects, https, headers, cache, backups, an AI) so it is not rebuilt in the app; and how to see from a site's conversation why its tasks failed, its events, logs, OOM kills, limits and backups. Read before creating or changing anything, before writing a restriction or a feature the house may already have, and before saying you cannot see or do something.
 ---
 
 # middleware
@@ -42,6 +42,51 @@ Rules of thumb:
   is a detached job from this turn (§ 5). If it repeats, it is a task.
 - A domain is lower-case ASCII, `a-z0-9-` and dots. A folder is a route and a
   `Host` header arrives lower-cased; a capital letter never matches.
+
+### Before writing it in the app: what the house already does
+
+Much of what a site is asked for is a line in `site.json`, enforced by the
+house before the request reaches the site's process. Look here **before**
+writing a middleware, a filter, a cron or a script in the app. A site's
+agent once kept a crawler out with a User-Agent check in the app's code
+because it did not know the house had it: the rule was invisible in the
+panel, cost the app a request per hit, was gone on the next framework
+upgrade, and the Security tab, which shows who calls and what was refused,
+knew nothing of it. When the house has it, use the house's; when the app
+already does it on its own and the person asks to tidy it, move it to the
+manifest and take the code out.
+
+| Asked for | The house's way | Where |
+| --- | --- | --- |
+| keep out a crawler, AI crawlers, SEO bots, `curl`/scripts, a User-Agent, a browser, a country | `security` (`bots`, `agents`, `browsers`, `countries`) | § 8, "Who gets in by what it says it is"; panel: site → Security |
+| AI crawlers only by day, in at night | `security.bots.window` | § 8 |
+| never serve `/wp-login.php`, `/xmlrpc.php`, an old `/admin` | `security.paths` (404 before the site); `.env`, `.git/`, `.ssh/`, keys and `/etc/passwd` are already cut on every site | § 8 |
+| a password for the site or for `/admin` | `access.password`, `access.routes` (set from the panel: it hashes) | § 8 |
+| only some networks, or ban some addresses | `access.allow`, `access.deny`, per path in `access.routes` | § 8 |
+| a part of the site reachable only through the VPN | `vpn.paths` (operator only, needs the VPN module) | docs/manifest.md |
+| too many requests, uploads too large | `waf.rate`, `waf.max_body` | § 8 |
+| a flood, "we are under attack" | `attack` (proof of work, with an `until`) | § 8 |
+| exploit probes, scanners, brute force on a login | already done for every site: the bans (an address is banned for an hour and longer at each repeat) | nothing to write |
+| send an old URL or a whole name elsewhere | `redirects` | § 8 |
+| http → https | `force_https`, name by name | § 8 |
+| HSTS, `X-Frame-Options`, CORS, any header on every answer | `headers` | § 8 |
+| cache pages or assets | `cache` | § 8 |
+| a maintenance page, a site gone (410) | `hold` | § 3 |
+| the page a visitor sees while the site starts or is down | `notice.theme` | docs/manifest.md |
+| another name, its `www.` | `aliases`, `www` (operator only) | § 3 |
+| a copy of the database every night | `backups` | § 9 |
+| something every so often | a task | § 9 |
+| a process always up, or several processes | `workers`, `services` | § 3 |
+| an AI in the site's code | `claude_api` (the AI gateway) | § 8 |
+| deploy on push | `deploy.github` | § 4 |
+| memory and CPU budget | `limits` (operator only) | § 3 |
+| how many people visit, from where | the house already counts it: site → Visits | nothing to write |
+| an access log of every request | the house keeps one per site, turned over weekly, readable as your own logs | nothing to write |
+| copies on other nodes | `cluster` | § 3 |
+
+"Operator only" keys are refused when a delegated user's account writes
+them; tell the person and leave them for the operator. Everything else in
+this table a site's conversation writes itself, in `site.json`.
 
 ## 2. Where you are
 
@@ -117,6 +162,7 @@ middleware site tasks shop.example.com run <task>      # now; then read its log 
 middleware site tasks shop.example.com stop <task>
 middleware site tasks shop.example.com rm <task>
 middleware site backups shop.example.com [log|run <name> | restore <name> <copy>]   # § 9
+middleware site security shop.example.com [seen|blocks|catalog]   # who calls, what security refused, what it may name (§ 8)
 middleware site restart shop.example.com [--service web]
 middleware site deploy shop.example.com
 middleware site validate shop.example.com [--file draft.json]
@@ -488,8 +534,8 @@ is a `site.oom` event: read it before raising the limit. Applied live.
 The **revision** hashes what the instance was born from: resolved command,
 resolved environment (`env`, `env_files` contents, `env_from_file` contents),
 runtime and docker settings. Changing any of those hands the site over.
-`access`, `waf`, `headers`, `cache`, `hold`, `disabled`, `force_https`, `limits` are applied live and
-touch no process.
+`access`, `security`, `waf`, `attack`, `redirects`, `headers`, `cache`, `hold`, `disabled`,
+`force_https`, `limits` are applied live and touch no process.
 
 ### `disabled` and `hold`
 
@@ -640,6 +686,8 @@ What a visitor page means (the title is what a visitor reads):
 | "This entrance is closed" | the door the request came by is closed | the Inbound screen; open the door or move the domain |
 | "No certificate yet" | ports door, certificate being requested | wait; `cert.failed` says why if it does not come |
 | "Access restricted" | `access` denied this client | the allow list, the country list, the password |
+| "Closed" (403: "closed to robots", "to this program", "with this browser", "from the country") | `security` refused it | `middleware site security <domain> blocks` says which list and which entry |
+| "Not found" for a path the site has | `security.paths`, or a house probe path (`.env`, `.git/`…) | `site security <domain> blocks`; rename the path, never serve those |
 | "Slow down" / "Request too large" | `waf.rate`, `waf.max_body` | raise the limit or exempt the client |
 | "Checking your browser" | `attack.on` (or the WAF policy's `attack`) | `attack.skip` for webhooks, or switch it off |
 
@@ -711,7 +759,7 @@ Check from outside when done: `curl -sI https://shop.example.com/`. If the
 house answers by `Host` and the public name does not, the DNS or the door is
 what is missing, not the site.
 
-## 8. Access, WAF, hold, cache, headers
+## 8. Access, security, WAF, hold, cache, headers, redirects
 
 All of these are applied live; none restarts the process. Use the narrowest
 one that solves the case.
@@ -721,6 +769,91 @@ not the password: set it from the panel's Access screen (which hashes it),
 and never paste a plain password into `site.json`. A program gets in with
 `Authorization: Basic` and the same password. One password for the site, no
 accounts, no roles.
+
+**Who gets in by what it says it is: robots, programs, browsers, countries**
+→ `security`. This is the panel's **Security** tab on the site's page, and
+it is the manifest's `security` block: the tab writes nothing else. Never
+write a User-Agent check, a list of bots, a GeoIP lookup or a "block
+crawlers" middleware in the app, and never rely on `robots.txt` alone (it
+asks; this refuses). Serving a `robots.txt` as well is fine.
+
+```json
+{
+  "version": 2,
+  "static": { "root": "public" },
+  "security": {
+    "bots": {
+      "deny": ["ai", "seo"],
+      "except": ["Googlebot"],
+      "no_ua": true,
+      "window": { "from": "01:00", "to": "07:00", "zone": "Europe/Madrid" }
+    },
+    "agents": { "deny": ["scrapy", "python-requests"] },
+    "browsers": { "deny": ["ie"] },
+    "countries": { "deny": ["T1"] },
+    "paths": ["/wp-login.php", "/xmlrpc.php"],
+    "message": ""
+  }
+}
+```
+
+- Four lists, and a request must pass all of them. In each, `deny` comes
+  first, and an `allow` with anything in it means **only** those: an
+  `agents.allow` or a `browsers.allow` shuts out everything else, robots,
+  monitors and webhooks included. Prefer `deny`.
+- `bots.deny` closes **families**, not names, so next month's crawler is
+  already in: `search` (Google, Bing: closing it takes the site out of
+  search results), `ai` (GPTBot, ClaudeBot, CCBot, PerplexityBot,
+  Bytespider…), `social` (the link previews of WhatsApp, Telegram, X,
+  LinkedIn: closing it leaves pasted links without a card), `seo` (Ahrefs,
+  Semrush, MJ12bot…), `tools` (curl, wget, python-requests, headless
+  browsers: deploy scripts and webhooks use them too), `monitors`
+  (UptimeRobot, Pingdom: whoever watches the site from outside), `other`
+  (anything that says bot, crawler or spider and is in no table).
+  `except` lets robots in by name. `no_ua` closes requests with no
+  User-Agent. `window` lets the closed families in between two times
+  (`zone` is an IANA name; empty is the machine's clock), and a crawler
+  refused outside it is told the hours.
+  `middleware site security <domain> catalog` lists every family with its
+  robots, the browsers and the paths every site already cuts.
+- `agents` are User-Agent fragments, case-insensitive, two characters at
+  least: for what is in no table. A single broad fragment (`"mozilla"`)
+  closes the site to every browser.
+- `browsers`: `edge`, `opera`, `samsung`, `ie`, `firefox`, `chrome`,
+  `safari`, `other` (anything not a known browser, robots included),
+  `none` (no User-Agent).
+- `countries`: two letters as the edge writes them, `XX` unknown, `T1`
+  Tor. The country comes from Cloudflare; a request that arrives without
+  one (the ports door, the bench) is `XX`, so an **allow list of countries
+  shuts out everything that has no country**. Say so before writing one.
+- `paths`: prefixes the site never serves, by whole segments, answered
+  404 before the site sees them. `.env*`, `.git/`, `.ssh/`, private keys,
+  `/etc/passwd` and `/proc/self/` are already cut on every site; do not
+  list them, and do not write code in the app to refuse them. `/` and
+  `/.well-known` cannot be listed.
+- `message` replaces the line a refused visitor reads (403, the site's
+  design). A visitor is never told which rule.
+- In a site with `services`, a service's `security` adds to the site's,
+  never opens what the site closed.
+
+What it is not: a User-Agent is written by whoever calls and can say
+anything, so this clears out what identifies itself, and guards nothing.
+To keep a person or a determined script out, `access` (below) is the door.
+
+How to do it: look at who really calls (`middleware site security <domain>`,
+heaviest first: countries, robots with their family, browsers, and the
+User-Agents no table knows), write the rule, `middleware site validate
+<domain>` (an unknown family, browser or country, or a bad time, is refused
+there and the manifest is not taken), save `site.json`, which is applied
+live, and check it: `curl -s -o /dev/null -w '%{http_code}\n' -A 'GPTBot/1.2'
+-H 'Host: <domain>' http://127.0.0.1:46100/` is a 403, and `middleware site
+security <domain> blocks` shows the last 50 refusals with which list and
+which entry did it. When something wanted is refused (a payment webhook
+sent by a library, an uptime monitor, link previews), that list is where
+to find it: add an `except`, or take the family out.
+
+Who can change it: the operator, a delegated user with `code`, and the
+site's own conversation (it writes `site.json`).
 
 **Only some people, by network** → `access.allow`, CIDRs. Who is not in the
 list sees "Access restricted" with their own address, which is what they
@@ -860,6 +993,25 @@ clients, a payment gateway's callback. Put the narrowest path that works in
 `POST /api/v1/waf/under-attack {"enabled":true,"domain":…,"for":"2h"}`), and
 say so before turning it on; it protects nothing, it only makes the first
 request cost. A POST interrupted by the challenge is lost.
+
+**An old address, or a whole name, sent elsewhere** → `redirects`, applied
+before the site is served (also while it is stopped or held):
+
+```json
+{
+  "version": 2,
+  "static": { "root": "public" },
+  "redirects": [
+    { "from": "/old", "to": "/new" },
+    { "from": "/blog/*", "to": "https://news.example.com/articles/*", "code": 308 }
+  ]
+}
+```
+
+`code` is 301 by default (302, 303, 307, 308). `/*` at the end of both
+carries the rest of the path; the query string follows unless `to` has its
+own. The first rule that matches wins. Do not write these as routes in the
+app.
 
 **Maintenance** → `hold` (§ 3), not `disabled`: hold keeps the domain, the
 DNS and the door, and shows a page you wrote.
