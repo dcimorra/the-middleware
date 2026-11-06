@@ -15,6 +15,8 @@ import (
 	"github.com/dcimorra/the-middleware/internal/backups"
 	"github.com/dcimorra/the-middleware/internal/chat"
 	"github.com/dcimorra/the-middleware/internal/events"
+	"github.com/dcimorra/the-middleware/internal/security"
+	"github.com/dcimorra/the-middleware/internal/seen"
 	"github.com/dcimorra/the-middleware/internal/settings"
 	"github.com/dcimorra/the-middleware/internal/sites"
 	"github.com/dcimorra/the-middleware/internal/tasks"
@@ -37,6 +39,8 @@ func turnServer(t *testing.T, site string) (root string, cl *Client) {
 	srv.Heartbeat = 50 * time.Millisecond
 	srv.RegisterTasks(api.TasksOptions{Scheduler: tasks.NewScheduler(tasks.Options{Root: root, Bus: bus}), Root: root})
 	srv.RegisterBackups(backups.New(backups.Options{Root: root, Bus: bus}))
+	srv.RegisterSecurity(api.SecurityOptions{Door: security.New(security.Options{Lookup: func(string) (security.Site, bool) { return security.Site{}, false }})})
+	srv.RegisterSeen(seen.New(filepath.Join(root, "data", "seen")))
 	ln, err := api.ListenSocket(api.SocketPath(root))
 	if err != nil {
 		t.Fatal(err)
@@ -71,6 +75,9 @@ func TestEveryCommandASiteConversationIsToldAboutIsOpenToItsTurn(t *testing.T) {
 		{"site tasks <domain> stop <task>", "", []string{"site", "tasks", "a.test", "stop", "mine"}},
 		{"site tasks <domain> rm <task>", "", []string{"site", "tasks", "a.test", "rm", "mine"}},
 		{"site backups <domain> [log <name> | run <name> | restore <name> <copy>]", "", []string{"site", "backups", "a.test"}},
+		{"site security <domain> [seen | blocks | catalog]", "", []string{"site", "security", "a.test"}},
+		{"site security <domain> [seen | blocks | catalog]", "", []string{"site", "security", "a.test", "blocks"}},
+		{"site security <domain> [seen | blocks | catalog]", "", []string{"site", "security", "a.test", "catalog"}},
 		{"site restart <domain> [--service <name>]", "", []string{"site", "restart", "a.test"}},
 		{"site deploy <domain>", "", []string{"site", "deploy", "a.test"}},
 		{"site validate <domain> [--file <draft>]", "", []string{"site", "validate", "a.test"}},
@@ -106,6 +113,8 @@ func TestEveryCommandASiteConversationIsToldAboutIsOpenToItsTurn(t *testing.T) {
 		{"site", "tasks", "other.test"},
 		{"events"},
 		{"site", "list"},
+		{"site", "security", "other.test"},
+		{"site", "security", "other.test", "blocks"},
 	} {
 		_, err := run(t, cl, try...)
 		var apiErr *APIError

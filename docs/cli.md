@@ -60,6 +60,7 @@ in the API ([api.md](api.md)) and the panel.
 | `site tasks <domain>` (or `… list`) | the site's own tasks (the ones whose `site` is that domain) with their schedule, next and last run; `--json` prints the API's rows |
 | `site tasks <domain> save <name> <file.json\|->` | write a task from a file or stdin; with no `site` it is this one's. Refused when the name is another site's or the root's |
 | `site tasks <domain> rm <name>` / `run <name>` / `stop <name>` / `log <name> [--lines n]` | delete it (history and log stay), start a run now without waiting, stop a run, its output. Through `/sites/{domain}/tasks` ([api.md](api.md#tasks)), so it is what a site's agent turn and a `tasks:<domain>` token may do; `middleware tasks` is the house's, over every file |
+| `site security <domain> [seen \| blocks \| catalog]` | who calls at the site (countries, robots with their family, browsers, User-Agents no table knows; heaviest first), the last 50 requests its `security` refused with which list and entry did it, and the families, robots, browsers and probe paths a rule may name (compiled in, nothing asked). The panel's Security tab, for a site's agent turn and a `read:<domain>` token; `--json` prints the API's answer |
 
 ## Everything else
 

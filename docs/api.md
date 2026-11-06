@@ -40,7 +40,7 @@ subdomain sends the panel's cookie.
 
 **Service doors.** A token created with `scopes` opens only the routes those
 scopes list, and with `:site` only for that site: `read` (the site list, one
-site, its logs, the events), `restart` (a site's handover and a worker's
+site, its logs, the events, who calls at it and what its `security` refused), `restart` (a site's handover and a worker's
 restart), `deploy` (a site's deploy), `exec` (a one-off command streamed
 into the site's container or a service's, never on the machine), `tasks` (a site's own tasks, the six
 `/sites/{domain}/tasks` routes below; never `/tasks`), `backups` (a site's
@@ -438,7 +438,7 @@ The external programs the modules run (the agent CLIs), installed under
 | PUT | `/inbound/publishing` | `{new_sites?: "tunnel"|"ports", public_ip?}` → `{new_sites, public_ip}`; an empty `public_ip` goes back to detecting it |
 | POST | `/inbound/doors/{door}` | `{open}` → `doors` (door is `tunnel`, `ports` or `local`; written to `data/inbound.json` and acted on at once) |
 | PUT | `/inbound/local` | `{open, http?, dns?}` → `doors`; the local door's listeners (plain HTTP and the name server), 400 when an address is malformed or collides with the ports door |
-| GET | `/sites/{domain}/security/seen` | who called at the site → `{countries, bots, browsers, agents: [{key, name, extra, count, first, last}], since, total}`, heaviest first; counted before the security rules, so what they shut out is there too |
+| GET | `/sites/{domain}/security/seen` | who called at the site → `{countries, bots, browsers, agents: [{key, name, extra, count, first, last}], since, total}`, heaviest first; counted before the security rules, so what they shut out is there too. In the `read` scope (`middleware site security <domain>`) |
 | POST | `/sites/{domain}/security/seen/forget` | → `{ok}`; empties the tally |
 | GET | `/sites/{domain}/visits` | the site's audience → `{from, to, days: [{date, visitors, pageviews}], visits, pageviews, unique?, countries, regions, devices, browsers, os, referrers, hosts, pages: [{key, count}], hours: [24], months: [{month, unique, visits, pageviews}]}`. `?month=YYYY-MM` for a calendar month (then `unique` is people once each that month) or `?days=N` (1–366, 30 by default). Only a browser's navigation answered with a page counts; robots, headless browsers and programs that wear a browser's name do not. Visitors are hashes of address, User-Agent and day or month with a key of this machine, thrown away when the day or month ends; tables count visitors, `pages` and `hours` count page views |
 | POST | `/inbound/migration` | `{domains, to}` → 202 the migration: moves them in the background one at a time (certificate, door, DNS each); 409 while one runs. Progress on `inbound.migration.*` events |
@@ -500,7 +500,7 @@ through the manifest; these routes are what the panel reads beside them.
 | method | path | result |
 | --- | --- | --- |
 | GET | `/security/catalog` | → `{families: [{key, name, note}], robots: [{name, family}], browsers: [{key, name, note}], builtin_paths: [], your_country}` |
-| GET | `/sites/{domain}/security/blocks` | → `[{at, ip, reason, what, path, agent, country}]`, the last 50 refusals, newest first (kept in memory) |
+| GET | `/sites/{domain}/security/blocks` | → `[{at, ip, reason, what, path, agent, country}]`, the last 50 refusals, newest first (kept in memory). In the `read` scope, so a site's turn reads it (`middleware site security <domain> blocks`) |
 
 ## Agents
 
