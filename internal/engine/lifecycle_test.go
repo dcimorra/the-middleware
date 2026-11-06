@@ -24,7 +24,11 @@ import (
 func zombie(pid int) bool {
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
-		return false
+		// Reaped between dead's kill(pid, 0) and this read: gone, which
+		// is deader than a zombie. Answering false here made a reaped
+		// child read as running (seen on CI in
+		// TestAnExitedInstanceTakesItsGroupWithIt).
+		return os.IsNotExist(err)
 	}
 	i := strings.LastIndexByte(string(data), ')')
 	return i >= 0 && i+2 < len(data) && data[i+2] == 'Z'
@@ -37,10 +41,14 @@ func dead(pid int) bool {
 func waitDead(t *testing.T, pid int, what string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
-	for !dead(pid) && time.Now().Before(deadline) {
+	// One answer per look: asking again after the loop could see a pid
+	// the loop saw dead come back as another process.
+	gone := dead(pid)
+	for !gone && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
+		gone = dead(pid)
 	}
-	if !dead(pid) {
+	if !gone {
 		t.Fatalf("%s (pid %d) is still running", what, pid)
 	}
 }
