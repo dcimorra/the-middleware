@@ -360,10 +360,21 @@ func buildWire(a *app.App) app.Hook {
 		var out []repos.Site
 		for _, sn := range a.Engine.Sites() {
 			if sn.Manifest != nil {
-				out = append(out, repos.Site{Domain: sn.Domain, Dir: sn.Dir})
+				s := repos.Site{Domain: sn.Domain, Dir: sn.Dir}
+				if d := sn.Manifest.Deploy; d != nil && d.GitHub != nil {
+					s.Repository = d.GitHub.Repository
+				}
+				out = append(out, s)
 			}
 		}
 		return out
+	}, Token: func() string {
+		// The GitHub module's token, while it is enabled: the same one the
+		// git proxy pushes a conversation's work with.
+		if set := w.set; set != nil && set.GitHub != nil {
+			return set.GitHub.PushToken()
+		}
+		return ""
 	}})
 	srv.RegisterRepos(rm)
 	w.repos = rm

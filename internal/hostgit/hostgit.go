@@ -40,6 +40,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -83,6 +84,12 @@ type Options struct {
 	// environment when set, for the few git needs that carry no secret:
 	// SSH_AUTH_SOCK so an ssh-agent key reaches a pull.
 	Passthrough []string
+	// Secret are config pairs (key, value) given through GIT_CONFIG_COUNT
+	// and GIT_CONFIG_KEY_n/VALUE_n instead of -c, for a value that must
+	// not be read off the command line: a -c is in /proc/<pid>/cmdline,
+	// which every user of the machine (a jailed site included) can list,
+	// while the environment is only readable by the same user.
+	Secret [][2]string
 }
 
 // Env is the minimal, secret-free environment git runs with. GIT_CONFIG_
@@ -105,6 +112,13 @@ func Env(o Options) []string {
 	for _, name := range o.Passthrough {
 		if v, ok := os.LookupEnv(name); ok {
 			env = append(env, name+"="+v)
+		}
+	}
+	if len(o.Secret) > 0 {
+		env = append(env, "GIT_CONFIG_COUNT="+strconv.Itoa(len(o.Secret)))
+		for i, kv := range o.Secret {
+			n := strconv.Itoa(i)
+			env = append(env, "GIT_CONFIG_KEY_"+n+"="+kv[0], "GIT_CONFIG_VALUE_"+n+"="+kv[1])
 		}
 	}
 	return env

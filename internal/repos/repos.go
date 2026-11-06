@@ -29,6 +29,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -50,6 +51,10 @@ import (
 type Site struct {
 	Domain string
 	Dir    string
+	// Repository is the owner/name the site deploys from (its manifest's
+	// deploy.github.repository), "" when it declares none. Only that
+	// repository is fetched with the GitHub module's token.
+	Repository string
 }
 
 // Options configure a Manager.
@@ -59,6 +64,11 @@ type Options struct {
 	Bus     *events.Bus
 	// Every is the watcher's period; zero is two minutes.
 	Every time.Duration
+	// Token is the GitHub module's token, "" when the module is off or has
+	// none. Read per pull, so a rotated token is used at once.
+	Token func() string
+	// GitHub is https://github.com; tests point it at a git http-backend.
+	GitHub string
 }
 
 const (
@@ -140,6 +150,9 @@ func New(opts Options) *Manager {
 	if opts.Bus == nil {
 		opts.Bus = events.New("")
 	}
+	if opts.GitHub == "" {
+		opts.GitHub = "https://github.com"
+	}
 	m := &Manager{opts: opts, st: state{Auto: map[string]bool{}, Last: map[string]*Result{}}}
 	_ = fsx.ReadJSON(m.path(), &m.st)
 	if m.st.Auto == nil {
@@ -158,6 +171,8 @@ func (m *Manager) saveLocked() error { return fsx.WriteJSON(m.path(), m.st, 0o60
 // found is a repository's place, before git is asked anything.
 type found struct {
 	id, domain, rel, dir string
+	// repository is the site's deploy repository (Site.Repository).
+	repository string
 }
 
 // idOf is stable across restarts and renames nothing: the site and the
@@ -173,7 +188,7 @@ func (m *Manager) find() []found {
 		var walk func(dir, rel string, level int)
 		walk = func(dir, rel string, level int) {
 			if fi, err := os.Stat(filepath.Join(dir, ".git")); err == nil && (fi.IsDir() || fi.Mode().IsRegular()) {
-				out = append(out, found{id: idOf(s.Domain, rel), domain: s.Domain, rel: rel, dir: dir})
+				out = append(out, found{id: idOf(s.Domain, rel), domain: s.Domain, rel: rel, dir: dir, repository: s.Repository})
 			}
 			if level == depth {
 				return
@@ -217,9 +232,14 @@ func (m *Manager) lookup(id string) (found, bool) {
 // reach a pull; global config is kept out all the same, so only the
 // repository's own vetted config speaks.
 func git(ctx context.Context, dir string, args ...string) (string, error) {
+	return gitWith(ctx, dir, nil, args...)
+}
+
+// gitWith is git with config that carries a secret (see hostgit.Secret).
+func gitWith(ctx context.Context, dir string, secret [][2]string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, perCommand)
 	defer cancel()
-	cmd, err := hostgit.Command(ctx, hostgit.Options{Dir: dir, Home: os.Getenv("HOME"), Passthrough: []string{"SSH_AUTH_SOCK"}}, args...)
+	cmd, err := hostgit.Command(ctx, hostgit.Options{Dir: dir, Home: os.Getenv("HOME"), Passthrough: []string{"SSH_AUTH_SOCK"}, Secret: secret}, args...)
 	if err != nil {
 		return "", err
 	}
@@ -237,6 +257,67 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 		return out.String(), errors.New(msg)
 	}
 	return out.String(), nil
+}
+
+// fetchAuth is the config that lets a fetch of the site's own repository
+// carry the GitHub module's token, nil when it should carry none.
+//
+// Before this, the watcher only had what the supervisor's HOME offered
+// (an ssh key, an ssh-agent) and a private repository answered "Repository
+// not found" over https, while the same site's conversation pushed to it
+// through the house's git proxy with the module's token.
+//
+// The token goes as an http.<url>.extraHeader whose url is the repository
+// itself, so git sends it to that repository on GitHub and nowhere else:
+// not to another remote, not to a host a folder's own insteadOf points
+// at. It is limited to the repository the site deploys from for the same
+// reason the git proxy is: a fine-grained token usually reaches every
+// repository of its owner, and a site's folder is one its conversation
+// writes to, remotes included, so "any GitHub remote" would let it pull
+// someone else's private code into a folder it can read. Nothing is
+// written to .git/config and nothing is on the command line.
+func (m *Manager) fetchAuth(ctx context.Context, f found) [][2]string {
+	if f.repository == "" || m.opts.Token == nil {
+		return nil
+	}
+	token := m.opts.Token()
+	if token == "" {
+		return nil
+	}
+	// What `git fetch` with no arguments will fetch: the branch's remote,
+	// or origin, with the repository's own insteadOf already applied.
+	raw, err := git(ctx, f.dir, "ls-remote", "--get-url")
+	if err != nil {
+		return nil
+	}
+	remote := strings.TrimSpace(raw)
+	base := strings.TrimSuffix(m.opts.GitHub, "/")
+	var path string
+	for _, prefix := range []string{base + "/", "git@github.com:", "ssh://git@github.com/"} {
+		if rest, ok := strings.CutPrefix(remote, prefix); ok {
+			path = rest
+			break
+		}
+	}
+	// GitHub names are not case sensitive; git's URL match is, so the
+	// header is keyed on the remote as written.
+	name := strings.TrimSuffix(strings.TrimSuffix(path, "/"), ".git")
+	if path == "" || !strings.EqualFold(name, f.repository) {
+		return nil
+	}
+	https := base + "/" + name
+	auth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
+	pairs := [][2]string{
+		// The trailing slash makes git match on a path boundary: the key
+		// for owner/repo must not also match owner/repo-other.
+		{"http." + https + "/.extraHeader", "Authorization: Basic " + auth},
+		{"http." + https + ".git/.extraHeader", "Authorization: Basic " + auth},
+	}
+	if !strings.HasPrefix(remote, base+"/") {
+		// An ssh remote: the house has the token, not necessarily a key.
+		pairs = append(pairs, [2]string{"url." + https + ".git.insteadOf", remote})
+	}
+	return pairs
 }
 
 // cleanRemote drops credentials from a remote URL: a token written into
@@ -381,7 +462,7 @@ func (m *Manager) pull(ctx context.Context, f found, actor string) *Result {
 		where += "/" + f.rel
 	}
 	before, _ := git(ctx, f.dir, "rev-parse", "HEAD")
-	_, err := git(ctx, f.dir, "fetch", "--quiet")
+	_, err := gitWith(ctx, f.dir, m.fetchAuth(ctx, f), "fetch", "--quiet")
 	if err == nil {
 		if _, uerr := git(ctx, f.dir, "rev-parse", "@{u}"); uerr != nil {
 			err = errors.New("the branch has no upstream to pull from")

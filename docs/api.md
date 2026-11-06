@@ -192,6 +192,11 @@ below, not in dependencies, not through links). Marked ones are pulled every
 two minutes: fetch, then merge the upstream, never reset or force; a merge
 that collides is undone with `merge --abort` and recorded, and the first
 failure of a streak is a `repo.failed` event. Pulling is not deploying.
+A repository whose remote is the one its site deploys from
+(`deploy.github.repository`) is fetched with the GitHub module's token while
+the module is enabled, so a private one pulls; the token goes as a header
+scoped to that repository's URL, never on the command line, in the remote or
+in `.git/config`, and any other remote gets no token.
 
 | method | path | result |
 | --- | --- | --- |
