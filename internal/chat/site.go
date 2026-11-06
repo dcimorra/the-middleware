@@ -369,33 +369,40 @@ func TitleOf(text string) string {
 	return line
 }
 
-// Purge forgets every conversation of domain the panel holds, its first
-// included, with their attachments. The ones the site's code opened
-// through its door stay: a program holds their names and would find them
-// gone on its next call. What the turns cost stays in the ledger. A
-// conversation at work stops the purge before anything is removed.
+// Purge forgets every conversation of domain, its first included, with
+// their attachments, the ones the site's code opened through its door as
+// well. Those were kept until alpha.117 because a program holds their
+// names, but they filled the site's list in the panel and the operator
+// who deleted everything found them still there; the program already
+// meets a forgotten name when Prune drops its oldest (404, it opens
+// another), so this asks nothing new of it. What the turns cost stays in
+// the ledger. A panel conversation at work stops the purge before
+// anything is removed; one of the site's code at work is passed over,
+// since the program's next call could otherwise block the button forever.
 func (m *Manager) Purge(domain string) (int, error) {
 	if _, err := m.workdir(domain); err != nil {
 		return 0, err
 	}
 	names := []string{domain}
+	door := map[string]bool{}
 	ents, _ := os.ReadDir(filepath.Join(m.opts.Root, "data", "chat", domain))
 	for _, e := range ents {
 		id, ok := strings.CutSuffix(e.Name(), ".json")
 		if !ok || !validID(id) || id == "" {
 			continue
 		}
+		name := Name(domain, id)
 		var c Conversation
 		if fsx.ReadJSON(filepath.Join(m.opts.Root, "data", "chat", domain, e.Name()), &c) == nil && c.Origin == OriginSite {
-			continue
+			door[name] = true
 		}
-		names = append(names, Name(domain, id))
+		names = append(names, name)
 	}
 	// Under the lock a turn cannot start between the check and the
 	// removal: Send takes the same lock to claim its slot.
 	m.mu.Lock()
 	for _, n := range names {
-		if _, busy := m.running[n]; busy {
+		if _, busy := m.running[n]; busy && !door[n] {
 			m.mu.Unlock()
 			return 0, ErrBusy
 		}
@@ -403,6 +410,9 @@ func (m *Manager) Purge(domain string) (int, error) {
 	n := 0
 	var failed error
 	for _, name := range names {
+		if _, busy := m.running[name]; busy {
+			continue
+		}
 		err := os.Remove(m.file(name))
 		if err == nil {
 			n++
@@ -671,11 +681,11 @@ func (m *Manager) Recent(limit int) []RecentChat {
 
 // PurgeAll forgets every conversation the panel holds on this node, of
 // every site and of the house, with their attachments: Purge for all of
-// them at once. A conversation at work is left as it is and counted, not
-// a reason to stop: with every site in it, one turn somewhere would make
-// the button never work. The ones a site's code opened through its door
-// stay, as in Purge: a program holds their names. What the turns cost
-// stays in the ledger.
+// them at once, the ones a site's code opened through its door included
+// (see Purge for why). A conversation at work is left as it is and
+// counted, not a reason to stop: with every site in it, one turn
+// somewhere would make the button never work. What the turns cost stays
+// in the ledger.
 func (m *Manager) PurgeAll() (purged, busy int, err error) {
 	root := filepath.Join(m.opts.Root, "data", "chat")
 	var names []string
@@ -695,10 +705,6 @@ func (m *Manager) PurgeAll() (purged, busy int, err error) {
 		for _, f := range files {
 			id, ok := strings.CutSuffix(f.Name(), ".json")
 			if !ok || id == "" || !validID(id) {
-				continue
-			}
-			var c Conversation
-			if fsx.ReadJSON(filepath.Join(root, domain, f.Name()), &c) == nil && c.Origin == OriginSite {
 				continue
 			}
 			names = append(names, Name(domain, id))

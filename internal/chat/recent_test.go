@@ -74,7 +74,7 @@ func TestRecentListsTheLastUsedFirstAndKeepsWhatWaits(t *testing.T) {
 
 // The whole purge forgets every conversation the panel holds on the node,
 // every site's and the house's, with their attachments, and passes over
-// the one at work instead of refusing all of them; a site's own stay.
+// the one at work instead of refusing all of them; a site's own go too.
 func TestPurgeAllForgetsEveryPanelConversationButTheOneAtWork(t *testing.T) {
 	p := &fakeProvider{key: "fake", script: []agent.Event{{Kind: agent.KindResult, Text: "ok"}}, hold: make(chan struct{})}
 	m, root, _ := newManager(t, p)
@@ -93,14 +93,14 @@ func TestPurgeAllForgetsEveryPanelConversationButTheOneAtWork(t *testing.T) {
 	defer close(p.hold)
 
 	n, busy, err := m.PurgeAll()
-	if err != nil || n != 3 || busy != 1 {
+	if err != nil || n != 4 || busy != 1 {
 		t.Fatalf("purged %d, busy %d, %v", n, busy, err)
 	}
 	if got := names(m.Recent(0)); len(got) != 1 || got[0] != "a.test" {
 		t.Fatalf("left: %v", got)
 	}
-	if _, err := os.Stat(filepath.Join(root, "data", "chat", "a.test", "d0.json")); err != nil {
-		t.Fatal("the site's own conversation went:", err)
+	if _, err := os.Stat(filepath.Join(root, "data", "chat", "a.test", "d0.json")); !os.IsNotExist(err) {
+		t.Fatal("the site's own conversation survived:", err)
 	}
 	if _, err := os.Stat(up); !os.IsNotExist(err) {
 		t.Fatal("the attachments survived")
