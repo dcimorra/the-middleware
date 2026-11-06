@@ -104,8 +104,32 @@ func newHouse(t *testing.T, ctx context.Context, name string, port int) *house {
 	// the test waits for them before TempDir removes it: removing a
 	// folder a loop still writes in failed the release build once with
 	// "directory not empty". Registered after TempDir, run before it.
+	//
+	// What the other house sends is written here too, by a request on the
+	// mesh (a copy arriving lands in data/cluster/incoming), and a test
+	// can end while one is still being received: the house stops taking
+	// requests and waits for the ones it has before its folder goes.
 	var loops sync.WaitGroup
+	var reqMu sync.Mutex
+	stopped := false
+	track := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			reqMu.Lock()
+			if stopped {
+				reqMu.Unlock()
+				http.Error(w, "the test is over", http.StatusServiceUnavailable)
+				return
+			}
+			loops.Add(1)
+			reqMu.Unlock()
+			defer loops.Done()
+			next.ServeHTTP(w, r)
+		})
+	}
 	t.Cleanup(func() {
+		reqMu.Lock()
+		stopped = true
+		reqMu.Unlock()
 		done := make(chan struct{})
 		go func() { loops.Wait(); close(done) }()
 		select {
@@ -131,9 +155,11 @@ func newHouse(t *testing.T, ctx context.Context, name string, port int) *house {
 		w.Header().Set("X-Seen-Client", r.Header.Get("CF-Connecting-IP"))
 		px.ServeHTTP(w, r)
 	})
-	m.ServeSites(h.cl.ReplicaHandler(h.site))
+	m.ServeSites(track(h.cl.ReplicaHandler(h.site)))
+	// A tunnel holds its request for as long as the connection lives and
+	// writes nothing here, so it is not waited for.
 	m.ServeTunnels(h.cl.TunnelHandler())
-	m.Serve(h.api())
+	m.Serve(track(h.api()))
 	loops.Add(1)
 	go func() { defer loops.Done(); h.cl.Run(ctx) }()
 	return h
