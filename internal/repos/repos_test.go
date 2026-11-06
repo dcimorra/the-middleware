@@ -2,10 +2,15 @@ package repos
 
 import (
 	"context"
+	"encoding/base64"
+	"net/http"
+	"net/http/cgi"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/dcimorra/the-middleware/internal/events"
@@ -187,5 +192,122 @@ func TestARefreshDoesNotRunACommandFromTheRepository(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); err == nil {
 		t.Fatal("a command from the repository ran during the refresh")
+	}
+}
+
+// privateUpstream is GitHub played by git's own http-backend: it serves
+// the bare repositories under dir only to x-access-token:token, and
+// records every Authorization header it was sent, by path.
+func privateUpstream(t *testing.T, dir, token string, seen *[]string) *httptest.Server {
+	t.Helper()
+	out, err := exec.Command("git", "--exec-path").Output()
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	backend := filepath.Join(strings.TrimSpace(string(out)), "git-http-backend")
+	if _, err := os.Stat(backend); err != nil {
+		t.Skip("git-http-backend is not installed")
+	}
+	var mu sync.Mutex
+	cg := &cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + dir, "GIT_HTTP_EXPORT_ALL=1"}}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h := r.Header.Get("Authorization"); h != "" {
+			mu.Lock()
+			*seen = append(*seen, r.URL.Path)
+			mu.Unlock()
+		}
+		if u, p, ok := r.BasicAuth(); !ok || u != "x-access-token" || p != token {
+			// What GitHub answers for a private repository without
+			// credentials, so git says "Repository not found".
+			http.Error(w, "Repository not found.", http.StatusNotFound)
+			return
+		}
+		// GitHub does not mind the case of owner/name.
+		r.URL.Path = strings.ToLower(r.URL.Path)
+		cg.ServeHTTP(w, r)
+	}))
+	t.Cleanup(ts.Close)
+	return ts
+}
+
+func TestAPrivateRepositoryIsPulledWithTheModulesTokenAndOnlyItsOwn(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	root := t.TempDir()
+	t.Setenv("GIT_AUTHOR_NAME", "t")
+	t.Setenv("GIT_AUTHOR_EMAIL", "t@t")
+	t.Setenv("GIT_COMMITTER_NAME", "t")
+	t.Setenv("GIT_COMMITTER_EMAIL", "t@t")
+	remotes := filepath.Join(root, "remotes")
+	var seen []string
+	up := privateUpstream(t, remotes, "module-secret", &seen)
+	bare := func(name string) string { return filepath.Join(remotes, "owner", name+".git") }
+	seed := filepath.Join(root, "seed")
+	run(t, root, "init", "-q", "-b", "main", seed)
+	os.WriteFile(filepath.Join(seed, "index.html"), []byte("one\n"), 0o644)
+	run(t, seed, "add", ".")
+	run(t, seed, "commit", "-q", "-m", "one")
+	for _, name := range []string{"repo", "repo-other"} {
+		run(t, root, "init", "-q", "--bare", "-b", "main", bare(name))
+		run(t, seed, "push", "-q", bare(name), "HEAD:main")
+	}
+	// Both sites deploy from owner/repo. a.example's folder points at it,
+	// written in another case as people do; b.example's has been pointed
+	// at another repository of the same owner, which the token would
+	// open too and must not.
+	mine := filepath.Join(root, "sites", "a.example")
+	theirs := filepath.Join(root, "sites", "b.example")
+	run(t, root, "clone", "-q", bare("repo"), mine)
+	run(t, mine, "remote", "set-url", "origin", up.URL+"/Owner/Repo.git")
+	run(t, root, "clone", "-q", bare("repo-other"), theirs)
+	run(t, theirs, "remote", "set-url", "origin", up.URL+"/owner/repo-other.git")
+	os.WriteFile(filepath.Join(seed, "index.html"), []byte("two\n"), 0o644)
+	run(t, seed, "commit", "-q", "-am", "two")
+	for _, name := range []string{"repo", "repo-other"} {
+		run(t, seed, "push", "-q", bare(name), "HEAD:main")
+	}
+
+	token := ""
+	m := New(Options{DataDir: filepath.Join(root, "data"), GitHub: up.URL, Token: func() string { return token },
+		Sites: func() []Site {
+			return []Site{{Domain: "a.example", Dir: mine, Repository: "owner/repo"}, {Domain: "b.example", Dir: theirs, Repository: "owner/repo"}}
+		}})
+	ctx := context.Background()
+	ids := map[string]string{}
+	for _, r := range m.List(ctx) {
+		ids[r.Domain] = r.ID
+	}
+
+	// The module off or without a token: what Daniel saw.
+	r, _ := m.Pull(ctx, ids["a.example"])
+	if r.Last == nil || r.Last.OK || !strings.Contains(r.Last.Message, "not found") {
+		t.Fatalf("without a token: %+v", r.Last)
+	}
+
+	token = "module-secret"
+	r, _ = m.Pull(ctx, ids["a.example"])
+	if r.Last == nil || !r.Last.OK || r.Last.Pulled != 1 || r.Head.Subject != "two" {
+		t.Fatalf("with the module's token: %+v", r.Last)
+	}
+	r, _ = m.Pull(ctx, ids["b.example"])
+	if r.Last == nil || r.Last.OK {
+		t.Fatalf("another repository was pulled with the token: %+v", r.Last)
+	}
+	for _, p := range seen {
+		if strings.Contains(p, "repo-other") {
+			t.Fatalf("the token was sent to %s", p)
+		}
+	}
+	// Nothing of the token stays in the folder or reaches the panel.
+	cfg, _ := os.ReadFile(filepath.Join(mine, ".git", "config"))
+	enc := base64.StdEncoding.EncodeToString([]byte("x-access-token:module-secret"))
+	for _, r := range m.List(ctx) {
+		if strings.Contains(r.Remote, "module-secret") || (r.Last != nil && (strings.Contains(r.Last.Message, "module-secret") || strings.Contains(r.Last.Message, enc))) {
+			t.Fatalf("the token is shown: %+v %+v", r, r.Last)
+		}
+	}
+	if strings.Contains(string(cfg), "module-secret") || strings.Contains(string(cfg), enc) {
+		t.Fatalf("the token was written to .git/config:\n%s", cfg)
 	}
 }
