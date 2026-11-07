@@ -898,5 +898,7 @@ reported no cost is counted as `unpriced` in the door's book). Traffic decides
 this spending, not a person watching. `max_chats` (20) is how many
 conversations the site keeps: at the limit the oldest go (never one at work
 or waiting for an answer), so a site that opens one per visit fills nothing
-and stops nothing. The last free agent slot is never a site's: the operator can
+and stops nothing. Whatever the count, a conversation is forgotten three
+days after its last turn, with its attachments (one at work waits for the
+next hourly pass); the program meets a 404 and opens another. The last free agent slot is never a site's: the operator can
 always get in.

@@ -520,6 +520,59 @@ func (m *Manager) Prune(domain, origin string, max int) {
 	}
 }
 
+// DoorMaxAge is how long a conversation the site's code opened through
+// its door is kept after its last turn. Prune only bounds how many there
+// are, and a site that opens a few a week kept months of them, each with
+// the visitor's words in it; Daniel asked for three days (alpha.120). A
+// program that comes back later meets a forgotten name, as after Prune or
+// a purge: 404, and it opens another.
+const DoorMaxAge = 72 * time.Hour
+
+// ExpireDoors forgets, on every site of this node, the conversations the
+// site's code opened whose last turn is older than age, with their
+// attachments. One at work is passed over and goes on a later pass; one
+// waiting for an answer is not spared as Prune spares it: three days
+// without an answer is a program that left. It returns how many went.
+func (m *Manager) ExpireDoors(age time.Duration, now time.Time) int {
+	root := filepath.Join(m.opts.Root, "data", "chat")
+	domains, _ := os.ReadDir(root)
+	total := 0
+	for _, d := range domains {
+		if !d.IsDir() {
+			continue
+		}
+		domain := d.Name()
+		var old []string
+		for _, s := range m.List(domain) {
+			if s.Origin == OriginSite && s.ID != "" && now.Sub(s.Updated) > age {
+				old = append(old, s.Name)
+			}
+		}
+		if len(old) == 0 {
+			continue
+		}
+		n := 0
+		// Under the lock, as in Purge: Send claims its slot with it, so a
+		// turn cannot start on a file being removed.
+		m.mu.Lock()
+		for _, name := range old {
+			if _, busy := m.running[name]; busy {
+				continue
+			}
+			if err := os.Remove(m.file(name)); err == nil {
+				n++
+			}
+			m.removeUploads(name)
+		}
+		m.mu.Unlock()
+		if n > 0 {
+			total += n
+			m.emit("chat.expired", domain, "", fmt.Sprintf("%d conversations of the site's code forgotten after %s without a turn", n, age), map[string]any{"count": n})
+		}
+	}
+	return total
+}
+
 // Waiting is whose turn it is to speak: the conversations whose last turn
 // ended asking the operator something, and how many turns are at work.
 type Waiting struct {
