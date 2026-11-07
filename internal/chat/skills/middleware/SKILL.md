@@ -931,7 +931,9 @@ there, leaving the rest as it is.)
   your own; ask (§ 12) and write them only on a yes.
 - `daily_usd` (and `daily_turns` for agents on a subscription, whose turns
   report no cost): pick a cap that fits the feature; absent is the house's
-  ($5 by default). `max_chats` (20) is how many conversations it keeps.
+  ($5 by default). `max_chats` (20) is how many conversations it keeps, and each is
+  forgotten three days after its last turn: code that keeps a conversation's
+  id longer must open another on a 404.
 
 Say what you wrote and why each value, and that the site restarts.
 

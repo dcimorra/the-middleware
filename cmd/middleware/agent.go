@@ -209,8 +209,26 @@ func (chatHook) Wrap(next http.Handler) http.Handler { return next }
 func (chatHook) Run(ctx context.Context, a *app.App) error {
 	if chatManager != nil {
 		chatManager.Recover(ctx)
+		go expireDoors(ctx, chatManager)
 	}
 	return nil
+}
+
+// expireDoors forgets the site door's conversations three days after their
+// last turn: once at start, since a supervisor that restarts more often
+// than the hour would otherwise never get there, then every hour, which
+// is precise enough for a limit counted in days.
+func expireDoors(ctx context.Context, m *chat.Manager) {
+	t := time.NewTicker(time.Hour)
+	defer t.Stop()
+	for {
+		m.ExpireDoors(chat.DoorMaxAge, time.Now())
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
 
 type tasksHook struct{}
