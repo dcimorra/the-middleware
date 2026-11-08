@@ -2211,5 +2211,17 @@
   "staging.undoQ": "¿Dejar {name} como estaba antes del último paso a producción?",
   "staging.undoBody": "Vuelve el código que tenía; los datos escritos desde entonces se quedan.",
   "staging.undone": "Se deshizo el último paso a producción",
-  "staging.undoable": "El último paso a producción se puede deshacer (carpeta guardada {when})."
+  "staging.undoable": "El último paso a producción se puede deshacer (carpeta guardada {when}).",
+  "site.tab.database": "Base de datos",
+  "db.hint": "Lee las bases de datos del sitio donde están: las que nombran sus backups y los ficheros SQLite de su carpeta. La base de datos rechaza cualquier escritura.",
+  "db.database": "Base de datos",
+  "db.query": "Consulta",
+  "db.queryHint": "Una consulta de solo lectura; Ctrl+Intro la ejecuta. Como mucho 1000 filas.",
+  "db.run": "Ejecutar",
+  "db.rows": "{n} filas · {ms} ms",
+  "db.truncated": "solo las primeras filas",
+  "db.noRows": "La consulta no devolvió filas.",
+  "db.noTables": "No hay tablas.",
+  "db.emptyTitle": "No se encontró ninguna base de datos",
+  "db.emptyHint": "Un fichero SQLite de la carpeta aparece solo; una PostgreSQL o MySQL, cuando un backup la nombra (pestaña Backups)."
 }

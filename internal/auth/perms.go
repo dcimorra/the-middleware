@@ -90,6 +90,10 @@ var permRoutes = map[string][]string{
 		"PUT " + siteBase + "/file",
 		"POST " + siteBase + "/deploy",
 		"POST " + siteBase + "/exec",
+		// The database browser: what the site keeps, read where it is.
+		"GET " + siteBase + "/databases",
+		"GET " + siteBase + "/databases/tables",
+		"POST " + siteBase + "/databases/query",
 		"POST " + siteBase + "/specs/init",
 		"PUT " + siteBase + "/tasks/{name}",
 		"DELETE " + siteBase + "/tasks/{name}",
