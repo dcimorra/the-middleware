@@ -35,6 +35,7 @@ import { doorCard } from "./site-door.js";
 import { clusterCard } from "./site-cluster.js";
 import { statusCard } from "./site-status.js";
 import { canaryCard } from "./site-canary.js";
+import { previewsCard } from "./site-previews.js";
 import { stagingCard } from "./site-staging.js";
 import { resourcesCard } from "./site-resources.js";
 import { specsTab } from "./site-specs.js";
@@ -675,6 +676,7 @@ function overviewTab(domain) {
       workersCard(s),
       serves && owner ? domainsCard(m) : null,
       serves && owner && !unmanaged ? stagingCard(domain) : null,
+      serves && owner && !unmanaged && m.deploy && m.deploy.github && !m.staging ? previewsCard(domain, m) : null,
       serves && can(domain, "code") ? redirectsCard(m) : null,
       serves && can(domain, "code") ? httpsCard(m) : null,
       serves && can(domain, "code") && !unmanaged && m.run && !m.run.port ? canaryCard(domain, m) : null,

@@ -2363,5 +2363,17 @@
   "canary.sides": "Nueva: {n} peticiones, {e} errores · Actual: {sn} peticiones, {se} errores",
   "canary.promote": "Promocionar ya",
   "canary.rollback": "Revertir",
-  "canary.failed": "La última versión nueva se revirtió {when}: {reason}. Un reinicio la vuelve a probar."
+  "canary.failed": "La última versión nueva se revirtió {when}: {reason}. Un reinicio la vuelve a probar.",
+  "previews.title": "Previews",
+  "previews.on": "Activadas",
+  "previews.hint": "Cada rama que se sube al repositorio tiene su propia copia del sitio en <rama>-preview.<dominio>, con contraseña, desplegando esa rama. Se borra al borrar la rama o tras una semana sin pushes.",
+  "previews.branches": "Ramas (globs, separados por comas)",
+  "previews.allBranches": "todas menos la desplegada",
+  "previews.saved": "Previews guardadas",
+  "previews.off": "Previews desactivadas: las que hay se borran en menos de una hora",
+  "previews.none": "Aún no hay previews: sube una rama.",
+  "previews.pushed": "push {when}",
+  "previews.remove": "Quitar",
+  "previews.removeQ": "¿Quitar {name}?",
+  "previews.removeBody": "Se borran la carpeta de la preview y su copia de los datos. El siguiente push a su rama la vuelve a crear."
 }

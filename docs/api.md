@@ -524,6 +524,7 @@ The external programs the modules run (the agent CLIs), installed under
 | PUT | `/inbound/local` | `{open, http?, dns?}` → `doors`; the local door's listeners (plain HTTP and the name server), 400 when an address is malformed or collides with the ports door |
 | GET | `/sites/{domain}/security/seen` | who called at the site → `{countries, bots, browsers, agents: [{key, name, extra, count, first, last}], since, total}`, heaviest first; counted before the security rules, so what they shut out is there too. In the `read` scope (`middleware site security <domain>`) |
 | POST | `/sites/{domain}/security/seen/forget` | → `{ok}`; empties the tally |
+| GET | `/sites/{domain}/previews` | `{previews: [{name, branch, pushed}]}`: the site's previews (`previews` in its manifest), one test copy per branch pushed to its repository; each is a site of its own, removed with `DELETE /sites/{name}` |
 | GET | `/sites/{domain}/canary` | `{running: {port, percent, revision, started, until, requests, errors, stable_requests, stable_errors} \| null, failed: {revision, at, reason} \| null}`: the canary serving part of the traffic now (`run.canary`), and the last generation one rolled back, which is not started again until a new revision or a restart |
 | POST | `/sites/{domain}/canary/promote` | the running canary takes all the traffic now; 409 when none runs |
 | POST | `/sites/{domain}/canary/rollback` | the running canary is stopped now and its revision written down as rolled back; 409 when none runs |

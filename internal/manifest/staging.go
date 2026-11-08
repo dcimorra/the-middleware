@@ -20,6 +20,9 @@ type Staging struct {
 	// matches a name at any depth ("*.sqlite"), one with a slash the path
 	// from the folder ("storage/app/*"). Empty is DefaultKeep.
 	Keep []string `json:"keep,omitempty"`
+	// Branch makes the copy a preview: it deploys this branch of the
+	// production site's repository, and goes when the branch does.
+	Branch string `json:"branch,omitempty"`
 }
 
 // DefaultKeep is what a promotion leaves in production when the copy

@@ -56,6 +56,10 @@ type Module struct {
 	APIBase string
 	HTTP    *http.Client
 	runner  *deploy.Runner
+	// Previews, when set, is told every push, a deleted branch's too, and
+	// returns the previews it made, deployed or removed (the app's, which
+	// owns the sites and the published names).
+	Previews func(push Push, actor string) []string
 }
 
 // New builds the module. restart is what a deploy without a pointer
@@ -287,7 +291,13 @@ func (m *Module) handleHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if push.Deleted {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ignored": "branch deleted"})
+		// A deleted branch deploys nothing; its preview, if it had one,
+		// goes with it.
+		var gone []string
+		if m.Previews != nil {
+			gone = m.Previews(push, "github:"+push.Pusher.Name)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ignored": "branch deleted", "previews": gone})
 		return
 	}
 	matched := m.Dispatch(push, "github:"+push.Pusher.Name)
@@ -310,6 +320,9 @@ func (m *Module) Dispatch(push Push, actor string) []string {
 		}
 		matched = append(matched, s.Domain)
 		m.runner.Trigger(s.Domain, s.Dir, s.Manifest, actor)
+	}
+	if m.Previews != nil {
+		matched = append(matched, m.Previews(push, actor)...)
 	}
 	return matched
 }
