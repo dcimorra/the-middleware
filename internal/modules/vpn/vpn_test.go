@@ -417,31 +417,6 @@ func TestTheRoutesDriveThePeersOverHTTP(t *testing.T) {
 	}
 }
 
-func TestFileSecretsRoundTripAndCreateTheKeyOwnerOnly(t *testing.T) {
-	t.Setenv("MIDDLEWARE_SECRET_KEY", "")
-	root := t.TempDir()
-	s, err := NewFileSecrets(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	info, err := os.Stat(KeyFile(root))
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("key file: %v %v", err, info)
-	}
-	enc, _ := s.Encrypt([]byte("secret"))
-	enc2, _ := s.Encrypt([]byte("secret"))
-	if enc == enc2 || strings.Contains(enc, "secret") {
-		t.Fatal("encryption is deterministic or in clear")
-	}
-	again, _ := NewFileSecrets(root)
-	if got, err := again.Decrypt(enc); err != nil || string(got) != "secret" {
-		t.Fatalf("decrypt with the reloaded key: %q %v", got, err)
-	}
-	if _, err := again.Decrypt(enc[:len(enc)-4] + "AAAA"); err == nil {
-		t.Fatal("a tampered ciphertext was accepted")
-	}
-}
-
 func TestTurningTheVPNOnAsksNothing(t *testing.T) {
 	f := newFixture(t)
 	lines, err := f.vpn.Enable(context.Background(), map[string]string{})

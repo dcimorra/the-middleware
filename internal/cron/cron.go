@@ -70,9 +70,6 @@ func Parse(expr string) (*Schedule, error) {
 	return s, nil
 }
 
-// String returns the expression as written.
-func (s *Schedule) String() string { return s.expr }
-
 // parseField returns the bit set for one field and whether it was a bare
 // `*`, which matters for the day-of-month/day-of-week rule.
 func parseField(f string, lo, hi int, names map[string]int) (uint64, bool, error) {

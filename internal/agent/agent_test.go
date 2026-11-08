@@ -156,10 +156,10 @@ func TestTheLedgerSumsByDayAndEnforcesTheMonthlyCap(t *testing.T) {
 func TestTheMonthlyCapIsReadFromTheRawManifest(t *testing.T) {
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "site.json"), []byte(`{"version":2,"agent":{"provider":"claude","monthly_cap_usd":12.5}}`), 0o644)
-	if got := MonthlyCap(dir); got != 12.5 {
+	if got := ReadSiteSettings(dir).MonthlyCapUSD; got != 12.5 {
 		t.Fatalf("cap = %v", got)
 	}
-	if got := MonthlyCap(t.TempDir()); got != 0 {
+	if got := ReadSiteSettings(t.TempDir()).MonthlyCapUSD; got != 0 {
 		t.Fatalf("missing manifest: cap = %v", got)
 	}
 }

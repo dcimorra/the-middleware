@@ -86,9 +86,6 @@ var textRules = []TextRule{
 	},
 }
 
-// TextRules lists the text signatures, for the panel.
-func TextRules() []TextRule { return append([]TextRule(nil), textRules...) }
-
 // withoutOwnHome removes every token inside the site's own HOME (and its
 // own folder), so what the site keeps there is not read as a theft. V1
 // shut a site down for the preamble its own Claude Code writes before

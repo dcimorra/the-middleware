@@ -75,8 +75,6 @@ const NAV = [
 ];
 const NAV_GROUPS = { dashboard: "nav.groupManage", events: "nav.groupObserve" };
 
-export const NAV_ICON = Object.fromEntries(NAV.map(([k, , , i]) => [k, i]));
-
 // On a phone the sidebar is a sheet over the screen: it has its own head
 // (the name and a way to close it that is not "tap the dark part") and,
 // at its foot, the theme, which left the crowded bar for it.

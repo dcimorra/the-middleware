@@ -50,7 +50,3 @@ export function levelBadge(level) {
   if (level === "warn") return h("span", { class: "badge warn" }, t("level.warn"));
   return h("span", { class: "badge" }, t("level.info"));
 }
-
-export function boolBadge(v, yes, no) {
-  return v ? h("span", { class: "badge ok" }, yes) : h("span", { class: "badge" }, no);
-}

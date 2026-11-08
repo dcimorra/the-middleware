@@ -59,7 +59,6 @@ func (d *fakeDNS) log() string {
 type fakeDoors struct {
 	mu       sync.Mutex
 	st       inbound.State
-	moves    []string
 	noCert   map[string]bool
 	forgot   []string
 	dnsCalls *fakeDNS

@@ -40,7 +40,6 @@ import (
 // policy, incidents), set when the app starts.
 var (
 	theWAF      *waf.WAF
-	theAccess   *access.Access
 	theSecurity *security.Door
 	theTraffic  *traffic.Recorder
 	theGuard    *guard.Guard
@@ -202,7 +201,6 @@ func buildAccess(a *app.App) app.Hook {
 		a.Bus.Emit(events.Event{Type: "access.error", Actor: "engine", Level: "error", Message: "session key not available, protected sites are closed: " + err.Error()})
 		return hook{wrap: access.ClosedRequest(byRequest)}
 	}
-	theAccess = ac
 	return hook{wrap: ac.Wrap}
 }
 
