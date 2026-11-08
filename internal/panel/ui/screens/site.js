@@ -33,6 +33,7 @@ import { backupsTab } from "./site-backups.js";
 import { databaseTab } from "./site-database.js";
 import { doorCard } from "./site-door.js";
 import { clusterCard } from "./site-cluster.js";
+import { statusCard } from "./site-status.js";
 import { stagingCard } from "./site-staging.js";
 import { resourcesCard } from "./site-resources.js";
 import { specsTab } from "./site-specs.js";
@@ -675,6 +676,7 @@ function overviewTab(domain) {
       serves && owner && !unmanaged ? stagingCard(domain) : null,
       serves && can(domain, "code") ? redirectsCard(m) : null,
       serves && can(domain, "code") ? httpsCard(m) : null,
+      serves && can(domain, "code") && !unmanaged ? statusCard(domain, m) : null,
       unmanaged || !door ? null : door,
 
       unmanaged ? null : envCard,

@@ -84,7 +84,7 @@ func TestServeAnswersEverySectionOfTheAPI(t *testing.T) {
 	measured := filepath.Join(root, "sites", "measured.example")
 	os.MkdirAll(measured, 0o755)
 	os.WriteFile(filepath.Join(measured, "index.html"), []byte("<html><head><title>m</title></head><body>m</body></html>"), 0o644)
-	os.WriteFile(filepath.Join(measured, "site.json"), []byte(`{"version":2,"web_vitals":true}`), 0o644)
+	os.WriteFile(filepath.Join(measured, "site.json"), []byte(`{"version":2,"web_vitals":true,"status_page":{"title":"Measured"}}`), 0o644)
 	ai := filepath.Join(root, "sites", "ai.example")
 	os.MkdirAll(ai, 0o755)
 	os.WriteFile(filepath.Join(ai, "index.html"), []byte("<p>ai</p>"), 0o644)
@@ -434,6 +434,20 @@ func TestServeAnswersEverySectionOfTheAPI(t *testing.T) {
 	}
 	if code, _ := askSite("measured.example", "POST", webvitals.BeaconPath, strings.NewReader(`{"p":"/","lcp":1800}`), map[string]string{"Sec-Fetch-Site": "cross-site"}); code != 400 {
 		t.Errorf("a beacon from another site was taken: %d", code)
+	}
+	// The status page is the house's, in front of the site; a site that
+	// has none serves its own /status (a 404 here).
+	if code, body := askSite("measured.example", "GET", "/status", nil, nil); code != 200 || !strings.Contains(body, "<h1>Measured</h1>") || !strings.Contains(body, "Uptime, last 90 days") {
+		t.Errorf("the status page does not answer: %d %q", code, body)
+	}
+	if code, body := askSite("measured.example", "GET", "/status?format=json", nil, nil); code != 200 || !strings.Contains(body, `"site":"measured.example"`) {
+		t.Errorf("the status page's JSON: %d %q", code, body)
+	}
+	if code, _ := askSite("shop.example", "GET", "/status", nil, nil); code != 404 {
+		t.Errorf("a site without a status page got one: %d", code)
+	}
+	if code, body := get("/sites/measured.example/uptime"); code != 200 || !strings.Contains(body, `"uptime"`) {
+		t.Errorf("uptime: %d %s", code, body)
 	}
 	if code, body := get("/sites/measured.example/webvitals?days=1"); code != 200 || !strings.Contains(body, `"metric": "lcp",`) || !strings.Contains(body, `"n": 1,`) || !strings.Contains(body, `"rating": "good"`) {
 		t.Errorf("the measures are not reported: %d %s", code, body)

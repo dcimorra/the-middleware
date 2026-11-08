@@ -102,6 +102,9 @@ type Manifest struct {
 	// keeps what browsers report (internal/webvitals). Off unless turned
 	// on: it changes every page the site serves.
 	WebVitals bool `json:"web_vitals,omitempty"`
+	// StatusPage is a public page of the site's availability, served by
+	// the house at its path (status_page.go).
+	StatusPage *StatusPage `json:"status_page,omitempty"`
 	// Repositories are the GitHub repositories the site keeps in its
 	// folder besides the one it deploys from (deploy.github.repository):
 	// a public copy under build/oss, a library vendored as a clone. The
@@ -680,6 +683,9 @@ func (m *Manifest) Validate() error {
 		}
 	}
 	if err := validForceHTTPS(m.ForceHTTPS); err != nil {
+		return err
+	}
+	if err := m.StatusPage.valid(); err != nil {
 		return err
 	}
 	if err := m.validBackups(); err != nil {
