@@ -2211,5 +2211,17 @@
   "staging.undoQ": "Put {name} back as it was before the last promotion?",
   "staging.undoBody": "The code it had comes back; the data written since the promotion stays.",
   "staging.undone": "The last promotion was undone",
-  "staging.undoable": "The last promotion can be undone (folder set aside {when})."
+  "staging.undoable": "The last promotion can be undone (folder set aside {when}).",
+  "site.tab.database": "Database",
+  "db.hint": "Read the site's databases where they are: the ones its backups name and the SQLite files in its folder. The database refuses any write.",
+  "db.database": "Database",
+  "db.query": "Query",
+  "db.queryHint": "One read-only query; Ctrl+Enter runs it. At most 1000 rows.",
+  "db.run": "Run",
+  "db.rows": "{n} rows · {ms} ms",
+  "db.truncated": "only the first rows",
+  "db.noRows": "The query returned no rows.",
+  "db.noTables": "No tables.",
+  "db.emptyTitle": "No database found",
+  "db.emptyHint": "A SQLite file in the folder shows up on its own; a PostgreSQL or MySQL one, once a backup names it (Backups tab)."
 }
