@@ -98,6 +98,10 @@ type Manifest struct {
 	// (an old device, a webhook that cannot follow a redirect). The rest
 	// of the house serves http as it comes (https.go).
 	ForceHTTPS []string `json:"force_https,omitempty"`
+	// WebVitals adds the house's measuring script to the site's pages and
+	// keeps what browsers report (internal/webvitals). Off unless turned
+	// on: it changes every page the site serves.
+	WebVitals bool `json:"web_vitals,omitempty"`
 	// Repositories are the GitHub repositories the site keeps in its
 	// folder besides the one it deploys from (deploy.github.repository):
 	// a public copy under build/oss, a library vendored as a clone. The

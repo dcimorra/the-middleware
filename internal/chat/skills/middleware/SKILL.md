@@ -82,6 +82,7 @@ manifest and take the code out.
 | deploy on push | `deploy.github` | § 4 |
 | memory and CPU budget | `limits` (operator only) | § 3 |
 | how many people visit, from where | the house already counts it: site → Visits | nothing to write |
+| Core Web Vitals, "is the site fast for real people", LCP/INP/CLS | `"web_vitals": true` in the manifest (off by default; turn it on only when asked): the house adds a same-origin script to every page and reports the 75th percentile per day, device and page in site → Visits, and at `GET /api/v1/sites/<domain>/webvitals`; never add web-vitals or an analytics script to the code for it | docs/manifest.md, "Web Vitals" |
 | an access log of every request | the house keeps one per site, turned over weekly, readable as your own logs | nothing to write |
 | copies on other nodes | `cluster` | § 3 |
 | a staging / test environment, "try it before it goes live", promote it after | a test copy: site page → Test copies, or `middleware site staging <domain> create` (operator only); the copy's code sees `MIDDLEWARE_STAGING`, `staging.keep` says what of production a promotion keeps | docs/manifest.md, "Staging" |

@@ -22,6 +22,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/settings"
 	"github.com/dcimorra/the-middleware/internal/tasks"
+	"github.com/dcimorra/the-middleware/internal/webvitals"
 )
 
 // TestServeAnswersEverySectionOfTheAPI builds the process the way `serve`
@@ -78,6 +79,12 @@ func TestServeAnswersEverySectionOfTheAPI(t *testing.T) {
 	os.MkdirAll(secure, 0o755)
 	os.WriteFile(filepath.Join(secure, "index.html"), []byte("<p>secure</p>"), 0o644)
 	os.WriteFile(filepath.Join(secure, "site.json"), []byte(`{"version":2,"access":{"password":"`+hash+`"},"force_https":["secure.example"]}`), 0o644)
+	// A site with Web Vitals on: its pages carry the house's script and
+	// the house takes what browsers send back, through the whole chain.
+	measured := filepath.Join(root, "sites", "measured.example")
+	os.MkdirAll(measured, 0o755)
+	os.WriteFile(filepath.Join(measured, "index.html"), []byte("<html><head><title>m</title></head><body>m</body></html>"), 0o644)
+	os.WriteFile(filepath.Join(measured, "site.json"), []byte(`{"version":2,"web_vitals":true}`), 0o644)
 	ai := filepath.Join(root, "sites", "ai.example")
 	os.MkdirAll(ai, 0o755)
 	os.WriteFile(filepath.Join(ai, "index.html"), []byte("<p>ai</p>"), 0o644)
@@ -391,6 +398,45 @@ func TestServeAnswersEverySectionOfTheAPI(t *testing.T) {
 	open("/", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/130.0 Safari/537.36", true)
 	if code, body := get("/sites/shop.example/visits?days=1"); code != 200 || !strings.Contains(body, `"visits": 1,`) || !strings.Contains(body, `"pageviews": 2,`) || !strings.Contains(body, `"key": "linux"`) {
 		t.Errorf("the audience is not what was asked: %d %s", code, body)
+	}
+	// Web Vitals: in the page of the site that has it on, in no other.
+	askSite := func(host, method, path string, body io.Reader, headers map[string]string) (int, string) {
+		t.Helper()
+		req, _ := http.NewRequest(method, "http://"+s.Listen+path, body)
+		req.Host = host
+		req.Header.Set("User-Agent", browser)
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(raw)
+	}
+	navDoc := map[string]string{"Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate"}
+	if code, body := askSite("measured.example", "GET", "/", nil, navDoc); code != 200 || !strings.Contains(body, webvitals.Tag+"</head>") {
+		t.Errorf("the script is not in the measured site's page: %d %q", code, body)
+	}
+	if _, body := askSite("shop.example", "GET", "/", nil, navDoc); strings.Contains(body, webvitals.ScriptPath) {
+		t.Errorf("the script went into a site that has it off: %q", body)
+	}
+	if code, body := askSite("measured.example", "GET", webvitals.ScriptPath, nil, nil); code != 200 || !strings.Contains(body, webvitals.BeaconPath) {
+		t.Errorf("the script is not served: %d", code)
+	}
+	if code, _ := askSite("shop.example", "GET", webvitals.ScriptPath, nil, nil); code != 404 {
+		t.Errorf("a site with it off answers the script: %d", code)
+	}
+	if code, _ := askSite("measured.example", "POST", webvitals.BeaconPath, strings.NewReader(`{"p":"/","lcp":1800,"cls":0.02,"inp":90}`), map[string]string{"Sec-Fetch-Site": "same-origin"}); code != 204 {
+		t.Errorf("the beacon was not taken: %d", code)
+	}
+	if code, _ := askSite("measured.example", "POST", webvitals.BeaconPath, strings.NewReader(`{"p":"/","lcp":1800}`), map[string]string{"Sec-Fetch-Site": "cross-site"}); code != 400 {
+		t.Errorf("a beacon from another site was taken: %d", code)
+	}
+	if code, body := get("/sites/measured.example/webvitals?days=1"); code != 200 || !strings.Contains(body, `"metric": "lcp",`) || !strings.Contains(body, `"n": 1,`) || !strings.Contains(body, `"rating": "good"`) {
+		t.Errorf("the measures are not reported: %d %s", code, body)
 	}
 	if code, body := get("/sites/shop.example/security/blocks"); code != 200 || !strings.Contains(body, "GPTBot") || !strings.Contains(body, `".git/"`) {
 		t.Errorf("the refusals are not listed: %d %s", code, body)
