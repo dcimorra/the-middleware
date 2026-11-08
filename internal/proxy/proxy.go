@@ -51,6 +51,10 @@ type Handler struct {
 	Unrouted *Unrouted
 	DoorOf   func(*http.Request) string
 	ClientIP func(*http.Request) string
+	// NoteCanary counts an answer of a site in canary, on its side
+	// (canary.go). Nil counts nothing, and a canary then takes over at
+	// the end of its time without being judged.
+	NoteCanary func(domain string, canary bool, status int)
 }
 
 // SetPanelDomain changes the name the panel answers on, at once: the
@@ -148,6 +152,10 @@ func (h *Handler) serveSite(w http.ResponseWriter, r *http.Request, sn engine.Sn
 				key = "down"
 			}
 			pages.Render(w, r, SiteNotice(sn, key))
+			return
+		}
+		if sn.Canary != nil {
+			h.forwardCanary(w, r, sn)
 			return
 		}
 		h.forward(w, r, sn, "http://127.0.0.1:"+strconv.Itoa(sn.Port))

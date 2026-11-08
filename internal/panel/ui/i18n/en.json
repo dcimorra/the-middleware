@@ -2349,5 +2349,19 @@
   "status.turnedOff": "Status page off",
   "status.uptime": "Uptime: {d1} in 24 h · {d30} in 30 days · {d90} in 90 days",
   "status.lastOutage": "Last outage: {when} ({reason})",
-  "status.outageNow": "Down since {when} ({reason})"
+  "status.outageNow": "Down since {when} ({reason})",
+  "canary.title": "Canary deploys",
+  "canary.on": "On",
+  "canary.hint": "A new version first gets a share of the visitors; if it answers with more errors than the current one, it is stopped and everyone stays on the current one. Otherwise it takes over.",
+  "canary.percent": "Share of visitors",
+  "canary.minutes": "Minutes",
+  "canary.share": "Send",
+  "canary.during": "of the visitors to a new version for",
+  "canary.saved": "Canary deploys saved",
+  "canary.off": "Canary deploys off: new versions take over at once",
+  "canary.running": "A new version is serving {percent}% of the visitors until {until}.",
+  "canary.sides": "New: {n} requests, {e} errors · Current: {sn} requests, {se} errors",
+  "canary.promote": "Promote now",
+  "canary.rollback": "Roll back",
+  "canary.failed": "The last new version was rolled back {when}: {reason}. A restart tries it again."
 }

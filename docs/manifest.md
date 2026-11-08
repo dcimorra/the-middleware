@@ -693,6 +693,51 @@ Only a beacon the browser marks as sent by a page of the same site
 (`Sec-Fetch-Site: same-origin`, or a matching `Origin`) is taken, at most
 3000 a minute per site.
 
+## Canary deploys: `run.canary`
+
+```json
+"run": {
+  "command": ["npm", "start"],
+  "canary": { "percent": 10, "for": "10m", "max_error_rate": 0.05, "min_requests": 20 }
+}
+```
+
+A new generation (a deploy, a restart, a changed manifest) starts and
+passes its health check as always, and then, instead of taking every
+request, takes `percent` of the visitors (10 by default) for `for` (10
+minutes by default, 10s to 24h) while the generation that was serving
+keeps the rest. Each visitor stays on the side they were drawn for (a
+cookie, `__mw_canary`, for that revision), so a page and the files it
+loads come from the same code.
+
+Every answer on both sides is counted. Once the canary has answered
+`min_requests` (20) and more than `max_error_rate` (5%) of them were
+errors (a 5xx, or no answer at all), and that is worse than the serving
+side, it is stopped and the serving generation keeps everything: when
+both sides fail alike the fault is not the new code's (a database down),
+and keeping the old one would fix nothing. If the canary process exits,
+it is rolled back as well. Otherwise it takes over at the end, as a
+normal handover does; with fewer than `min_requests` by then it takes
+over too, since there was not enough traffic to judge it.
+
+A rolled back revision is written down (`data/canary/<domain>.json`) and
+not started again until the revision changes or someone restarts the
+site; the site shows `canary rolled back: <why>`. The site page shows a
+running canary with both sides' numbers and buttons to promote it or roll
+it back now (`POST /api/v1/sites/<domain>/canary/promote|rollback`).
+
+What it does not do:
+
+- a site with `run.port` cannot have it (two generations cannot share a
+  written port), and neither can a service;
+- the files on disk are the new deploy's whatever happens: a rollback
+  keeps the previous generation running, not its files, so the next
+  restart runs the new code. With a deploy by pointer
+  (`env_from_file`) the pointer says which build runs, and a rollback
+  plus moving the pointer back is a full undo;
+- a database migration the new generation ran is not undone;
+- the house cache serves a kept page to both sides.
+
 ## Status page: `status_page`
 
 ```json

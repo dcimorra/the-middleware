@@ -50,6 +50,7 @@ var permRoutes = map[string][]string{
 		"GET " + siteBase + "/visits",
 		"GET " + siteBase + "/webvitals",
 		"GET " + siteBase + "/uptime",
+		"GET " + siteBase + "/canary",
 		"GET " + siteBase + "/security/blocks",
 		"GET " + siteBase + "/resources",
 		"GET " + siteBase + "/download.zip",
@@ -61,6 +62,8 @@ var permRoutes = map[string][]string{
 	// operate changes the site's state, never what it runs.
 	PermOperate: {
 		"POST " + siteBase + "/restart",
+		"POST " + siteBase + "/canary/promote",
+		"POST " + siteBase + "/canary/rollback",
 		"POST " + siteBase + "/stop",
 		"POST " + siteBase + "/start",
 		"POST " + siteBase + "/hold",
