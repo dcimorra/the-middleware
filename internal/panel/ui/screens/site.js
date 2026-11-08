@@ -32,6 +32,7 @@ import { siteTasksTab } from "./tasks.js";
 import { backupsTab } from "./site-backups.js";
 import { doorCard } from "./site-door.js";
 import { clusterCard } from "./site-cluster.js";
+import { stagingCard } from "./site-staging.js";
 import { resourcesCard } from "./site-resources.js";
 import { specsTab } from "./site-specs.js";
 
@@ -669,6 +670,7 @@ function overviewTab(domain) {
       servicesCard(s),
       workersCard(s),
       serves && owner ? domainsCard(m) : null,
+      serves && owner && !unmanaged ? stagingCard(domain) : null,
       serves && can(domain, "code") ? redirectsCard(m) : null,
       serves && can(domain, "code") ? httpsCard(m) : null,
       unmanaged || !door ? null : door,

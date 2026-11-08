@@ -2516,3 +2516,4 @@ details.site-env[open] > summary { margin-bottom: 10px; }
 .site-res-track { position: relative; }
 /* What the site uses now, a notch on the bar under the thumb. */
 .site-res-mark { position: absolute; top: -2px; width: 3px; height: 22px; margin-left: -1.5px; border-radius: 2px; background: var(--warn); opacity: .85; pointer-events: none; }
+.staging-password { display: block; padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius); font-size: 1.05em; user-select: all; overflow-wrap: anywhere; }
