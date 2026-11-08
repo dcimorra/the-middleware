@@ -93,6 +93,13 @@ func Exists(path string) bool {
 	return err == nil
 }
 
+// IsFile reports whether path is something other than a directory that
+// can be stat'ed (a link is followed).
+func IsFile(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && !st.IsDir()
+}
+
 // IsNotExist is errors.Is(err, os.ErrNotExist), named for readability at call
 // sites that branch on it.
 func IsNotExist(err error) bool { return errors.Is(err, os.ErrNotExist) }

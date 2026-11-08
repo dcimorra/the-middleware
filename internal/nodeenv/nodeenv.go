@@ -32,6 +32,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/dcimorra/the-middleware/internal/fsx"
 )
 
 // Manager hands out Node bin folders, installing through nvm as needed.
@@ -249,7 +251,7 @@ func (m *Manager) resolve(ctx context.Context, key, sys string) (string, string)
 			return dir, fmt.Sprintf("Node %s could not be installed (%s); running on %s, the newest nvm already had", label(key), strings.Join(tried, "; "), filepath.Base(filepath.Dir(dir)))
 		}
 	}
-	if house := filepath.Join(m.Root, "modules", "node-runtime", "bin"); fileExists(filepath.Join(house, "node")) {
+	if house := filepath.Join(m.Root, "modules", "node-runtime", "bin"); fsx.IsFile(filepath.Join(house, "node")) {
 		return house, fmt.Sprintf("Node %s could not be installed (%s); running on the house's own Node", label(key), strings.Join(tried, "; "))
 	}
 	if sys != "" {
@@ -292,7 +294,7 @@ func (m *Manager) nvmInstall(ctx context.Context, v string) (string, error) {
 	if i := strings.LastIndexByte(node, '\n'); i >= 0 {
 		node = node[i+1:]
 	}
-	if !filepath.IsAbs(node) || !fileExists(node) {
+	if !filepath.IsAbs(node) || !fsx.IsFile(node) {
 		return "", fmt.Errorf("nvm said %q, not a node binary", node)
 	}
 	return filepath.Dir(node), nil
@@ -303,7 +305,7 @@ func (m *Manager) nvmInstall(ctx context.Context, v string) (string, error) {
 // machine). nvm.sh is a script sourced by bash; it is not a daemon and
 // touches nothing outside its folder with NVM_DIR set there.
 func (m *Manager) ensureNVM(ctx context.Context) error {
-	if fileExists(filepath.Join(m.NVMDir(), "nvm.sh")) {
+	if fsx.IsFile(filepath.Join(m.NVMDir(), "nvm.sh")) {
 		return nil
 	}
 	if m.FetchNVM != nil {
@@ -370,7 +372,7 @@ func newestIn(dir string) string {
 	}
 	var vs []string
 	for _, e := range ents {
-		if fileExists(filepath.Join(dir, e.Name(), "bin", "node")) {
+		if fsx.IsFile(filepath.Join(dir, e.Name(), "bin", "node")) {
 			vs = append(vs, e.Name())
 		}
 	}
@@ -398,17 +400,12 @@ func versionLess(a, b string) bool {
 	return false
 }
 
-func fileExists(p string) bool {
-	info, err := os.Stat(p)
-	return err == nil && !info.IsDir()
-}
-
 // Prepare installs nvm under the installation and, with it, the Node v
 // ("lts" or a major): what the installer leaves on every machine, so the
 // first site that asks for a version does not wait for nvm itself. It
 // says whether anything was installed.
 func (m *Manager) Prepare(ctx context.Context, v string) (bool, string, error) {
-	had := fileExists(filepath.Join(m.NVMDir(), "nvm.sh"))
+	had := fsx.IsFile(filepath.Join(m.NVMDir(), "nvm.sh"))
 	if err := m.ensureNVM(ctx); err != nil {
 		return false, "", fmt.Errorf("nvm: %w", err)
 	}

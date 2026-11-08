@@ -29,6 +29,8 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+
+	"github.com/dcimorra/the-middleware/internal/edge"
 )
 
 //go:embed themes/*.html
@@ -230,20 +232,12 @@ func Write(w http.ResponseWriter, r *http.Request, key string, status int) {
 	}
 	n := Notice{Status: status, Signal: e.signal, Label: e.label, Title: e.title, Line: e.line, RetryAfter: e.retry}
 	if r != nil {
-		n.Foot = hostOf(r)
+		n.Foot = edge.Host(r)
 	}
 	if e.signal == Waiting && e.retry > 0 && e.retry <= 10 {
 		n.Reload = e.retry
 	}
 	Render(w, r, n)
-}
-
-func hostOf(r *http.Request) string {
-	h := r.Host
-	if i := strings.LastIndexByte(h, ':'); i > 0 && !strings.Contains(h[i:], "]") {
-		h = h[:i]
-	}
-	return strings.ToLower(h)
 }
 
 // SiteEntry is a page that belongs to one site: its name in the title,

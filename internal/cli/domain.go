@@ -7,10 +7,11 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/dcimorra/the-middleware/internal/fsx"
 
 	"github.com/dcimorra/the-middleware/internal/inbound"
 	"github.com/dcimorra/the-middleware/internal/manifest"
@@ -39,7 +40,7 @@ func (e *Env) setPanelDomain(root, domain string, door inbound.Door) error {
 	// a moment, or the settings would go to a file the running process
 	// read already and will not read again until it restarts.
 	cl, err := e.Connect(root)
-	for i := 0; err != nil && i < 20 && fileExists(filepath.Join(root, "data", "api.sock")); i++ {
+	for i := 0; err != nil && i < 20 && fsx.Exists(filepath.Join(root, "data", "api.sock")); i++ {
 		time.Sleep(500 * time.Millisecond)
 		cl, err = e.Connect(root)
 	}
@@ -88,7 +89,7 @@ func (e *Env) setPanelDomain(root, domain string, door inbound.Door) error {
 		fmt.Fprintf(e.Stdout, "Panel domain: %s, on the tunnel door (no port opened).\n", domain)
 	}
 	if !running {
-		if fileExists(filepath.Join(root, "data", "api.sock")) {
+		if fsx.Exists(filepath.Join(root, "data", "api.sock")) {
 			fmt.Fprintln(e.Stdout, "The service did not answer: restart it (systemctl restart middleware) for the domain to apply.")
 		}
 	} else {
@@ -116,11 +117,6 @@ func (e *Env) setPanelDomain(root, domain string, door inbound.Door) error {
 	}
 	fmt.Fprintln(e.Stdout, dnsLine(domain))
 	return nil
-}
-
-func fileExists(p string) bool {
-	_, err := os.Stat(p)
-	return err == nil
 }
 
 // dnsLine says whether the name already points at this machine, because

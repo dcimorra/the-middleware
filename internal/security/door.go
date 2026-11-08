@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dcimorra/the-middleware/internal/edge"
+
 	"github.com/dcimorra/the-middleware/internal/pages"
 )
 
@@ -78,7 +80,7 @@ func New(opts Options) *Door {
 		opts.Now = time.Now
 	}
 	if opts.Host == nil {
-		opts.Host = hostOf
+		opts.Host = edge.Host
 	}
 	return &Door{opts: opts, compiled: map[string]compiled{}, recent: map[string][]Block{}}
 }
@@ -209,12 +211,4 @@ func (d *Door) Recent(domain string) []Block {
 		out[len(list)-1-i] = b
 	}
 	return out
-}
-
-func hostOf(r *http.Request) string {
-	h := r.Host
-	if host, _, err := net.SplitHostPort(h); err == nil {
-		h = host
-	}
-	return h
 }

@@ -10,7 +10,7 @@ import (
 
 const (
 	chrome  = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
-	edge    = "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 Edg/130.0"
+	edgeUA  = "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 Edg/130.0"
 	gptbot  = "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)"
 	google  = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
 	appleAI = "Mozilla/5.0 (Macintosh) Safari/605.1.15 (Applebot-Extended/0.1)"
@@ -95,7 +95,7 @@ func TestBrowsersAndCountriesAreAllowLists(t *testing.T) {
 	if v := f.Decide("ES", chrome, now); !v.Pass {
 		t.Fatalf("chrome from ES: %+v", v)
 	}
-	if v := f.Decide("ES", edge, now); v.Pass || v.What != "edge" {
+	if v := f.Decide("ES", edgeUA, now); v.Pass || v.What != "edge" {
 		t.Fatalf("edge passed as chrome: %+v", v)
 	}
 	if v := f.Decide("ES", "curl/8.0", now); v.Pass || v.What != BrowserOther {

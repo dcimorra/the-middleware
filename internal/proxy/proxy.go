@@ -20,6 +20,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dcimorra/the-middleware/internal/fsx"
+
 	"github.com/dcimorra/the-middleware/internal/edge"
 	"github.com/dcimorra/the-middleware/internal/engine"
 	"github.com/dcimorra/the-middleware/internal/manifest"
@@ -77,14 +79,8 @@ func New(lookup Lookup) *Handler {
 	}}
 }
 
-// Host returns the host without port, lower-cased.
-func Host(r *http.Request) string {
-	h := r.Host
-	if i := strings.LastIndexByte(h, ':'); i > 0 && !strings.Contains(h[i:], "]") {
-		h = h[:i]
-	}
-	return strings.ToLower(strings.TrimSuffix(h, "."))
-}
+// Host is edge.Host, the name every door reads.
+func Host(r *http.Request) string { return edge.Host(r) }
 
 // ServeHTTP implements http.Handler.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -309,7 +305,7 @@ func (h *Handler) static(w http.ResponseWriter, r *http.Request, sn engine.Snaps
 			}
 		}
 		// A site with a 404.html gets it; the rest get the plain one.
-		if custom := filepath.Join(root, "404.html"); fileExists(custom) {
+		if custom := filepath.Join(root, "404.html"); fsx.IsFile(custom) {
 			w.WriteHeader(http.StatusNotFound)
 			http.ServeFile(w, r, custom)
 			return
@@ -365,8 +361,7 @@ func insideSite(siteDir, full string) bool {
 	}
 }
 
-func dirExists(p string) bool  { st, err := os.Stat(p); return err == nil && st.IsDir() }
-func fileExists(p string) bool { st, err := os.Stat(p); return err == nil && !st.IsDir() }
+func dirExists(p string) bool { st, err := os.Stat(p); return err == nil && st.IsDir() }
 
 // SiteNotice is one of a site's pages: its name as the title, its domain
 // at the foot, its design.
