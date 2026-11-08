@@ -203,7 +203,7 @@ func (a *Access) Wrap(next http.Handler) http.Handler {
 				}
 			}
 		case LogoutPath:
-			a.clearSessions(w, r)
+			a.clearSessions(w, r, site)
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}
@@ -239,7 +239,7 @@ func (a *Access) lookup(r *http.Request) (Site, bool) {
 	p := r.URL.Path
 	if p == LoginPath {
 		p = "/"
-		if next := safeNext(r.FormValue("next")); next != "" {
+		if next := pages.LocalPath(r.FormValue("next")); next != "" {
 			p, _, _ = strings.Cut(next, "?")
 		}
 	}
@@ -451,12 +451,31 @@ func (a *Access) setSession(w http.ResponseWriter, r *http.Request, site Site, d
 	})
 }
 
-// clearSessions drops the site's pass and every zone pass the browser sent.
-func (a *Access) clearSessions(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
-	for _, c := range r.Cookies() {
-		if strings.HasPrefix(c.Name, sessionCookie+"_") {
-			http.SetCookie(w, &http.Cookie{Name: c.Name, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
+// clearSessions drops the site's pass and the pass of every zone the
+// site and its service have. It used to drop the zone passes the browser
+// sent, with Path "/": a zone pass has its zone as its Path, so the
+// browser never sends it to /__mw/logout, and a deletion with another
+// Path is another cookie. Signing out left every zone open. The zones are
+// read from the manifest instead, and each pass is expired where it
+// lives.
+func (a *Access) clearSessions(w http.ResponseWriter, r *http.Request, site Site) {
+	expire := func(d door) {
+		http.SetCookie(w, &http.Cookie{
+			Name: cookieName(d), Value: "", Path: cookiePath(d), MaxAge: -1,
+			HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: edge.HTTPS(r),
+		})
+	}
+	expire(door{})
+	seen := map[string]bool{"": true}
+	for _, ac := range []*manifest.Access{site.Access, site.More} {
+		if ac == nil {
+			continue
+		}
+		for prefix, ra := range ac.Routes {
+			if z := zoneOf(prefix); ra != nil && ra.Password != "" && !seen[z] {
+				seen[z] = true
+				expire(door{zone: z})
+			}
 		}
 	}
 }
@@ -480,16 +499,7 @@ func (a *Access) login(w http.ResponseWriter, r *http.Request, site Site, d door
 		return
 	}
 	a.setSession(w, r, site, d)
-	http.Redirect(w, r, safeNext(r.PostForm.Get("next")), http.StatusSeeOther)
-}
-
-// safeNext keeps the redirect on this site: a path, never a URL with a
-// host, never a protocol-relative "//evil".
-func safeNext(next string) string {
-	if next == "" || next[0] != '/' || strings.HasPrefix(next, "//") || strings.ContainsAny(next, "\\\r\n") {
-		return "/"
-	}
-	return next
+	http.Redirect(w, r, pages.LocalPath(r.PostForm.Get("next")), http.StatusSeeOther)
 }
 
 // askPassword answers 401. Browsers get the form, inside the site's own
@@ -511,7 +521,7 @@ func (a *Access) askPassword(w http.ResponseWriter, r *http.Request, site Site, 
 		n.Line = d.message
 	}
 	var form strings.Builder
-	_ = formTpl.Execute(&form, map[string]any{"Action": LoginPath, "Next": safeNext(next), "Zone": d.zone, "Failed": failed})
+	_ = formTpl.Execute(&form, map[string]any{"Action": LoginPath, "Next": pages.LocalPath(next), "Zone": d.zone, "Failed": failed})
 	n.Extra = template.HTML(form.String())
 	pages.Render(w, r, n)
 }
@@ -541,7 +551,7 @@ func (a *Access) tooMany(w http.ResponseWriter, r *http.Request, site Site, d do
 	}
 	minutes := (secs + 59) / 60
 	var form strings.Builder
-	_ = formTpl.Execute(&form, map[string]any{"Action": LoginPath, "Next": safeNext(next), "Zone": d.zone, "Minutes": minutes})
+	_ = formTpl.Execute(&form, map[string]any{"Action": LoginPath, "Next": pages.LocalPath(next), "Zone": d.zone, "Minutes": minutes})
 	n.Extra = template.HTML(form.String())
 	pages.Render(w, r, n)
 }

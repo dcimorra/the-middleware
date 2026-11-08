@@ -1,8 +1,10 @@
 package access
 
 import (
+	"io"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -178,6 +180,59 @@ func TestTheLoginFormSetsASessionThatLetsTheVisitorIn(t *testing.T) {
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if rec := do(h, r); rec.Header().Get("Location") != "/" {
 		t.Fatalf("next=//evil redirected to %q", rec.Header().Get("Location"))
+	}
+	// Nor is one a browser makes out of a tab: it drops the tab and reads
+	// "//evil.example/x".
+	form.Set("next", "/\t/evil.example/x")
+	r = httptest.NewRequest("POST", "http://p.example"+LoginPath, strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if rec := do(h, r); rec.Header().Get("Location") != "/" {
+		t.Fatalf("next=/<tab>/evil redirected to %q", rec.Header().Get("Location"))
+	}
+}
+
+// Signing out goes through a browser: the jar keeps each cookie under its
+// Path, and a logout that expires a zone pass under another Path leaves
+// the zone open.
+func TestSigningOutClosesEveryZoneTheBrowserHoldsAPassFor(t *testing.T) {
+	admin, _ := HashPassword("admin")
+	a := newAccess(t, siteWith(&manifest.Access{Routes: map[string]*manifest.RouteAccess{
+		"/admin/": {Password: admin}, "/open": {},
+	}}))
+	srv := httptest.NewServer(a.Wrap(okHandler()))
+	defer srv.Close()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	send := func(method, path string, form url.Values) int {
+		t.Helper()
+		var body io.Reader
+		if form != nil {
+			body = strings.NewReader(form.Encode())
+		}
+		r, _ := http.NewRequest(method, srv.URL+path, body)
+		r.Host = "p.example"
+		r.Header.Set("Accept", "text/html")
+		if form != nil {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		resp, err := client.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if c := send("POST", LoginPath, url.Values{"password": {"admin"}, "next": {"/admin"}, "zone": {"/admin"}}); c != http.StatusSeeOther {
+		t.Fatalf("signing in to /admin got %d", c)
+	}
+	if c := send("GET", "/admin/panel", nil); c != 200 {
+		t.Fatalf("signed in, /admin/panel got %d", c)
+	}
+	if c := send("GET", LogoutPath, nil); c != http.StatusSeeOther {
+		t.Fatalf("logout got %d", c)
+	}
+	if c := send("GET", "/admin/panel", nil); c != http.StatusUnauthorized {
+		t.Fatalf("after signing out /admin/panel got %d", c)
 	}
 }
 
