@@ -2363,5 +2363,17 @@
   "canary.sides": "New: {n} requests, {e} errors · Current: {sn} requests, {se} errors",
   "canary.promote": "Promote now",
   "canary.rollback": "Roll back",
-  "canary.failed": "The last new version was rolled back {when}: {reason}. A restart tries it again."
+  "canary.failed": "The last new version was rolled back {when}: {reason}. A restart tries it again.",
+  "previews.title": "Previews",
+  "previews.on": "On",
+  "previews.hint": "Each branch pushed to the repository gets its own copy of the site at <branch>-preview.<domain>, behind a password, deploying that branch. It goes when the branch is deleted or after a week without pushes.",
+  "previews.branches": "Branches (globs, comma separated)",
+  "previews.allBranches": "every branch but the deployed one",
+  "previews.saved": "Previews saved",
+  "previews.off": "Previews off: existing ones go within the hour",
+  "previews.none": "No previews yet: push a branch.",
+  "previews.pushed": "pushed {when}",
+  "previews.remove": "Remove",
+  "previews.removeQ": "Remove {name}?",
+  "previews.removeBody": "The preview's folder and its copy of the data are deleted. The next push to its branch makes it again."
 }

@@ -412,7 +412,7 @@ func Fetch(ctx context.Context, siteDir string, g *manifest.GitHubDeploy, log io
 		// push cannot revive a disabled site, lift a hold, start a stopped
 		// worker or drop under-attack mode.
 		if prior, perr := manifest.Parse(before); perr == nil {
-			if fresh, ferr := manifest.Load(siteDir); ferr == nil && carryDecisions(fresh, prior) {
+			if fresh, ferr := manifest.Load(siteDir); ferr == nil && (carryCopy(fresh, prior) || carryDecisions(fresh, prior)) {
 				if err := manifest.Save(siteDir, fresh); err != nil {
 					return "", fmt.Errorf("keeping the site's decisions over its new site.json: %w", err)
 				}
@@ -470,6 +470,54 @@ func carryDecisions(m, prior *manifest.Manifest) bool {
 		}
 	}
 	return changed
+}
+
+// carryCopy keeps a test copy a copy when its repository's site.json, which
+// is production's, lands on it: the copy's mark, its password door, its
+// branch (a preview's) and the names it answers are the house's, and a
+// checkout that put production's back made the copy deploy production's
+// branch, drop its password and claim production's aliases. carryDecisions
+// still runs after it.
+func carryCopy(m, prior *manifest.Manifest) bool {
+	if m == nil || prior == nil || prior.Staging == nil {
+		return false
+	}
+	carryDecisions(m, prior)
+	s := *prior.Staging
+	m.Staging = &s
+	m.Access = prior.Access
+	m.Aliases, m.ForceHTTPS, m.WWW = prior.Aliases, prior.ForceHTTPS, prior.WWW
+	if prior.Title != "" {
+		m.Title = prior.Title
+	}
+	m.Cluster, m.Replica, m.Backups, m.Previews = nil, nil, nil, nil
+	if prior.Deploy != nil && prior.Deploy.GitHub != nil && m.Deploy != nil && m.Deploy.GitHub != nil {
+		g := *m.Deploy.GitHub
+		g.Branch = prior.Deploy.GitHub.Branch
+		m.Deploy.GitHub = &g
+	}
+	mark := func(to, from *manifest.Run) {
+		if to == nil || from == nil {
+			return
+		}
+		to.Port = from.Port
+		for _, k := range []string{"MIDDLEWARE_STAGING", "MIDDLEWARE_PREVIEW"} {
+			if v, ok := from.Env[k]; ok {
+				if to.Env == nil {
+					to.Env = map[string]string{}
+				}
+				to.Env[k] = v
+			}
+		}
+	}
+	mark(m.Run, prior.Run)
+	for name, sv := range m.Services {
+		if p := prior.Services[name]; sv != nil && p != nil {
+			mark(sv.Run, p.Run)
+			sv.Domains = p.Domains
+		}
+	}
+	return true
 }
 
 // BuildOptions parametrise Build.

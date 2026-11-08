@@ -693,6 +693,33 @@ Only a beacon the browser marks as sent by a page of the same site
 (`Sec-Fetch-Site: same-origin`, or a matching `Origin`) is taken, at most
 3000 a minute per site.
 
+## Previews: `previews`
+
+```json
+"deploy": { "github": { "repository": "acme/shop", "branch": "main" } },
+"previews": { "branches": ["feature/*"], "keep": "168h" }
+```
+
+Each branch pushed to the site's repository (other than the one it
+deploys, and among `branches` when given: globs, empty is all) gets a
+preview: a test copy of the site, made from production as the panel's
+test copies are (files, databases, a password when production has none),
+named `<branch>-preview.<domain>` (`feature/login` →
+`feature-login-preview.shop.example`, one label so the domain's wildcard
+certificate covers it) and published when the house publishes names. It
+deploys its branch on every push to it, with production's build steps.
+Its `site.json` is the copy's, with `staging: {of, branch}`; the code sees
+`MIDDLEWARE_STAGING` and `MIDDLEWARE_PREVIEW=<branch>`. If the repository
+ships its own `site.json`, the copy keeps its mark, its password, its
+branch and its names over it.
+
+A preview goes when its branch is deleted (GitHub's push for the
+deletion), when nothing has been pushed to it for `keep` (a week by
+default; checked every hour), or when production no longer has
+`previews`. Removing it unpublishes its name. Owner only. Pull requests
+get their previews through their branch; the house does not comment on
+them.
+
 ## Canary deploys: `run.canary`
 
 ```json

@@ -208,3 +208,34 @@ func TestASignedPushDeploysTheSitesThatWantItAndNothingElse(t *testing.T) {
 		t.Fatal("the last status must be recorded:", err)
 	}
 }
+
+func TestEveryPushReachesThePreviewsADeletedBranchToo(t *testing.T) {
+	m, mgr, _ := newModule(t)
+	if _, err := mgr.Enable(context.Background(), Key, modules.Config{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := mgr.Config(Key)
+	var told []Push
+	m.Previews = func(p Push, actor string) []string {
+		told = append(told, p)
+		return []string{"x-preview.app.test"}
+	}
+	h := mgr.Handler()
+	send := func(body string) string {
+		req := httptest.NewRequest("POST", "/github/hook", strings.NewReader(body))
+		req.Header.Set("X-GitHub-Event", "push")
+		req.Header.Set("X-Hub-Signature-256", Sign(cfg["webhook_secret"], []byte(body)))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Body.String()
+	}
+	if out := send(`{"ref":"refs/heads/x","repository":{"full_name":"acme/app"},"pusher":{"name":"dev"}}`); !strings.Contains(out, "x-preview.app.test") {
+		t.Fatalf("a push: %s", out)
+	}
+	if out := send(`{"ref":"refs/heads/x","deleted":true,"repository":{"full_name":"acme/app"},"pusher":{"name":"dev"}}`); !strings.Contains(out, `"previews":["x-preview.app.test"]`) {
+		t.Fatalf("a deleted branch: %s", out)
+	}
+	if len(told) != 2 || told[0].Deleted || !told[1].Deleted {
+		t.Fatalf("told: %+v", told)
+	}
+}

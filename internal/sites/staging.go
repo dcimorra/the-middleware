@@ -200,6 +200,8 @@ func stagingManifest(prod *manifest.Manifest, domain, name string) (*manifest.Ma
 		notes = append(notes, "backups were not carried: the copy's databases are copies already")
 	}
 	mf.Backups = nil
+	// Previews are made from production; a copy of a copy is not one.
+	mf.Previews = nil
 	if mf.Title != "" {
 		mf.Title += " (staging)"
 	}

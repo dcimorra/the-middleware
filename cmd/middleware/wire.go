@@ -247,6 +247,11 @@ func buildWire(a *app.App) app.Hook {
 	}
 	if inboundHook != nil {
 		w.publisher = buildPublisher(a, set)
+	}
+	if set != nil {
+		wirePreviews(a, set.GitHub, srv.Sites(), w.publisher)
+	}
+	if inboundHook != nil {
 		srv.RegisterInbound(api.InboundOptions{Hook: inboundHook, DNS: cloudflareDNS{set: set}, Publisher: w.publisher})
 	}
 	srv.RegisterWAF(api.WAFOptions{WAF: theWAF, Traffic: theTraffic, Attack: theAttack})
