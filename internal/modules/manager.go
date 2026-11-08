@@ -130,6 +130,7 @@ func (m *Manager) list() ([]Info, []Module) {
 			Enabled:     m.st.data.Enabled[key],
 			Installed:   m.installed(mod),
 			Configured:  configured,
+			Shareable:   configured && !nodeBound(mod),
 			Needs:       needs,
 		})
 		mods = append(mods, mod)
@@ -448,6 +449,59 @@ func firstFailure(lines []Line) string {
 		}
 	}
 	return ""
+}
+
+// ErrNodeBound says the module's setup is this machine's alone.
+var ErrNodeBound = errors.New("belongs to this machine and cannot be propagated")
+
+// ErrNotConfigured says there is nothing stored to propagate.
+var ErrNotConfigured = errors.New("is not set up on this node")
+
+func nodeBound(mod Module) bool {
+	b, ok := mod.(NodeBound)
+	return ok && b.NodeBound()
+}
+
+// Shareable is what of key's stored config another node may take, in
+// clear, for propagating over the mesh: every value but the Local ones
+// and the empty ones. An empty value is left out rather than sent,
+// because a field sent empty clears it at the far end (prepare), and a
+// default model nobody chose here is no reason to undo one chosen there.
+func (m *Manager) Shareable(key string) (Config, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	mod, ok := m.mods[key]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrUnknown, key)
+	}
+	if nodeBound(mod) {
+		return nil, fmt.Errorf("%s %w", key, ErrNodeBound)
+	}
+	if err := m.st.reload(); err != nil {
+		return nil, err
+	}
+	stored, configured := m.st.data.Config[key]
+	if !configured {
+		return nil, fmt.Errorf("%s %w", key, ErrNotConfigured)
+	}
+	needs := mod.Needs()
+	cfg, err := m.st.decrypt(needs, stored)
+	if err != nil {
+		return nil, err
+	}
+	local := map[string]bool{}
+	for _, n := range needs {
+		if n.Local {
+			local[n.Key] = true
+		}
+	}
+	out := Config{}
+	for k, v := range cfg {
+		if v != "" && !local[k] {
+			out[k] = v
+		}
+	}
+	return out, nil
 }
 
 // Keys returns the registered keys, sorted, for the CLI's usage text.

@@ -27,6 +27,12 @@ type Need struct {
 	// itself (a session obtained by signing in) and the panel shows them
 	// in its own way.
 	Hidden bool `json:"hidden,omitempty"`
+	// Local needs belong to this machine (a tunnel only this server runs,
+	// a path to a binary here) and are never carried to another node by
+	// Manager.Shareable: a tunnel id copied to a second server splits the
+	// tunnel's traffic between the two, and a path is somebody else's
+	// file system. The node they reach keeps its own.
+	Local bool `json:"local,omitempty"`
 	// Options, when the module knows them, are the only sensible values:
 	// the panel offers a list instead of a box (an agent's models, which
 	// nobody should have to type from memory). A value stored before the
@@ -140,6 +146,13 @@ type BinariesFor interface {
 	BinariesFor(cfg Config) []string
 }
 
+// NodeBound is implemented by modules whose whole setup is this
+// machine's (the VPN: its keys, its port, its address): there is nothing
+// in them another node could use, so they are never propagated.
+type NodeBound interface {
+	NodeBound() bool
+}
+
 // Info is a module as the panel and the CLI list it.
 type Info struct {
 	Key         string `json:"key"`
@@ -150,8 +163,11 @@ type Info struct {
 	// Configured says the store holds a config for it, enabled or not: a
 	// disabled module with credentials kept is a different thing from one
 	// never set up, and the panel shows them differently.
-	Configured bool   `json:"configured"`
-	Needs      []Need `json:"needs"`
+	Configured bool `json:"configured"`
+	// Shareable says its credentials can be propagated to other nodes:
+	// configured, and not bound to this machine.
+	Shareable bool   `json:"shareable"`
+	Needs     []Need `json:"needs"`
 }
 
 var keyRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)

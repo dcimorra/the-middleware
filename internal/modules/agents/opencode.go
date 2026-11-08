@@ -74,7 +74,7 @@ func NewOpenCode(reg *agent.Registry, home string) *OpenCode {
 		bin:  "opencode",
 		needs: []modules.Need{
 			{Key: "model", Label: "Default model", Optional: true, Help: "Offered first in the chat, from the providers connected. Empty: the first one listed."},
-			{Key: "bin", Label: "Binary", Optional: true, Help: "Path to the opencode executable. Empty: the one this installation keeps under modules/node, installed and updated for you."},
+			{Key: "bin", Label: "Binary", Optional: true, Help: "Path to the opencode executable. Empty: the one this installation keeps under modules/node, installed and updated for you.", Local: true},
 			{Key: "providers", Secret: true, Optional: true, Hidden: true},
 		},
 		reg:       reg,

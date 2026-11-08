@@ -58,7 +58,7 @@ func (m *Module) Needs() []modules.Need {
 	return []modules.Need{
 		{Key: "token", Label: "API token", Secret: true, Help: "An API token with Zone:DNS:Edit on the zones to manage, and Account:Cloudflare Tunnel:Edit if a tunnel is used. Created at dash.cloudflare.com/profile/api-tokens."},
 		{Key: "account_id", Label: "Account id", Optional: true, Help: "Found when empty, if the token sees exactly one account."},
-		{Key: "tunnel_id", Label: "Tunnel id", Optional: true, Help: "The tunnel this server runs, to publish through it. Empty is DNS only: sites are reached on 80 and 443. Never taken by itself: a tunnel of another server would split its traffic with this one."},
+		{Key: "tunnel_id", Label: "Tunnel id", Optional: true, Help: "The tunnel this server runs, to publish through it. Empty is DNS only: sites are reached on 80 and 443. Never taken by itself: a tunnel of another server would split its traffic with this one.", Local: true},
 	}
 }
 

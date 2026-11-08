@@ -26,6 +26,20 @@ middleware modules verify cloudflare      # same checks, saves nothing
 middleware modules enable cloudflare      # asks for what it needs
 ```
 
+### Propagating to other nodes
+
+In a network, a module set up on one node can be carried to the others
+from its card: **Propagate to nodes**, every node ticked by default. The
+credentials travel only through the mesh (WireGuard, with the network's
+secret), and each node takes them through its own `enable`: it verifies
+them, installs what it needs for its own architecture, enables the module
+and seals them with its own key. A node that refuses them keeps nothing
+and says why on the card. What belongs to the machine stays behind and the
+far node keeps its own: Cloudflare's tunnel id, an agent's binary path,
+and the whole VPN (its keys and port are this server's), which is never
+propagated. Values empty here are not sent, so they do not clear one set
+there. Owner only; `POST /api/v1/modules/{key}/propagate`.
+
 ## inbound-tunnel
 
 A reverse tunnel pushes traffic to the loopback listener. No public IP, no

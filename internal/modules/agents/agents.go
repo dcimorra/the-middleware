@@ -89,7 +89,7 @@ func Claude(reg *agent.Registry) *Module {
 		needs: []modules.Need{
 			{Key: "model", Label: "Default model", Optional: true, Help: "Offered first in the panel. Empty: the first one listed."},
 			{Key: "api_key", Label: "API key (instead of a subscription)", Secret: true, Optional: true, Help: "Passed to the CLI as ANTHROPIC_API_KEY. Leave empty and sign in below to use your subscription."},
-			{Key: "bin", Label: "Binary", Optional: true, Help: "Path to the claude executable. Empty: the one this installation keeps under modules/node, installed and updated for you."},
+			{Key: "bin", Label: "Binary", Optional: true, Help: "Path to the claude executable. Empty: the one this installation keeps under modules/node, installed and updated for you.", Local: true},
 			{Key: "oauth_token", Secret: true, Optional: true, Hidden: true},
 			{Key: "oauth_since", Optional: true, Hidden: true},
 		},
@@ -122,7 +122,7 @@ func Agy(reg *agent.Registry, home string) *Module {
 		bin:  "agy",
 		needs: []modules.Need{
 			{Key: "model", Label: "Default model", Optional: true, Help: "Offered first in the panel. Empty: the first one listed."},
-			{Key: "bin", Label: "Binary", Optional: true, Help: "Path to the agy executable. Empty: the one this installation keeps under modules/node, downloaded from Google and updated for you."},
+			{Key: "bin", Label: "Binary", Optional: true, Help: "Path to the agy executable. Empty: the one this installation keeps under modules/node, downloaded from Google and updated for you.", Local: true},
 			{Key: "oauth_token", Secret: true, Optional: true, Hidden: true},
 			{Key: "oauth_since", Optional: true, Hidden: true},
 		},

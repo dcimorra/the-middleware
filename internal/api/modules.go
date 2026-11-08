@@ -3,12 +3,16 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/dcimorra/the-middleware/internal/auth"
+	"github.com/dcimorra/the-middleware/internal/events"
 	"github.com/dcimorra/the-middleware/internal/modules"
+	"github.com/dcimorra/the-middleware/internal/nodes"
 )
 
 // ModulesOptions wire the modules section.
@@ -113,6 +117,9 @@ func (s *Server) RegisterModules(o ModulesOptions) {
 		}
 		return OK, nil
 	})
+	s.Handle("POST", p+"/{key}/propagate", "Carry a module's credentials to other nodes of the network (all of them, or those named), each verifying, installing and enabling it as its own panel would", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return s.modulesPropagate(r, mgr, o.EnableTimeout)
+	})
 	dispatcher := http.StripPrefix(p, moduleRoutes(mgr))
 	s.Mount(p, dispatcher)
 	for _, pub := range o.Public {
@@ -131,6 +138,123 @@ func (s *Server) RegisterModules(o ModulesOptions) {
 		})
 		s.Public(method, pattern)
 	}
+}
+
+// PropagateResult is what one node said to a propagation.
+type PropagateResult struct {
+	ID    string         `json:"id"`
+	Name  string         `json:"name"`
+	OK    bool           `json:"ok"`
+	Error string         `json:"error,omitempty"`
+	Lines []modules.Line `json:"lines,omitempty"`
+}
+
+// modulesPropagate sends key's stored credentials to other nodes, which
+// take them through their own POST /modules/{key}/enable: verify, install
+// for their own architecture, enable, and only then save, sealed with
+// their own key. Nothing here writes to another node's store directly,
+// so a token that does not work there is refused there, with its lines,
+// as if it had been typed into that node's panel.
+//
+// The values travel only through the mesh (WireGuard, with the network's
+// secret as the bearer), never through a public door; Local values (a
+// tunnel id, a binary's path) stay behind and the far node keeps its own.
+// A delegate never reaches this: /modules is not on any grant's list,
+// and it is refused here as well so no future list opens it by accident.
+// Another node's panel may ask it (the panel working on this node goes
+// through the mesh): a node can already do as much on any site here.
+func (s *Server) modulesPropagate(r *http.Request, mgr *modules.Manager, timeout time.Duration) (any, error) {
+	if c := auth.FromContext(r.Context()); c.Delegate() {
+		return nil, Errorf(http.StatusForbidden, "only the owner may propagate a module's credentials")
+	}
+	key, err := moduleKey(r)
+	if err != nil {
+		return nil, err
+	}
+	m, err := s.meshOf()
+	if err != nil {
+		return nil, err
+	}
+	var body struct {
+		// Nodes are the ids to send to; empty is every other node.
+		Nodes []string `json:"nodes"`
+	}
+	if r.ContentLength != 0 && r.Body != nil {
+		if err := ReadJSON(r, &body); err != nil {
+			return nil, err
+		}
+	}
+	cfg, err := mgr.Shareable(key)
+	switch {
+	case errors.Is(err, modules.ErrUnknown):
+		return nil, Errorf(http.StatusNotFound, "%v", err)
+	case errors.Is(err, modules.ErrNodeBound), errors.Is(err, modules.ErrNotConfigured):
+		return nil, Errorf(http.StatusConflict, "%v", err)
+	case err != nil:
+		return nil, err
+	}
+	members := m.Members()
+	var targets []nodes.Member
+	if len(body.Nodes) == 0 {
+		targets = members
+	} else {
+		self := m.Self().ID
+		for _, id := range body.Nodes {
+			if id == self {
+				continue
+			}
+			x, ok := m.Member(id)
+			if !ok {
+				return nil, Errorf(http.StatusNotFound, "no node %q in this network", id)
+			}
+			targets = append(targets, x)
+		}
+	}
+	if len(targets) == 0 {
+		return nil, Errorf(http.StatusConflict, "there is no other node to propagate to")
+	}
+	// Like enable, not bound to the tab: an install on a slow node goes on
+	// when the operator closes it. A little longer than the far node's own
+	// bound, so its answer, failure included, is what is reported.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+30*time.Second)
+	defer cancel()
+	out := make([]PropagateResult, len(targets))
+	var wg sync.WaitGroup
+	for i, x := range targets {
+		wg.Add(1)
+		go func(i int, x nodes.Member) {
+			defer wg.Done()
+			res := PropagateResult{ID: x.ID, Name: x.Name}
+			var ans struct {
+				OK    bool           `json:"ok"`
+				Lines []modules.Line `json:"lines"`
+				Error string         `json:"error"`
+			}
+			if err := m.Call(ctx, x, "POST", "/modules/"+key+"/enable", map[string]any{"config": cfg}, &ans); err != nil {
+				res.Error = err.Error()
+			} else {
+				res.OK, res.Lines, res.Error = ans.OK, ans.Lines, ans.Error
+			}
+			out[i] = res
+		}(i, x)
+	}
+	wg.Wait()
+	var to, failed []string
+	for _, res := range out {
+		if res.OK {
+			to = append(to, res.Name)
+		} else {
+			failed = append(failed, res.Name)
+		}
+	}
+	ev := events.Event{Type: "module.propagated", Subject: key, Actor: "operator", Message: fmt.Sprintf("credentials propagated to %d of %d nodes", len(to), len(out)), Data: map[string]any{"to": to, "failed": failed}}
+	if len(failed) > 0 {
+		ev.Level = "warn"
+	}
+	if s.opts.Bus != nil {
+		s.opts.Bus.Emit(ev)
+	}
+	return map[string]any{"ok": len(failed) == 0, "results": out}, nil
 }
 
 // moduleRoutes dispatches /<key>/<rest> to the module's routes. Routes of

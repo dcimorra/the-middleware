@@ -23,6 +23,10 @@ type VPNAdapter struct {
 // VPNModule wraps v.
 func VPNModule(v *vpn.VPN) *VPNAdapter { return &VPNAdapter{VPN: v} }
 
+// NodeBound implements NodeBound: the VPN's keys, port and subnet are this
+// server's; another node copying them would answer as this one.
+func (a *VPNAdapter) NodeBound() bool { return true }
+
 // Needs converts the vpn package's needs. A need with a default is
 // optional here: the vpn package applies the default itself when the
 // value is empty.

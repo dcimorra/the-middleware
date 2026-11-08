@@ -388,11 +388,12 @@ stays the operator's.
 
 | method | path | body / result |
 | --- | --- | --- |
-| GET | `/modules` | → `[{key, name, description, enabled, installed, configured, needs: [{key, label, secret, optional, hidden, help}]}]` (a hidden need is filled by the module, not typed) |
+| GET | `/modules` | → `[{key, name, description, enabled, installed, configured, shareable, needs: [{key, label, secret, optional, hidden, local, help}]}]` (a hidden need is filled by the module, not typed; a local one is the machine's own and never propagated) |
 | POST | `/modules/{key}/verify` | `{config}` → `{ok, lines: [{status: ok|skip|fail, text}]}`; nothing is written |
 | POST | `/modules/{key}/enable` | `{config}` → verifies, installs, enables, saves → `{ok, lines, progress: [text]}`; a failed probe answers 200 with `ok: false` and the lines, a failed install 502 |
 | POST | `/modules/{key}/disable` | → `{ok}` (keeps credentials) |
 | DELETE | `/modules/{key}/credentials` | → `{ok}` (disables and forgets) |
+| POST | `/modules/{key}/propagate` | `{nodes: [id]}` (empty: every other node) → `{ok, results: [{id, name, ok, error, lines}]}`; sends the stored credentials through the mesh to each node's own `enable`, leaving out the machine's own values (`local` needs); 409 for a module never set up or bound to this machine (the VPN). Owner only |
 | POST | `/modules/github/hook` | GitHub's push webhook: public, checked by its signature |
 | GET | `/modules/{key}` | the module's own status when it is enabled and has one (the VPN), otherwise its entry of the list |
 
