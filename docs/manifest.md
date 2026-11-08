@@ -658,6 +658,41 @@ The redirect says nothing about later visits; for that, add
 `Strict-Transport-Security` to `headers` once https works on every name
 of the site.
 
+## Web Vitals: `web_vitals`
+
+```json
+"web_vitals": true
+```
+
+Off unless turned on (the Visits tab of the site page has the switch).
+On, the house adds `<script src="/.well-known/middleware/vitals.js" defer>`
+before `</head>` of every HTML page the site answers with 200 to a
+browser opening it, and answers that path and the beacon
+(`POST /.well-known/middleware/vitals`) itself. The script measures LCP,
+INP (the longest interaction), CLS, FCP and TTFB with the browser's own
+`PerformanceObserver` and sends them once, when the page is hidden.
+
+What is kept, in `data/webvitals/<domain>/<YYYY-MM>.json`, is a histogram
+per metric per day and device (mobile or desktop) and, for the fifty pages
+of the month measured first, per page: no address, no agent string, no
+query string. The report is the 75th percentile (what Google ranks by)
+with the share of good and poor against web.dev's thresholds.
+
+What it changes in the page's answer:
+
+- the site is asked for the page uncompressed (to find `</head>`) and the
+  house compresses it with gzip when the browser takes it; a site that
+  compresses anyway keeps its page as it is, without the script;
+- `Content-Length` goes and a strong `ETag` becomes weak;
+- a page that flushes before `</head>` (streaming SSR) is not held back:
+  it goes out without the script;
+- a `Content-Security-Policy` needs `'self'` in `script-src` and
+  `connect-src` for the script to run and report.
+
+Only a beacon the browser marks as sent by a page of the same site
+(`Sec-Fetch-Site: same-origin`, or a matching `Origin`) is taken, at most
+3000 a minute per site.
+
 ## Move
 
 ```json

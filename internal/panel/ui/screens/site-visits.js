@@ -7,6 +7,9 @@ import { h, svg, clear } from "../lib/dom.js";
 import { t, currentLang } from "../lib/i18n.js";
 import { api, enc, qs } from "../lib/api.js";
 import { table, cell, empty, errorBox, loading } from "../components/page.js";
+import { toggle } from "../components/dialog.js";
+import { toast, toastError } from "../components/toast.js";
+import { store } from "../lib/store.js";
 
 const BROWSERS = { chrome: "Chrome", safari: "Safari", firefox: "Firefox", edge: "Edge", opera: "Opera", samsung: "Samsung Internet", ie: "Internet Explorer" };
 const SYSTEMS = { windows: "Windows", macos: "macOS", ios: "iOS", android: "Android", linux: "Linux", chromeos: "ChromeOS" };
@@ -19,6 +22,8 @@ export function visitsTab(domain) {
       h("div", { class: "log-bar" }, h("h2", { class: "grow" }, t("visits.title")), period),
       h("p", { class: "small muted" }, t("visits.hint"))),
     body);
+  const vitals = h("div", { class: "cards" });
+  el.append(vitals);
 
   let names = null;
   try { names = new Intl.DisplayNames([currentLang()], { type: "region" }); } catch { names = null; }
@@ -40,6 +45,7 @@ export function visitsTab(domain) {
 
   async function load() {
     const [kind, val] = (period.value || "days:30").split(":");
+    loadVitals(kind === "month" ? { month: val } : { days: val });
     let rep;
     try {
       rep = await api.get(`/sites/${enc(domain)}/visits` + qs(kind === "month" ? { month: val } : { days: val }));
@@ -103,6 +109,60 @@ export function visitsTab(domain) {
             a.addEventListener("click", (e) => { e.preventDefault(); period.value = "month:" + m.month; load(); });
             return h("tr", null, cell(a, null, "primary"), cell(fmt(m.unique), t("visits.unique"), "num mono"), cell(fmt(m.visits), t("visits.visits"), "num mono"), cell(fmt(m.pageviews), t("visits.pageviews"), "num mono"));
           }), { responsive: true }).el));
+    }
+  }
+
+  // Web Vitals: off until turned on here, because it changes every page
+  // the site serves (a script in its head). Measures of a site that had
+  // it on and turned it off are still shown.
+  async function loadVitals(query) {
+    const on = Boolean((store.site(domain) && store.site(domain).manifest || {}).web_vitals);
+    const sw = toggle(t("webvitals.on"), { checked: on });
+    sw.input.addEventListener("change", async () => {
+      sw.input.disabled = true;
+      try {
+        await api.patch(`/sites/${enc(domain)}/manifest`, { web_vitals: sw.input.checked ? true : null });
+        toast(sw.input.checked ? t("webvitals.turnedOn") : t("webvitals.turnedOff"), "ok");
+      } catch (e) { sw.input.checked = !sw.input.checked; toastError(e); }
+      sw.input.disabled = false;
+    });
+    const card = h("div", { class: "card" },
+      h("div", { class: "log-bar" }, h("h2", { class: "grow" }, t("webvitals.title")), sw.el),
+      h("p", { class: "small muted" }, t("webvitals.hint")));
+    clear(vitals).append(card);
+    let rep;
+    try { rep = await api.get(`/sites/${enc(domain)}/webvitals` + qs(query)); } catch { return; }
+    const metrics = (rep.metrics || []).filter((m) => m.n);
+    if (!metrics.length) {
+      if (on) card.append(h("p", { class: "small muted" }, t("webvitals.none")));
+      return;
+    }
+    const fmtV = (m, v) => (m === "cls" ? (v / 1000).toLocaleString(currentLang(), { maximumFractionDigits: 3 }) : (v >= 1000 ? (v / 1000).toLocaleString(currentLang(), { maximumFractionDigits: 2 }) + " s" : v + " ms"));
+    const CLASS = { good: "ok", "needs-improvement": "warn", poor: "bad" };
+    const pct = (f) => Math.round(100 * (f || 0)) + "%";
+    const tile = (s) => h("div", { class: "stat", title: t("webvitals.tileHint", { n: s.n, good: pct(s.good), poor: pct(s.poor) }) },
+      h("div", { class: "label" }, t("webvitals.m." + s.metric)),
+      h("div", { class: "value" }, fmtV(s.metric, s.p75), " ", h("span", { class: "badge " + CLASS[s.rating] }, t("webvitals.r." + s.rating))));
+    card.append(h("div", { class: "stats site-stats" }, ...metrics.map(tile)));
+    const devices = Object.entries(rep.devices || {}).filter(([, list]) => list.some((s) => s.n));
+    if (devices.length > 1) {
+      card.append(h("h3", null, t("webvitals.byDevice")),
+        table([{ label: "" }, ...metrics.map((m) => ({ label: t("webvitals.short." + m.metric), class: "num" }))],
+          devices.map(([d, list]) => h("tr", null, cell(t("visits.device." + d), null, "primary"),
+            ...metrics.map((m) => { const s = list.find((x) => x.metric === m.metric) || {}; return cell(s.n ? fmtV(m.metric, s.p75) : "—", t("webvitals.short." + m.metric), "num mono"); }))),
+          { responsive: true }).el);
+    }
+    const paths = rep.paths || [];
+    if (paths.length) {
+      const keys = metrics.map((m) => m.metric).filter((k) => k !== "fcp");
+      card.append(h("h3", null, t("webvitals.pages")),
+        table([{ label: "" }, ...keys.map((k) => ({ label: t("webvitals.short." + k), class: "num" })), { label: t("webvitals.samples"), class: "num" }],
+          paths.map((p) => {
+            const by = Object.fromEntries((p.metrics || []).map((s) => [s.metric, s]));
+            return h("tr", null, cell(h("code", { class: "small" }, p.path), null, "primary"),
+              ...keys.map((k) => { const s = by[k] || {}; return cell(s.n ? h("span", { class: "badge " + CLASS[s.rating] }, fmtV(k, s.p75)) : "—", t("webvitals.short." + k), "num mono"); }),
+              cell(String((by.lcp || {}).n || 0), t("webvitals.samples"), "num mono"));
+          }), { responsive: true }).el);
     }
   }
 

@@ -265,6 +265,9 @@ func buildWire(a *app.App) app.Hook {
 	if theVisits != nil {
 		srv.RegisterVisits(theVisits)
 	}
+	if theWebVitals != nil {
+		srv.RegisterWebVitals(theWebVitals)
+	}
 	// An automatic update waits while a site moves between nodes: the
 	// restart that ends it would cut the move.
 	w.updater = buildUpdater(a, srv.MovesRunning)
