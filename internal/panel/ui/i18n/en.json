@@ -2341,5 +2341,13 @@
   "webvitals.r.poor": "poor",
   "webvitals.byDevice": "By device",
   "webvitals.pages": "Pages, slowest first",
-  "webvitals.samples": "Measures"
+  "webvitals.samples": "Measures",
+  "status.title": "Status page",
+  "status.on": "Public",
+  "status.hint": "A public page with the site's state, its uptime over 90 days and its outages, served by the house in front of the site, so it answers when the site does not. Off by default.",
+  "status.turnedOn": "Status page on at {path}",
+  "status.turnedOff": "Status page off",
+  "status.uptime": "Uptime: {d1} in 24 h · {d30} in 30 days · {d90} in 90 days",
+  "status.lastOutage": "Last outage: {when} ({reason})",
+  "status.outageNow": "Down since {when} ({reason})"
 }

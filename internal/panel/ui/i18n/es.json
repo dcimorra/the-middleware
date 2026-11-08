@@ -2341,5 +2341,13 @@
   "webvitals.r.poor": "mal",
   "webvitals.byDevice": "Por dispositivo",
   "webvitals.pages": "Páginas, de más lenta a más rápida",
-  "webvitals.samples": "Medidas"
+  "webvitals.samples": "Medidas",
+  "status.title": "Página de estado",
+  "status.on": "Pública",
+  "status.hint": "Una página pública con el estado del sitio, su disponibilidad en 90 días y sus caídas, servida por la casa delante del sitio, así que responde aunque el sitio no lo haga. Desactivada por defecto.",
+  "status.turnedOn": "Página de estado activada en {path}",
+  "status.turnedOff": "Página de estado desactivada",
+  "status.uptime": "Disponibilidad: {d1} en 24 h · {d30} en 30 días · {d90} en 90 días",
+  "status.lastOutage": "Última caída: {when} ({reason})",
+  "status.outageNow": "Caído desde {when} ({reason})"
 }

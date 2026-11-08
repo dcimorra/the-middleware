@@ -693,6 +693,32 @@ Only a beacon the browser marks as sent by a page of the same site
 (`Sec-Fetch-Site: same-origin`, or a matching `Origin`) is taken, at most
 3000 a minute per site.
 
+## Status page: `status_page`
+
+```json
+"status_page": { "path": "/status", "title": "Shop" }
+```
+
+A public page with the site's state now, its uptime over 24 hours and 7,
+30 and 90 days, a bar per day and its outages. The house answers `path`
+(`/status` when left out) itself, in front of the site, so it still
+answers when the site does not, which is when people open it. It sits
+inside the doors: a site behind a password has its page behind it too.
+`?format=json` (or `Accept: application/json`) gives the same as JSON,
+with `Access-Control-Allow-Origin: *` for a badge elsewhere.
+
+The house counts every site, page or not, once a minute: up when its
+health check passes (a static site whenever the house answers),
+down when it fails or the site cannot start, maintenance when it is held,
+stopped or disabled. Maintenance is shown and not counted against the
+uptime. An outage is two minutes down in a row or more: one bad minute is
+a restart nobody saw. The page shows no reasons (they are the house's
+error messages); `GET /api/v1/sites/<domain>/uptime` has them.
+
+It is the house's view, not a probe from outside: a whole machine down
+is the one thing a page served by that machine cannot say, and its
+footer says so.
+
 ## Move
 
 ```json
