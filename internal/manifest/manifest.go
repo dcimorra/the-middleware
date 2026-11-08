@@ -159,9 +159,12 @@ type Run struct {
 	// Port is written only when something outside the house already knows
 	// it. A site with a written port cannot hand over (two generations
 	// cannot share it), so a change restarts it instead.
-	Port    int      `json:"port,omitempty"`
-	Health  *Health  `json:"health,omitempty"`
-	Drain   Duration `json:"drain,omitempty"`
+	Port   int      `json:"port,omitempty"`
+	Health *Health  `json:"health,omitempty"`
+	Drain  Duration `json:"drain,omitempty"`
+	// Canary hands a new generation part of the traffic first, and the
+	// rest only if it holds up (canary.go).
+	Canary  *Canary  `json:"canary,omitempty"`
 	Restart *Restart `json:"restart,omitempty"`
 	Runtime string   `json:"runtime,omitempty"` // "process" (default) | "docker"
 	Docker  *Docker  `json:"docker,omitempty"`
@@ -821,6 +824,9 @@ func validRun(field string, r *Run, inService bool) error {
 	}
 	if r.Port < 0 || r.Port > 65535 {
 		return fmt.Errorf("%s.port: %d is not a port", field, r.Port)
+	}
+	if err := r.Canary.valid(field+".canary", r.Port, inService); err != nil {
+		return err
 	}
 	if d := r.Docker; d != nil {
 		if d.Port < 0 || d.Port > 65535 {

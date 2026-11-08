@@ -57,7 +57,10 @@ type Spec struct {
 	// Fingerprint is what the files a built image comes from look like
 	// now (docker.watch); a change is a new generation.
 	Fingerprint string
-	Revision    string
+	// Canary is how a new generation takes over (run.canary); nil hands
+	// all the traffic over at once.
+	Canary   *Canary
+	Revision string
 }
 
 // Rehash recomputes the revision after the engine added to the spec.
@@ -135,6 +138,9 @@ func resolveRun(domain, siteDir, node string, run *Run, extra map[string]string)
 	if m.Run.Restart != nil {
 		s.Restart = *m.Run.Restart
 	}
+	// Not in the revision: how a generation is brought in is not what
+	// it is, and turning the canary on must not start one.
+	s.Canary = m.Run.Canary
 	s.Revision = s.hash()
 	return s, nil
 }

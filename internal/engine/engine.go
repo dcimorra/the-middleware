@@ -82,9 +82,12 @@ type Site struct {
 	// manifestSum is the last manifest kept in the history (history.go).
 	manifestSum [32]byte
 	handing     bool
-	failures    int
-	nextStart   time.Time
-	lastErr     string
+	// canary is the new generation serving part of the traffic while the
+	// handover waits on it (canary.go).
+	canary    *canaryRun
+	failures  int
+	nextStart time.Time
+	lastErr   string
 }
 
 // Snapshot is what the proxy and the panel read: immutable, copied under
@@ -108,6 +111,9 @@ type Snapshot struct {
 	Checks   []Check
 	// Failures is how many starts in a row have failed.
 	Failures int
+	// Canary is a new generation serving part of the traffic, until it
+	// takes over or is rolled back.
+	Canary *CanarySnapshot
 	// Missing is what the site needs (manifest `needs`) that is not
 	// available now, each with why.
 	Missing []string
@@ -259,6 +265,9 @@ func (e *Engine) Restart(ctx context.Context, domain string) error {
 	}
 	s.handing = true
 	spec := s.Spec
+	// A restart asked for is the operator trying again: a generation a
+	// canary turned away gets its chance.
+	e.clearCanaryFailure(domain)
 	// The engine's own context, not the caller's: the restart was asked
 	// by a request, which ends as soon as it answers, and a handover under
 	// it was cancelled halfway ("docker run: context canceled", twice in a
@@ -284,6 +293,9 @@ func (e *Engine) snapshot(s *Site) Snapshot {
 		sn.Port = s.Instance.Port()
 		sn.Revision = s.Instance.Revision()
 		sn.Alive = true
+	}
+	if s.canary != nil {
+		sn.Canary = s.canary.snapshot()
 	}
 	if len(s.Workers) > 0 {
 		sn.Workers = map[string]WorkerSnapshot{}
@@ -520,6 +532,14 @@ func (e *Engine) reconcile(ctx context.Context, domain, dir string) {
 	if s.Instance == nil && e.waitForNeeds(s) {
 		return
 	}
+	if s.Instance != nil && spec.Canary != nil {
+		// The generation a canary rolled back is not started again until
+		// something changes (a new revision) or the operator restarts.
+		if f, ok := e.CanaryFailed(domain); ok && f.Revision == spec.Revision {
+			s.Spec = spec
+			return
+		}
+	}
 	s.handing = true
 	s.Spec = spec
 	actor := "engine"
@@ -606,6 +626,28 @@ func (e *Engine) handover(ctx context.Context, s *Site, spec *manifest.Spec, act
 		}
 		e.fail(s, fmt.Errorf("%w (last lines of the log: %s)%s", err, tail(logFile, 5), archHint(logFile)))
 		return
+	}
+	if handing && spec.Canary != nil && spec.Port == 0 {
+		promote, cancelled, why := e.runCanary(ctx, s, inst, spec)
+		if !promote {
+			_ = inst.Stop(stopCtx, 5*time.Second)
+			e.opts.Ports.Release(port)
+			e.mu.Lock()
+			s.handing = false
+			if !cancelled {
+				s.lastErr = "canary rolled back: " + why
+			}
+			e.mu.Unlock()
+			if cancelled {
+				e.emit("handover.cancelled", domain, "", "the supervisor is stopping; the canary was stopped and the serving generation kept", map[string]any{"revision": spec.Revision})
+				return
+			}
+			_ = fsx.WriteJSON(e.canaryPath(domain), CanaryFailure{Revision: spec.Revision, At: time.Now(), Reason: why}, 0o644)
+			e.emit("canary.rolledback", domain, "warn", why, map[string]any{"revision": spec.Revision})
+			return
+		}
+		e.clearCanaryFailure(domain)
+		e.emit("canary.promoted", domain, "", why, map[string]any{"revision": spec.Revision})
 	}
 	e.mu.Lock()
 	if e.sites[domain] != s || s.Mode != manifest.ModeRun {

@@ -2349,5 +2349,19 @@
   "status.turnedOff": "Página de estado desactivada",
   "status.uptime": "Disponibilidad: {d1} en 24 h · {d30} en 30 días · {d90} en 90 días",
   "status.lastOutage": "Última caída: {when} ({reason})",
-  "status.outageNow": "Caído desde {when} ({reason})"
+  "status.outageNow": "Caído desde {when} ({reason})",
+  "canary.title": "Despliegues canary",
+  "canary.on": "Activado",
+  "canary.hint": "Una versión nueva recibe primero una parte de los visitantes; si responde con más errores que la actual, se para y todos siguen en la actual. Si no, toma el relevo.",
+  "canary.percent": "Parte de visitantes",
+  "canary.minutes": "Minutos",
+  "canary.share": "Enviar",
+  "canary.during": "de los visitantes a una versión nueva durante",
+  "canary.saved": "Despliegues canary guardados",
+  "canary.off": "Despliegues canary desactivados: las versiones nuevas toman el relevo al momento",
+  "canary.running": "Una versión nueva atiende al {percent}% de los visitantes hasta {until}.",
+  "canary.sides": "Nueva: {n} peticiones, {e} errores · Actual: {sn} peticiones, {se} errores",
+  "canary.promote": "Promocionar ya",
+  "canary.rollback": "Revertir",
+  "canary.failed": "La última versión nueva se revirtió {when}: {reason}. Un reinicio la vuelve a probar."
 }

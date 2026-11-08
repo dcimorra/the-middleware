@@ -2524,3 +2524,4 @@ details.site-env[open] > summary { margin-bottom: 10px; }
    journal are text to read whole, wrapped, never a line off the screen. */
 pre.pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; margin: .5rem 0 0; }
 .set-card textarea.mono { width: 100%; box-sizing: border-box; }
+.canary-num { width: 5.5em; display: inline-block; }
