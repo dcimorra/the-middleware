@@ -38,6 +38,8 @@ const Usage = `  setup        print a one-time code to create the operator in th
                the site's database copies, as its manifest's backups describe them
   site security <domain> [seen | blocks | catalog]
                who calls at the site, what its security rules refused, and what the rules may name
+  site staging <domain> [status | create [--name n] | promote | undo | refresh]
+               test copies: make one with the site's data, promote it back, undo, copy again
   events       recent events (-f to follow)
   system       version, uptime, load, memory, disk
   token        add | list | rm — API tokens for scripts
@@ -313,6 +315,7 @@ func (e *Env) site(args []string) error {
 		service  = fs.String("service", "", "restart, logs, show: one of the site's services")
 		build    = fs.Bool("build", false, "logs: the service's image build instead of its output")
 		noSafety = fs.Bool("no-safety-copy", false, "backups restore: skip the copy of the database as it is now")
+		name     = fs.String("name", "", "staging create: the copy's domain (default staging.<domain>)")
 	)
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -608,6 +611,11 @@ func (e *Env) site(args []string) error {
 			return err
 		}
 		return e.siteSecurity(c, cl, domain, pos[1:])
+	case "staging":
+		if err := need(); err != nil {
+			return err
+		}
+		return e.siteStaging(c, cl, domain, pos[1:], *name, *publish, *door)
 	case "logs", "log":
 		if err := need(); err != nil {
 			return err
