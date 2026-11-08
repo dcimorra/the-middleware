@@ -73,8 +73,8 @@ func ServiceSpec(site, dir, name string, m *Manifest, addr ServiceAddr) (*Spec, 
 		if !ok {
 			return nil, fmt.Errorf("services.%s: waiting for services.%s to have a port", name, target)
 		}
-		extra["SERVICE_"+ref+"_HOST"] = host
-		extra["SERVICE_"+ref+"_PORT"] = strconv.Itoa(port)
+		extra[ServiceVar(ref, "HOST")] = host
+		extra[ServiceVar(ref, "PORT")] = strconv.Itoa(port)
 	}
 	spec, err := resolveRun(site, dir, m.Node, sv.Run, extra)
 	if err != nil {

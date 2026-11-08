@@ -12,7 +12,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"math/big"
@@ -450,14 +449,4 @@ func (s *Store) IsFallback(c *tls.Certificate) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return c != nil && c == s.fallback
-}
-
-// ParseChain returns the leaf of a PEM chain; shared by the issuer and the
-// CLI so expiry is read the same way everywhere.
-func ParseChain(chainPEM []byte) (*x509.Certificate, error) {
-	block, _ := pem.Decode(chainPEM)
-	if block == nil || block.Type != "CERTIFICATE" {
-		return nil, errors.New("certs: no certificate in chain")
-	}
-	return x509.ParseCertificate(block.Bytes)
 }

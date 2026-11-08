@@ -207,6 +207,3 @@ func ReadSiteSettings(siteDir string) SiteSettings {
 	}
 	return raw.Agent
 }
-
-// MonthlyCap is ReadSiteSettings(siteDir).MonthlyCapUSD.
-func MonthlyCap(siteDir string) float64 { return ReadSiteSettings(siteDir).MonthlyCapUSD }

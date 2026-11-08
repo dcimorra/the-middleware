@@ -45,8 +45,6 @@ type List struct {
 	Deny  []string `json:"deny,omitempty"`
 }
 
-func (l *List) empty() bool { return l == nil || (len(l.Allow) == 0 && len(l.Deny) == 0) }
-
 // Bots is what to do with whatever declares itself a robot.
 type Bots struct {
 	// Deny are the families kept out.

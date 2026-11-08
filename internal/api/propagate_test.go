@@ -18,7 +18,6 @@ type keyModule struct {
 	mu      sync.Mutex
 	key     string
 	refuse  string // a token this node's verify fails
-	bound   bool
 	enabled bool
 }
 

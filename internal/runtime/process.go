@@ -58,7 +58,6 @@ type procInstance struct {
 	// promote lifts a trial leaf's ceiling; nil out of trial.
 	promote func()
 	done    chan error
-	once    sync.Once
 }
 
 // Start implements Runtime. The child gets its own process group so Stop

@@ -184,15 +184,6 @@ func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	}
 }
 
-// ListenAndServe is Listen followed by Serve.
-func (s *Server) ListenAndServe(ctx context.Context) error {
-	ln, err := s.Listen()
-	if err != nil {
-		return err
-	}
-	return s.Serve(ctx, ln)
-}
-
 func (s *Server) serveConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 	peer, err := s.Credentials(conn)

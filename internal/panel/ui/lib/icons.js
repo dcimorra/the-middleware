@@ -94,5 +94,3 @@ export function icon(name, opts = {}) {
   }, svg("path", { d }));
   return el;
 }
-
-export const ICONS = Object.keys(PATHS);
