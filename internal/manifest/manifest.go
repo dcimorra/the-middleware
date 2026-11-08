@@ -128,6 +128,9 @@ type Manifest struct {
 	// Limits are the site's cgroup budget, for every process-runtime
 	// piece of it together (limits.go).
 	Limits *Limits `json:"limits,omitempty"`
+	// Staging marks this site as the test copy of a production site,
+	// written by the house when the copy is made (staging.go).
+	Staging *Staging `json:"staging,omitempty"`
 }
 
 // Static serves files.
@@ -778,6 +781,9 @@ func (m *Manifest) Validate() error {
 		return errors.New("deploy.github.repository: want owner/name")
 	}
 	if err := validRepositories(m.Repositories); err != nil {
+		return err
+	}
+	if err := validStaging(m.Staging, ""); err != nil {
 		return err
 	}
 	return nil

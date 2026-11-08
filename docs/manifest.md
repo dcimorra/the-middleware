@@ -673,6 +673,52 @@ installed inside what is left out, and the plan a move or an import shows
 first counts without it. A pattern that leaves the folder, or that would
 leave out `site.json`, is refused.
 
+## Staging: test copies
+
+A test copy is a second site made from a production one under a name of
+its own (`staging.<domain>` unless another is given), with production's
+files and databases as they are at that moment: the panel's site page
+(Staging card), `middleware site staging <domain> create` or
+`POST /sites/{domain}/staging`. The copy:
+
+- has `staging.of` in its manifest naming production;
+- leaves out what names production: its aliases, `force_https`, the
+  `www.` name, fixed ports, `cluster` and `backups`. A service's names
+  under the domain are renamed under the copy's (`api.example.com` →
+  `api.staging.example.com`); other names are left out and said so;
+- is behind a password when production has none, printed once;
+- gets `MIDDLEWARE_STAGING=<production domain>` in its environment, so
+  the code can tell (a payment in test mode, no mail to customers);
+- copies SQLite files with `sqlite3 .backup` when sqlite3 is installed,
+  since a file copied while the site writes it can be torn. Named docker
+  volumes (a container's database) start empty;
+- does not carry production's tasks (`tasks/`), which would run twice.
+
+**Promoting** the copy (`… staging <copy> promote`) puts its files into
+production and keeps of production its own `site.json` and every path
+`staging.keep` names:
+
+```json
+"staging": { "of": "example.com", "keep": ["*.sqlite", ".env", "storage/app/*"] }
+```
+
+A glob without a slash matches a name at any depth, one with a slash the
+path from the folder. Without `keep` the default keeps SQLite files and
+their `-wal`/`-shm`/`-journal`, `.env` and `.env.*`, and folders named
+`storage`, `uploads` or `data`. Kept paths are hard-linked, the very files
+production is writing, so nothing written during the promotion is lost.
+The new folder is built beside production and the two are exchanged in
+one rename; production then hands over to a new generation the usual way.
+A change to the copy's `site.json` is not carried: write it in
+production's.
+
+The folder that served until the promotion is kept under
+`data/staging/<domain>/before`, and **undo** (`… staging <domain> undo`,
+on production) puts it back with the kept paths as they are now: the
+orders taken since the promotion stay. **Refresh** (on the copy) copies
+production into it again, data too, keeping the copy's manifest and
+password.
+
 ## Cluster: `cluster`
 
 ```json

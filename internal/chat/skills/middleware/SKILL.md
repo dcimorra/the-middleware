@@ -75,6 +75,7 @@ manifest and take the code out.
 | the page a visitor sees while the site starts or is down | `notice.theme` | docs/manifest.md |
 | another name, its `www.` | `aliases`, `www` (operator only) | § 3 |
 | a copy of the database every night | `backups` | § 9 |
+| look at what is in the database, from the panel | site → Database: the databases `backups` names and the SQLite files of the folder, read-only | nothing to write; name a PostgreSQL/MySQL one in `backups` |
 | something every so often | a task | § 9 |
 | a process always up, or several processes | `workers`, `services` | § 3 |
 | an AI in the site's code | `claude_api` (the AI gateway) | § 8 |
@@ -83,6 +84,7 @@ manifest and take the code out.
 | how many people visit, from where | the house already counts it: site → Visits | nothing to write |
 | an access log of every request | the house keeps one per site, turned over weekly, readable as your own logs | nothing to write |
 | copies on other nodes | `cluster` | § 3 |
+| a staging / test environment, "try it before it goes live", promote it after | a test copy: site page → Test copies, or `middleware site staging <domain> create` (operator only); the copy's code sees `MIDDLEWARE_STAGING`, `staging.keep` says what of production a promotion keeps | docs/manifest.md, "Staging" |
 
 "Operator only" keys are refused when a delegated user's account writes
 them; tell the person and leave them for the operator. Everything else in

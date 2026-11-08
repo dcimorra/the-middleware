@@ -49,6 +49,10 @@ func lockedKeys(m *manifest.Manifest) map[string]any {
 		// What the GitHub module's token reaches: a delegate who could
 		// list a repository here could push to any the token opens.
 		"repositories": m.Repositories,
+		// Which production a copy is promoted into, and what of that
+		// production is kept: a delegate of the copy who could point it
+		// at another site would promote over a site that is not theirs.
+		"staging": m.Staging,
 	}
 	// The agent's provider and model are the user's to pick among those
 	// the operator turned on (the chat picker writes them here on the

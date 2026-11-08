@@ -30,8 +30,10 @@ import { visitsTab } from "./site-visits.js";
 import { cacheTab } from "./site-cache.js";
 import { siteTasksTab } from "./tasks.js";
 import { backupsTab } from "./site-backups.js";
+import { databaseTab } from "./site-database.js";
 import { doorCard } from "./site-door.js";
 import { clusterCard } from "./site-cluster.js";
+import { stagingCard } from "./site-staging.js";
 import { resourcesCard } from "./site-resources.js";
 import { specsTab } from "./site-specs.js";
 
@@ -40,13 +42,13 @@ import { specsTab } from "./site-specs.js";
 // so instead of offering a button that fails.
 let shotsOff = false;
 
-const TABS = ["overview", "activity", "visits", "resources", "manifest", "logs", "files", "chat", "tasks", "backups", "specs", "access", "security", "cache", "cluster", "moves"];
-const TAB_ICON = { overview: "gauge", activity: "activity", visits: "chart", resources: "cpu", manifest: "code", logs: "list", files: "folder", chat: "chat", tasks: "clock", backups: "history", specs: "file", access: "lock", security: "shield", cache: "box", cluster: "server", moves: "upload" };
+const TABS = ["overview", "activity", "visits", "resources", "manifest", "logs", "files", "chat", "tasks", "backups", "database", "specs", "access", "security", "cache", "cluster", "moves"];
+const TAB_ICON = { overview: "gauge", activity: "activity", visits: "chart", resources: "cpu", manifest: "code", logs: "list", files: "folder", chat: "chat", tasks: "clock", backups: "history", database: "box", specs: "file", access: "lock", security: "shield", cache: "box", cluster: "server", moves: "upload" };
 
 // The tabs a delegated user sees, by what opens them: the WAF, the edge
 // cache, the house's guard, the site's resources, its cluster and the
 // moves are the operator's, and the access tab writes the manifest.
-const DELEGATE_TABS = { overview: "view", visits: "view", manifest: "view", logs: "view", files: "view", tasks: "view", backups: "view", specs: "view", chat: "agents", access: "code" };
+const DELEGATE_TABS = { overview: "view", visits: "view", manifest: "view", logs: "view", files: "view", tasks: "view", backups: "view", database: "code", specs: "view", chat: "agents", access: "code" };
 
 // The site's resources tab: the bars when something of it runs on the
 // machine, a word when nothing does (a static site is served by the house).
@@ -128,6 +130,7 @@ export function siteScreen({ domain, tab, query }) {
       case "chat": view = chatTab(domain); break;
       case "tasks": view = siteTasksTab(domain); break;
       case "backups": view = backupsTab(domain); break;
+      case "database": view = databaseTab(domain); break;
       case "specs": view = specsTab(domain); break;
       case "access": view = accessTab(domain); break;
       case "security": view = securityTab(domain); break;
@@ -669,6 +672,7 @@ function overviewTab(domain) {
       servicesCard(s),
       workersCard(s),
       serves && owner ? domainsCard(m) : null,
+      serves && owner && !unmanaged ? stagingCard(domain) : null,
       serves && can(domain, "code") ? redirectsCard(m) : null,
       serves && can(domain, "code") ? httpsCard(m) : null,
       unmanaged || !door ? null : door,

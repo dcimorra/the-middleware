@@ -90,6 +90,10 @@ var permRoutes = map[string][]string{
 		"PUT " + siteBase + "/file",
 		"POST " + siteBase + "/deploy",
 		"POST " + siteBase + "/exec",
+		// The database browser: what the site keeps, read where it is.
+		"GET " + siteBase + "/databases",
+		"GET " + siteBase + "/databases/tables",
+		"POST " + siteBase + "/databases/query",
 		"POST " + siteBase + "/specs/init",
 		"PUT " + siteBase + "/tasks/{name}",
 		"DELETE " + siteBase + "/tasks/{name}",
@@ -155,6 +159,12 @@ var ownerOnly = []string{
 	// Its budget on the machine, and the machine's size with it: the
 	// owner's to set (the manifest's limits are locked for a delegate).
 	"GET " + siteBase + "/limits",
+	// A test copy is a new site, and promoting one rewrites production.
+	"GET " + siteBase + "/staging",
+	"POST " + siteBase + "/staging",
+	"POST " + siteBase + "/staging/promote",
+	"POST " + siteBase + "/staging/undo",
+	"POST " + siteBase + "/staging/refresh",
 }
 
 // userRoutes are the routes outside a site a delegate reaches: the

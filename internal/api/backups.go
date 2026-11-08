@@ -23,6 +23,7 @@ import (
 // events), unless the caller asks to wait, as the CLI does for an agent
 // that wants to know how it ended.
 func (s *Server) RegisterBackups(k *backups.Keeper) {
+	s.registerDatabases(k)
 	base := Prefix + "/sites/{domain}/backups"
 	s.Handle("GET", base, "The site's backups as its manifest describes them, each with its copies (newest first), next run, last copy and last restore", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		domain, err := domainOf(r)

@@ -34,7 +34,16 @@ func TestMain(m *testing.M) {
 			os.Exit(1)
 		}
 		fmt.Println("site up")
-		_ = http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "ok") }))
+		_ = http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// MW_TEST_FILE answers a file of the folder the process runs
+			// in, so a test sees which folder serves.
+			if name := os.Getenv("MW_TEST_FILE"); name != "" {
+				data, _ := os.ReadFile(name)
+				w.Write(data)
+				return
+			}
+			fmt.Fprint(w, "ok")
+		}))
 		return
 	}
 	os.Exit(m.Run())

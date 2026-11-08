@@ -2516,6 +2516,10 @@ details.site-env[open] > summary { margin-bottom: 10px; }
 .site-res-track { position: relative; }
 /* What the site uses now, a notch on the bar under the thumb. */
 .site-res-mark { position: absolute; top: -2px; width: 3px; height: 22px; margin-left: -1.5px; border-radius: 2px; background: var(--warn); opacity: .85; pointer-events: none; }
+.staging-password { display: block; padding: 8px 10px; background: var(--surface-2); border-radius: var(--radius); font-size: 1.05em; user-select: all; overflow-wrap: anywhere; }
+.db-sql { width: 100%; min-height: 6em; font-family: var(--mono, ui-monospace, monospace); }
+.db-table-list { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; padding: 0; margin: 8px 0 0; }
+.db-out .table-wrap { max-height: 60vh; overflow: auto; }
 /* The autonomous agent's screen: its notebook and the commands of its
    journal are text to read whole, wrapped, never a line off the screen. */
 pre.pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; margin: .5rem 0 0; }
