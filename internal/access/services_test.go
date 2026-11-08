@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dcimorra/the-middleware/internal/edge"
 	"github.com/dcimorra/the-middleware/internal/manifest"
 )
 
@@ -14,7 +15,7 @@ import (
 // access on every path, the api service's on /api.
 func byPath(site, api *manifest.Access) func(r *http.Request, p string) (Site, bool) {
 	return func(r *http.Request, p string) (Site, bool) {
-		if hostOf(r) != "p.example" {
+		if edge.Host(r) != "p.example" {
 			return Site{}, false
 		}
 		s := Site{Domain: "p.example", Access: site}

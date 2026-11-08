@@ -6,10 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/dcimorra/the-middleware/internal/backups"
-	"github.com/dcimorra/the-middleware/internal/installer"
-	"github.com/dcimorra/the-middleware/internal/nodeenv"
-	"github.com/dcimorra/the-middleware/internal/runtime"
 	"io"
 	"net"
 	"net/http"
@@ -29,6 +25,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/audit"
 	"github.com/dcimorra/the-middleware/internal/auth"
 	"github.com/dcimorra/the-middleware/internal/autofix"
+	"github.com/dcimorra/the-middleware/internal/backups"
 	"github.com/dcimorra/the-middleware/internal/cgroups"
 	"github.com/dcimorra/the-middleware/internal/chat"
 	"github.com/dcimorra/the-middleware/internal/deps"
@@ -36,8 +33,10 @@ import (
 	"github.com/dcimorra/the-middleware/internal/engine"
 	"github.com/dcimorra/the-middleware/internal/events"
 	"github.com/dcimorra/the-middleware/internal/firewall"
+	"github.com/dcimorra/the-middleware/internal/fsx"
 	"github.com/dcimorra/the-middleware/internal/helper"
 	"github.com/dcimorra/the-middleware/internal/inbound"
+	"github.com/dcimorra/the-middleware/internal/installer"
 	"github.com/dcimorra/the-middleware/internal/logrotate"
 	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/modules"
@@ -46,6 +45,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/modules/github"
 	"github.com/dcimorra/the-middleware/internal/modules/openspec"
 	"github.com/dcimorra/the-middleware/internal/modules/vpn"
+	"github.com/dcimorra/the-middleware/internal/nodeenv"
 	"github.com/dcimorra/the-middleware/internal/nodes"
 	"github.com/dcimorra/the-middleware/internal/pages"
 	"github.com/dcimorra/the-middleware/internal/proxy"
@@ -53,6 +53,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/push"
 	"github.com/dcimorra/the-middleware/internal/relocate"
 	"github.com/dcimorra/the-middleware/internal/repos"
+	"github.com/dcimorra/the-middleware/internal/runtime"
 	"github.com/dcimorra/the-middleware/internal/settings"
 	"github.com/dcimorra/the-middleware/internal/shots"
 	"github.com/dcimorra/the-middleware/internal/sitegroups"
@@ -401,7 +402,7 @@ func buildWire(a *app.App) app.Hook {
 		// The house's own Node first (modules/node, kept up to date by
 		// deps), then whatever npm the machine has.
 		if w.set != nil && w.set.Deps != nil {
-			if p := filepath.Join(w.set.Deps.Prefix(), "bin", "npm"); fileExists(p) {
+			if p := filepath.Join(w.set.Deps.Prefix(), "bin", "npm"); fsx.IsFile(p) {
 				return p
 			}
 		}
@@ -1084,11 +1085,6 @@ func wireGitProxy(a *app.App, srv *api.Server, set *moduleSet, tokens *sitetoken
 		}
 		return api.GitEnv(listen, repos, tok)
 	})
-}
-
-func fileExists(p string) bool {
-	st, err := os.Stat(p)
-	return err == nil && !st.IsDir()
 }
 
 // buildMesh opens the node's membership in the mesh. The links of the

@@ -234,7 +234,7 @@ func (a *Access) Wrap(next http.Handler) http.Handler {
 // service behind /api is the one whose password the form was for.
 func (a *Access) lookup(r *http.Request) (Site, bool) {
 	if a.opts.LookupRequest == nil {
-		return a.opts.Lookup(hostOf(r))
+		return a.opts.Lookup(edge.Host(r))
 	}
 	p := r.URL.Path
 	if p == LoginPath {
@@ -565,14 +565,6 @@ var formTpl = template.Must(template.New("form").Parse(`<form class="password" m
 {{with .Minutes}}<p class="wrong">Too many wrong passwords. Try again in {{if eq . 1}}a minute{{else}}{{.}} minutes{{end}}.</p>{{end}}
 </form>`))
 
-func hostOf(r *http.Request) string {
-	h := r.Host
-	if i := strings.LastIndexByte(h, ':'); i > 0 && !strings.Contains(h[i:], "]") {
-		h = h[:i]
-	}
-	return strings.ToLower(strings.TrimSuffix(h, "."))
-}
-
 // Closed is the door when Access could not start (its key unreadable, the
 // disk full). Every site that has an access rule answers 503 and the rest
 // pass. Letting them through instead would serve every password-protected
@@ -582,7 +574,7 @@ func Closed(lookup Lookup) func(http.Handler) http.Handler {
 	if lookup == nil {
 		return ClosedRequest(nil)
 	}
-	return ClosedRequest(func(r *http.Request, _ string) (Site, bool) { return lookup(hostOf(r)) })
+	return ClosedRequest(func(r *http.Request, _ string) (Site, bool) { return lookup(edge.Host(r)) })
 }
 
 // ClosedRequest is Closed for a lookup by request (Options.LookupRequest),

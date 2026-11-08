@@ -614,14 +614,6 @@ func (w *WAF) effectiveFor(site *manifest.WAF) effective {
 	return e
 }
 
-func hostOf(r *http.Request) string {
-	h := r.Host
-	if i := strings.LastIndexByte(h, ':'); i > 0 && !strings.Contains(h[i:], "]") {
-		h = h[:i]
-	}
-	return strings.ToLower(strings.TrimSuffix(h, "."))
-}
-
 // SetOperator installs how a request is known to carry the operator's own
 // session. Such a request is the panel's own traffic and is not counted:
 // a phone on the panel (the dashboard, the bar asking every node, the
@@ -669,7 +661,7 @@ func (w *WAF) Wrap(next http.Handler) http.Handler {
 			w.refuse(rw, r, ip, "forbidden", http.StatusForbidden)
 			return
 		}
-		host := hostOf(r)
+		host := edge.Host(r)
 		// An exploit is refused and bans at once; a scanner's path counts
 		// when the answer says it is not there (below).
 		if what := exploitOf(r); what != "" && !w.exempt(ip) {

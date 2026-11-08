@@ -184,3 +184,15 @@ func Scrub(in *http.Request, out http.Header) {
 		out.Set("X-Real-IP", ip.String())
 	}
 }
+
+// Host is the name a request is for: the Host header without its port,
+// lower-case, without the trailing dot of a fully qualified name. Every
+// door looks a site up by it, so they must all spell it the same way: a
+// door that kept "Example.com." would miss the site the router served.
+func Host(r *http.Request) string {
+	h := r.Host
+	if i := strings.LastIndexByte(h, ':'); i > 0 && !strings.Contains(h[i:], "]") {
+		h = h[:i]
+	}
+	return strings.ToLower(strings.TrimSuffix(h, "."))
+}
