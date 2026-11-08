@@ -35,6 +35,9 @@ type Caller struct {
 	// Turn is the site whose agent turn made this socket request; its
 	// Scopes are then TurnScopes(Turn).
 	Turn string
+	// Autopilot is a socket request made from a turn of the house's
+	// autonomous agent; its Scopes are then AutopilotScopes().
+	Autopilot bool
 	// User is a delegate's name (users.go), UserID their id where they
 	// signed in, and Grants what they may do by site (perms.go). On the
 	// node a delegate's request was relayed to, User and Grants come from
@@ -60,6 +63,7 @@ const (
 	callerKey ctxKey = iota
 	socketKey
 	turnKey
+	autopilotKey
 )
 
 // WithSocket marks a context as belonging to a connection that arrived
@@ -75,6 +79,12 @@ func WithSocketTurn(ctx context.Context, site string) context.Context {
 	return context.WithValue(WithSocket(ctx), turnKey, site)
 }
 
+// WithSocketAutopilot marks a socket connection made from inside a turn
+// of the autonomous agent: neither the operator nor a site.
+func WithSocketAutopilot(ctx context.Context) context.Context {
+	return context.WithValue(WithSocket(ctx), autopilotKey, true)
+}
+
 // IsSocket reports whether ctx came through WithSocket.
 func IsSocket(ctx context.Context) bool {
 	v, _ := ctx.Value(socketKey).(bool)
@@ -86,6 +96,9 @@ func IsSocket(ctx context.Context) bool {
 func SocketCaller(ctx context.Context) Caller {
 	if site, _ := ctx.Value(turnKey).(string); site != "" {
 		return Caller{Via: ViaSocket, Turn: site, Scopes: TurnScopes(site)}
+	}
+	if on, _ := ctx.Value(autopilotKey).(bool); on {
+		return Caller{Via: ViaSocket, Autopilot: true, Scopes: AutopilotScopes()}
 	}
 	return Caller{Via: ViaSocket}
 }

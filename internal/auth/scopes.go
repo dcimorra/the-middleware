@@ -77,6 +77,19 @@ var scopeRoutes = map[string][]string{
 		"DELETE /api/v1/sites/{domain}/backups/{name}/copies/{id}",
 		"POST /api/v1/sites/{domain}/backups/{name}/copies/{id}/restore",
 	},
+	// autopilot is the house's autonomous agent's own (AutopilotScopes):
+	// creating a site, which the API holds to its weekly allowance and
+	// its names, handing work to a site's conversation, saying a site it
+	// made is finished, its own status and journal, and the visits that
+	// tell it whether what it made brings anyone. Never a token's.
+	"autopilot": {
+		"POST /api/v1/sites",
+		"GET /api/v1/sites/{domain}/visits",
+		"GET /api/v1/autopilot",
+		"GET /api/v1/autopilot/journal",
+		"POST /api/v1/autopilot/ask",
+		"POST /api/v1/autopilot/sites/{domain}/ready",
+	},
 	// import is a site arriving from another installation (V1): its
 	// bundle, its last copy, the commit, and seeing whether it came up or
 	// removing it when it did not. Always for one site, and made to
@@ -118,6 +131,17 @@ func TurnScopes(site string) []string {
 	return []string{"read:" + site, "restart:" + site, "deploy:" + site, "exec:" + site, "tasks:" + site, "backups:" + site}
 }
 
+// AutopilotScopes are what a turn of the autonomous agent opens when it
+// calls the house over the socket: every site's read, restart, deploy,
+// tasks and backups (a site whose manifest keeps it out is refused
+// by the API, which knows the manifests), and its own routes. Not
+// settings, tokens, modules, users, nodes, deletion, publishing a site it
+// did not make, or the conversations: whatever holds it back is out of
+// its reach.
+func AutopilotScopes() []string {
+	return []string{"read", "restart", "deploy", "tasks", "backups", "autopilot"}
+}
+
 // ErrBadScope is a scope outside the list.
 var ErrBadScope = errors.New("scope")
 
@@ -130,6 +154,9 @@ func CheckScopes(scopes []string, validSite func(string) bool) error {
 		}
 		if hasSite && !validSite(site) {
 			return fmt.Errorf("%w: %q names no valid site", ErrBadScope, sc)
+		}
+		if action == "autopilot" {
+			return fmt.Errorf("%w: autopilot is the autonomous agent's own, never a token's", ErrBadScope)
 		}
 		if action == "import" && !hasSite {
 			return fmt.Errorf("%w: import is for one site (import:<domain>)", ErrBadScope)

@@ -60,6 +60,11 @@ func For(e events.Event) (Message, bool) {
 		return Message{Kind: KindCritical, Title: "Critical vulnerability in " + orHouse(site), Body: e.Message, URL: link("overview"), Tag: "audit-" + site}, true
 	case "repo.failed":
 		return Message{Kind: KindRepo, Title: "A repository stopped pulling", Body: e.Message, URL: "/#/repos", Tag: "repo-" + site}, true
+	case "autopilot.ready":
+		// A site it finished waits for the operator (publish: ask).
+		return Message{Kind: KindTurn, Title: "A site is ready to publish", Body: site + ": the autonomous agent finished it and asks you to publish it", URL: "/#/autopilot", Tag: "autopilot-" + site}, true
+	case "autopilot.stood_down":
+		return Message{Kind: KindCritical, Title: "The autonomous agent stood down here", Body: e.Message, URL: "/#/autopilot", Tag: "autopilot-down"}, true
 	case "agent.done", "agent.error":
 		// The site door's conversations have a program on the other side,
 		// not a person waiting.
@@ -67,6 +72,12 @@ func For(e events.Event) (Message, bool) {
 			return Message{}, false
 		}
 		domain, id, _ := strings.Cut(site, "#")
+		// Nor the autonomous agent's turns, or the ones it hands to sites:
+		// it works all day with nobody waiting, and a push a turn would
+		// bury the ones that matter. Its journal says what it did.
+		if o, _ := e.Data["origin"].(string); o == "autopilot" || domain == "autopilot" {
+			return Message{}, false
+		}
 		where := "/#/sites/" + url.PathEscape(domain) + "/chat"
 		if domain == "middleware" {
 			where = "/#/house"

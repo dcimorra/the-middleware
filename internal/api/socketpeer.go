@@ -48,6 +48,9 @@ func socketContext(ctx context.Context, conn net.Conn, siteOf func(int) (string,
 	if err != nil {
 		return ctx
 	}
+	if site == chat.Autopilot {
+		return auth.WithSocketAutopilot(ctx)
+	}
 	if site != "" {
 		return auth.WithSocketTurn(ctx, site)
 	}

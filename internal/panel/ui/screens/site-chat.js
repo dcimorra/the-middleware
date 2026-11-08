@@ -22,11 +22,14 @@ import { delegate } from "../lib/access.js";
 
 // chatTab is a site's chat. For the house's own conversation, domain is
 // "middleware": no other conversations, no site manifest to write the
-// provider into.
+// provider into. "autopilot" is the autonomous agent's sessions: like the
+// house's, one per session, opened by the house and not by the panel, so
+// the operator reads them and writes into them but starts none.
 export function chatTab(domain) {
-  const house = domain === "middleware";
+  const pilot = domain === "autopilot";
+  const house = domain === "middleware" || pilot;
   const turns = h("div", { class: "chat-turns", "aria-live": "polite" });
-  const text = h("textarea", { rows: 1, placeholder: t(house ? "chat.placeholderHouse" : "chat.placeholder"), "aria-label": t("chat.message") });
+  const text = h("textarea", { rows: 1, placeholder: t(pilot ? "autopilot.placeholder" : house ? "chat.placeholderHouse" : "chat.placeholder"), "aria-label": t("chat.message") });
   const provider = h("select", { class: "chat-pill", "aria-label": t("chat.provider"), title: t("chat.provider") });
   // The model: a list while it is short, a box that searches as you type
   // once a provider brings hundreds (OpenCode with OpenRouter connected).
@@ -81,7 +84,7 @@ export function chatTab(domain) {
   // side, and its turns follow its own rules).
   const base = `/sites/${enc(domain)}`;
   // Where the conversations beyond the first live: a site's, or the house's.
-  const chatsBase = house ? "/chat/middleware" : base;
+  const chatsBase = pilot ? "/autopilot" : house ? "/chat/middleware" : base;
   const mainConv = () => ({ name: domain, path: house ? "/chat/middleware" : `${base}/chat`, origin: "panel" });
   const convOf = (id, origin) => id ? { name: `${domain}#${id}`, path: `${chatsBase}/chats/${enc(id)}`, origin: origin || "panel" } : mainConv();
   // A new conversation is a draft until its first message (or file) goes:
@@ -166,7 +169,8 @@ export function chatTab(domain) {
   // while, it was stealing the room of what is used every message.
   const more = h("details", { class: "chat-menu" },
     h("summary", { class: "chat-round ghost", "aria-label": t("chat.more"), title: t("chat.more") }, icon("more", { stroke: 3 })),
-    h("div", { class: "chat-menu-list", role: "menu" }, procsBtn, exportBtn, reset, purge));
+    h("div", { class: "chat-menu-list", role: "menu" }, ...(pilot ? [procsBtn, exportBtn] : [procsBtn, exportBtn, reset, purge])));
+  if (pilot) newConv.hidden = true;
   more.addEventListener("click", (e) => { if (e.target.closest(".chat-menu-list button")) more.open = false; });
   const closeMenu = (e) => { if (more.open && !more.contains(e.target)) more.open = false; };
   document.addEventListener("click", closeMenu);

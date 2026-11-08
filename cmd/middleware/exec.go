@@ -77,6 +77,12 @@ func execCommand(args []string) error {
 	if err != nil {
 		return fmt.Errorf("exec refused: %w", err)
 	}
+	if turn == chat.Autopilot {
+		// Run here, it would skip the API, and with it the manifest that
+		// keeps the agent out of a site: its work in a site goes through
+		// that site's conversation.
+		return fmt.Errorf("exec refused: the autonomous agent hands work in a site to that site's conversation (middleware autopilot ask %s -)", domain)
+	}
 	if turn != "" && turn != domain {
 		return fmt.Errorf("exec refused: this runs under a turn of %s's conversation, which may exec in %s only", turn, turn)
 	}

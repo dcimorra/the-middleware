@@ -50,6 +50,9 @@ type Settings struct {
 	// the automatic repairs. Apart from the house's conversation, whose own
 	// picker says whom the operator talks to there.
 	Automation Automation `json:"automation"`
+	// Autopilot is the house's autonomous agent (internal/autopilot): its
+	// switch and the brakes it cannot change itself.
+	Autopilot Autopilot `json:"autopilot"`
 	// Cache is the house's response cache budget.
 	Cache Cache `json:"cache"`
 	// Update is whether this program updates itself (internal/update).
@@ -135,6 +138,96 @@ type Automation struct {
 
 // On says one is configured.
 func (a Automation) On() bool { return a.Provider != "" }
+
+// Autopilot is the autonomous agent's switch and its brakes. It acts on
+// its own for hours, creates sites and spends money, so it is off until
+// the operator turns it on, and what holds it back is here, in a file its
+// jail denies and behind routes its socket caller is refused: the agent
+// reads its limits, it never writes them.
+type Autopilot struct {
+	Enabled bool `json:"enabled,omitempty"`
+	// Provider and Model run its turns and the ones it hands to sites;
+	// Claude by default, the model its alias names.
+	Provider string `json:"provider,omitempty"`
+	Model    string `json:"model,omitempty"`
+	// SitesPerWeek is how many sites it may create in any seven days; a
+	// negative value is none.
+	SitesPerWeek int `json:"sites_per_week,omitempty"`
+	// Zones are the names a site it creates may have: one of them or a
+	// name under one. Empty is any name the house can publish.
+	Zones []string `json:"zones,omitempty"`
+	// Publish is what happens to a site it creates: "auto" (the default,
+	// the operator's choice when it was built) publishes it as a site made
+	// at the panel would be, "ask" keeps it off the internet until the
+	// operator approves it.
+	Publish string `json:"publish,omitempty"`
+	// MinMinutes and MaxMinutes bound when it may ask to be woken next.
+	MinMinutes int `json:"min_minutes,omitempty"`
+	MaxMinutes int `json:"max_minutes,omitempty"`
+	// QuotaPercent is the share of a subscription window above which it
+	// does not start a turn, so the operator's own work keeps the rest.
+	// It is the brake on what it uses: the operator asked for no dollar
+	// caps, only the window it works in.
+	QuotaPercent float64 `json:"quota_percent,omitempty"`
+	// ContextPercent is the share of the model's context window at which
+	// the next wake starts a new session from its notebook.
+	ContextPercent int `json:"context_percent,omitempty"`
+}
+
+// Limits fills the defaults: Claude with Opus, two sites a week,
+// published at once, woken between 15 minutes and 12 hours, 80 % of a
+// window, a new session at 60 % of the context.
+func (a Autopilot) Limits() Autopilot {
+	if a.Provider == "" {
+		a.Provider = "claude"
+		if a.Model == "" {
+			a.Model = "opus"
+		}
+	}
+	if a.SitesPerWeek == 0 {
+		a.SitesPerWeek = 2
+	}
+	if a.SitesPerWeek < 0 {
+		a.SitesPerWeek = 0
+	}
+	if a.Publish != "ask" {
+		a.Publish = "auto"
+	}
+	if a.MinMinutes <= 0 {
+		a.MinMinutes = 15
+	}
+	if a.MaxMinutes <= 0 {
+		a.MaxMinutes = 12 * 60
+	}
+	if a.MaxMinutes < a.MinMinutes {
+		a.MaxMinutes = a.MinMinutes
+	}
+	if a.QuotaPercent <= 0 || a.QuotaPercent > 100 {
+		a.QuotaPercent = 80
+	}
+	if a.ContextPercent <= 0 || a.ContextPercent > 95 {
+		a.ContextPercent = 60
+	}
+	return a
+}
+
+// Validate refuses what the brakes cannot mean.
+func (a Autopilot) Validate() error {
+	switch a.Publish {
+	case "", "ask", "auto":
+	default:
+		return fmt.Errorf("autopilot.publish: %q is not ask or auto", a.Publish)
+	}
+	if a.MinMinutes < 0 || a.MaxMinutes < 0 || a.MinMinutes > 7*24*60 || a.MaxMinutes > 7*24*60 {
+		return fmt.Errorf("autopilot: wake bounds are 1 to %d minutes", 7*24*60)
+	}
+	for _, z := range a.Zones {
+		if !manifest.ValidDomain(z) {
+			return fmt.Errorf("autopilot.zones: %q is not a domain", z)
+		}
+	}
+	return nil
+}
 
 // Limits fills the defaults: 2 attempts, 30 minutes, 2 USD a day.
 func (a Autofix) Limits() Autofix {

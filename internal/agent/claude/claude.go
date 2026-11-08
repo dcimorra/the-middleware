@@ -317,6 +317,8 @@ type parser struct {
 	// held is a result written while something was waiting: what Flush
 	// gives if the CLI exits without writing another.
 	held []agent.Event
+	// context is the main agent's last call's tokens (usage.total).
+	context int
 }
 
 // waitedFor are the tools whose background tasks keep a run open: a
@@ -347,8 +349,26 @@ type line struct {
 	Status    string `json:"status"`
 	Message   struct {
 		Content json.RawMessage `json:"content"`
+		Usage   *usage          `json:"usage"`
 	} `json:"message"`
+	// ModelUsage is the result's per-model account; its contextWindow is
+	// the window's size.
+	ModelUsage map[string]struct {
+		ContextWindow int `json:"contextWindow"`
+	} `json:"modelUsage"`
 }
+
+// usage is one model call's tokens. What the call read (fresh, written to
+// the cache and read from it) plus what it wrote is what the session
+// holds after it: the context in use.
+type usage struct {
+	Input         int `json:"input_tokens"`
+	CacheCreation int `json:"cache_creation_input_tokens"`
+	CacheRead     int `json:"cache_read_input_tokens"`
+	Output        int `json:"output_tokens"`
+}
+
+func (u usage) total() int { return u.Input + u.CacheCreation + u.CacheRead + u.Output }
 
 type block struct {
 	Type  string         `json:"type"`
@@ -401,6 +421,11 @@ func (p *parser) Line(raw string) ([]agent.Event, bool) {
 	}
 	switch l.Type {
 	case "assistant":
+		if l.ParentToolUseID == "" && l.Message.Usage != nil {
+			// The main agent's last call is the session's size; a
+			// subagent's calls are its own context, not this one.
+			p.context = l.Message.Usage.total()
+		}
 		var blocks []block
 		if err := json.Unmarshal(l.Message.Content, &blocks); err != nil {
 			var s string
@@ -478,7 +503,11 @@ func (p *parser) Line(raw string) ([]agent.Event, bool) {
 			}
 			evs = append(evs, agent.Event{Kind: agent.KindError, Text: text, Cost: l.Cost, SessionID: p.sessionID})
 		} else {
-			evs = append(evs, agent.Event{Kind: agent.KindResult, Text: l.Result, Cost: l.Cost, SessionID: p.sessionID})
+			ev := agent.Event{Kind: agent.KindResult, Text: l.Result, Cost: l.Cost, SessionID: p.sessionID, Context: p.context}
+			for _, mu := range l.ModelUsage {
+				ev.Window = max(ev.Window, mu.ContextWindow)
+			}
+			evs = append(evs, ev)
 		}
 		if len(p.waiting) > 0 {
 			// The cost so far goes out (it is the run's total, so the

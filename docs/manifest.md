@@ -479,6 +479,9 @@ next.
   still reaches it, which is the way back.
 - `autofix: false` keeps the automatic repair (Settings) away from this
   site, whatever the installation says; the panel cannot override it.
+- `autopilot: false` keeps the network's autonomous agent away from this
+  site: it is not shown the site, and every call of its that names it is
+  refused (api.md, The autonomous agent).
 - `aliases` are served exactly like the site. A name that is already a site,
   or that two sites claim, is served by neither, and an event says so. An
   alias that is an apex (`patata.es`) brings its `www.` with it, as the

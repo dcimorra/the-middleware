@@ -26,7 +26,7 @@ func (e *Env) ownerOf(cl *Client, name string) (site, service string, err error)
 	}
 	first := err
 	var candidates []string
-	if turn, terr := chat.SiteOfProcess("/proc", os.Getpid(), nil); terr == nil && turn != "" {
+	if turn, terr := chat.SiteOfProcess("/proc", os.Getpid(), nil); terr == nil && turn != "" && turn != chat.Autopilot {
 		candidates = []string{turn}
 	} else {
 		var list []sites.Site

@@ -180,6 +180,19 @@ not by the adapter. The CLIs that can be pointed elsewhere keep their own
 settings and sessions in `data/agents/config/<domain>/`, not in the site's
 HOME, which a container can write.
 
+The **autonomous agent** (`internal/autopilot`) is one for the whole network
+of nodes, running on one of them and off until the operator switches it on.
+It wakes by itself, looks at every site of every node and decides what to do,
+working in conversations of its own (`autopilot#<id>`) and handing work in a
+site to that site's conversation, which stays jailed in the site. The agent
+decides; the house holds what it may do, never the prompt alone: its socket
+caller has its own scopes (no settings, tokens, deletion or publishing of
+what it did not make), a manifest's `"autopilot": false` keeps it out of a
+site, sites it creates are counted and built off the internet until it says
+they are finished, the subscription's windows bound when it works, and every
+wake, turn, command and call is a line of its journal. It rotates its session
+before the model's context fills, from a notebook it keeps in its HOME.
+
 ## Resources
 
 The unit's cgroup is the supervisor's to split (`Delegate=cpu memory pids`,
