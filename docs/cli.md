@@ -48,7 +48,7 @@ in the API ([api.md](api.md)) and the panel.
 | `site list` | every folder under `sites/`, managed or not, with mode, port and state |
 | `site show <domain\|name> [--service s]` | the site object: manifest, instance, workers, and its services with their names, port, revision, state and error; a name a site serves shows that site (and that service) |
 | `site routes <domain>` | every name the site answers: host (and prefix) → service → port → state |
-| `site add <domain> [--template static\|node\|go\|docker] [--manifest file.json\|-]` | a folder with a `site.json` |
+| `site add <domain> [--template static\|node\|go\|docker\|fastapi\|django\|php\|astro\|project] [--manifest file.json\|-]` | a folder with a `site.json` |
 | `site start <domain> [--service s]` / `site stop <domain> [--service s]` | clear or set `disabled` in the manifest (`services.<s>.disabled` for one service, the others untouched) |
 | `site restart <domain> [--service s]` / `site restart --all` | force a handover (of one service with `--service`, the others untouched); `--all` after an upgrade, see [upgrade.md](upgrade.md) |
 | `site hold <domain> [--service s] [--title t] [--message m]` / `site unhold <domain> [--service s]` | the holding page instead of the process (on one service's names with `--service`) |

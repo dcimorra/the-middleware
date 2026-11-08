@@ -19,11 +19,17 @@ var templates = map[string]template{
 	"node":    nodeTemplate,
 	"go":      goTemplate,
 	"docker":  dockerTemplate,
+	"fastapi": fastapiTemplate,
+	"django":  djangoTemplate,
+	"php":     phpTemplate,
+	"astro":   astroTemplate,
 	"project": projectTemplate,
 }
 
 // Templates lists the names Create accepts.
-func Templates() []string { return []string{"static", "node", "go", "docker", "project"} }
+func Templates() []string {
+	return []string{"static", "node", "go", "docker", "fastapi", "django", "php", "astro", "project"}
+}
 
 // projectTemplate is a folder without a domain: nothing to serve, so
 // nothing to start until a worker is written. The README says what it is

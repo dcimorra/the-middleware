@@ -126,13 +126,22 @@ echo '<!doctype html><title>shop</title><h1>shop.example.com</h1>' > sites/shop.
 Or through the house, which also drops a working hello page:
 
 ```sh
-middleware site add shop.example.com --template node     # static | node | go | docker
+middleware site add shop.example.com --template node     # static | node | go | docker | fastapi | django | php | astro
 middleware site add shop.example.com --manifest -  <<'JSON'
 { "version": 2, "run": { "command": ["npm", "start"], "env": { "NODE_ENV": "production" } } }
 JSON
 ```
 
 (`POST /api/v1/sites` with `{domain, template?, manifest?}` is the same call.)
+
+`fastapi`, `django` and `php` run in a container built from the `Dockerfile`
+they bring (packages are installed into the image, the folder is mounted
+over it, so code edits need a restart and a `requirements.txt` change
+rebuilds). Django keeps its database in `data/db.sqlite3` and its key in
+`.env`; PHP uses its own server with `PHP_CLI_SERVER_WORKERS`, because a
+site's container has no capabilities and Apache cannot drop to www-data in
+it. `astro` serves `dist/`, which starts with a placeholder: run
+`npm install && npm run build` after editing `src/`.
 
 A folder **without** `site.json` is not served and the panel lists it as
 "unmanaged". That is on purpose: a folder served silently and a folder

@@ -136,7 +136,7 @@ A site object:
 | --- | --- | --- |
 | GET | `/sites` | → `[site]` (includes unmanaged folders with `managed: false`) |
 | GET | `/sites/{domain}` | → `site` |
-| POST | `/sites` | `{domain, manifest?, template?: "static"|"node"|"go"|"docker", repository?, branch?}` → `site`. With `repository` (owner/name, its page or its clone address; the GitHub module must be on, 409 otherwise) the manifest is made from what the repository's root holds (or `template`), with `deploy.github` naming it and its branch, and the first deploy (clone, build, start) starts at once |
+| POST | `/sites` | `{domain, manifest?, template?: "static"|"node"|"go"|"docker"|"fastapi"|"django"|"php"|"astro"|"project", repository?, branch?}` → `site`. With `repository` (owner/name, its page or its clone address; the GitHub module must be on, 409 otherwise) the manifest is made from what the repository's root holds (or `template`), with `deploy.github` naming it and its branch, and the first deploy (clone, build, start) starts at once |
 | PUT | `/sites/{domain}/manifest` | full manifest → `site` (validated, written atomically) |
 | PATCH | `/sites/{domain}/manifest` | partial, top-level keys merged → `site` |
 | DELETE | `/sites/{domain}` | `?archive=true` moves to `data/archive/` instead of deleting |

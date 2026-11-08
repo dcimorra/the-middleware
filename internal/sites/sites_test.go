@@ -169,6 +169,10 @@ func TestEveryTemplateCreatesAValidSiteWithItsFiles(t *testing.T) {
 		"node":    {"package.json", "server.js", "public/index.html", "README.md"},
 		"go":      {"go.mod", "main.go", "public/index.html"},
 		"docker":  {"Dockerfile", "server.js", "public/index.html"},
+		"fastapi": {"Dockerfile", "requirements.txt", "main.py", "index.html"},
+		"django":  {"Dockerfile", "requirements.txt", "manage.py", "config/settings.py", "config/urls.py", "config/wsgi.py", "templates/index.html", ".env"},
+		"php":     {"Dockerfile", "public/index.php", "public/hello.html"},
+		"astro":   {"package.json", "astro.config.mjs", "src/pages/index.astro", "dist/index.html"},
 		"project": {"README.md"},
 	}
 	for i, name := range Templates() {
@@ -188,7 +192,7 @@ func TestEveryTemplateCreatesAValidSiteWithItsFiles(t *testing.T) {
 		if _, err := manifest.Load(f.m.Dir(domain)); err != nil {
 			t.Fatalf("%s: manifest does not load back: %v", name, err)
 		}
-		want := map[string]manifest.Mode{"static": manifest.ModeStatic, "project": manifest.ModeProject}[name]
+		want := map[string]manifest.Mode{"static": manifest.ModeStatic, "astro": manifest.ModeStatic, "project": manifest.ModeProject}[name]
 		if want == "" {
 			want = manifest.ModeRun
 		}
