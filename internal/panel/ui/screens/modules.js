@@ -18,7 +18,8 @@ const LOGIN_VENDORS = new Set(["agent-openai"]);
 const VENDORS = new Set(["agent-openai", "agent-deepseek", "agent-zai", "agent-kimi", "agent-qwen", "agent-mistral", "agent-xai"]);
 
 import { checklist } from "../components/checklist.js";
-import { confirm, field } from "../components/dialog.js";
+import { confirm, field, open as openDialog, checkbox } from "../components/dialog.js";
+import { currentNode } from "../lib/node.js";
 import { toast, toastError } from "../components/toast.js";
 
 export function modulesScreen() {
@@ -36,7 +37,15 @@ export function modulesScreen() {
   const subs = [];
 
   async function render() {
-    const [mods, deps] = await Promise.all([api.get("/modules"), api.get("/deps").catch(() => [])]);
+    const [mods, deps, net] = await Promise.all([api.get("/modules"), api.get("/deps").catch(() => []), api.get("/nodes").catch(() => null)]);
+    // The other nodes of the network, seen from the node these modules
+    // are on: /nodes is always this panel's own, and the panel may be
+    // working on another node, which is then the one left out.
+    others = [];
+    if (net && net.network && net.self) {
+      const from = currentNode() || net.self.id;
+      others = [net.self, ...(net.members || [])].filter((x) => x.id !== from);
+    }
     clear(body);
     if (!mods || mods.length === 0) { body.append(empty(t("modules.emptyTitle"), t("modules.emptyHint"))); return null; }
     const depBy = new Map((deps || []).map((d) => [d.name, d]));
@@ -54,6 +63,8 @@ export function modulesScreen() {
     }
     return null;
   }
+
+  let others = [];
 
   // The modules opened, by key: a module event draws the list again, and
   // the one being set up must still be open after it.
@@ -192,7 +203,13 @@ export function modulesScreen() {
       if (!(await confirm({ title: t("modules.forgetQ", { name: m.name }), body: t("modules.forgetBody"), confirmLabel: t("modules.forget"), danger: true }))) return;
       try { await api.del(`/modules/${enc(m.key)}/credentials`); toast(t("modules.forgotten", { name: m.name }), "ok"); load(body, render); } catch (err) { toastError(err); }
     });
-    form.append(lines.el, h("div", { class: "form-actions" }, enableBtn, verifyBtn, disableBtn, forgetBtn));
+    // Carrying the credentials to the other nodes, so each is not set up
+    // by hand: every node is ticked, the operator unticks the ones that
+    // should not have them. Each takes them through its own verify and
+    // install, so a node that refuses them says why here.
+    const propagateBtn = h("button", { type: "button", class: "btn", hidden: !(m.shareable && others.length) }, icon("server"), t("modules.propagate"));
+    propagateBtn.addEventListener("click", () => propagate(m, lines));
+    form.append(lines.el, h("div", { class: "form-actions" }, enableBtn, verifyBtn, propagateBtn, disableBtn, forgetBtn));
     const agentBin = AGENT_BIN[m.key];
     return [
       m.installed === false && m.enabled && !agentBin ? notice("warn", t("modules.notInstalled")) : null,
@@ -206,6 +223,34 @@ export function modulesScreen() {
       TOOL_BIN[m.key] && m.enabled ? binaryLine(TOOL_BIN[m.key], depBy.get(TOOL_BIN[m.key])) : null,
       form,
     ].filter(Boolean); // a native append writes null as the text "null"
+  }
+
+  async function propagate(m, lines) {
+    const boxes = others.map((x) => ({ x, ...checkbox(x.name || x.id, { checked: true }) }));
+    const all = checkbox(t("modules.propagateAll"), { checked: true });
+    all.input.addEventListener("change", () => boxes.forEach((b) => { b.input.checked = all.input.checked; }));
+    boxes.forEach((b) => b.input.addEventListener("change", () => { all.input.checked = boxes.every((c) => c.input.checked); }));
+    const r = await openDialog({
+      title: t("modules.propagateQ", { name: m.name }),
+      body: [h("p", null, t("modules.propagateBody")), h("div", { class: "stack-sm" }, all.el, ...boxes.map((b) => b.el))],
+      buttons: [
+        { label: t("common.cancel"), value: null },
+        { label: t("modules.propagate"), primary: true, onClick: async (_form, showError) => {
+          const chosen = boxes.filter((b) => b.input.checked).map((b) => b.x.id);
+          if (!chosen.length) { showError(t("modules.propagateNone")); return false; }
+          return api.post(`/modules/${enc(m.key)}/propagate`, { nodes: chosen });
+        } },
+      ],
+    });
+    if (!r || !r.results) return;
+    // One line per node, and under a node that refused, its own lines.
+    const out = [];
+    for (const n of r.results) {
+      out.push({ ok: n.ok, text: n.ok ? t("modules.propagatedTo", { node: n.name }) : t("modules.propagateFailed", { node: n.name, why: n.error || "" }) });
+      if (!n.ok) for (const l of n.lines || []) if (l.status === "fail") out.push({ status: "fail", text: `${n.name}: ${l.text}` });
+    }
+    lines.set(out);
+    toast(r.ok ? t("modules.propagated", { name: m.name }) : t("modules.propagatePartial", { name: m.name }), r.ok ? "ok" : "bad");
   }
 
   // The sign-in with a subscription: the vendor's own flow, run on a

@@ -209,7 +209,7 @@ func NewVendor(reg *agent.Registry, homes string, v Vendor) *VendorModule {
 	}
 	needs = append(needs,
 		modules.Need{Key: "model", Label: "Default model", Optional: true, Help: "Offered first in the chat. Empty: the first one listed."},
-		modules.Need{Key: "bin", Label: "Binary", Optional: true, Help: "Path to the " + v.Bin + " executable. Empty: the one this installation keeps under modules/node, installed and updated for you."},
+		modules.Need{Key: "bin", Label: "Binary", Optional: true, Help: "Path to the " + v.Bin + " executable. Empty: the one this installation keeps under modules/node, installed and updated for you.", Local: true},
 	)
 	m := &Module{
 		key: "agent-" + v.Key, name: v.Name, desc: v.Desc, bin: v.Bin, needs: needs,
