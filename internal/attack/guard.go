@@ -376,14 +376,7 @@ func (g *Guard) solve(w http.ResponseWriter, r *http.Request, rules *Rules, name
 		MaxAge: int(life.Seconds()), HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: edge.HTTPS(r),
 	})
 	g.counter(name).solved.Add(1)
-	http.Redirect(w, r, safeBack(r.PostFormValue("back")), http.StatusSeeOther)
-}
-
-func safeBack(s string) string {
-	if s == "" || s[0] != '/' || strings.HasPrefix(s, "//") || strings.ContainsAny(s, "\\\r\n") {
-		return "/"
-	}
-	return s
+	http.Redirect(w, r, pages.LocalPath(r.PostFormValue("back")), http.StatusSeeOther)
 }
 
 // csp is the challenge page's own policy. The page carries a script, and
@@ -419,7 +412,7 @@ func (g *Guard) ask(w http.ResponseWriter, r *http.Request, rules *Rules, name, 
 	bits := rules.Difficulty()
 	var form strings.Builder
 	_ = formTpl.Execute(&form, map[string]any{
-		"Action": ChallengePath, "Back": safeBack(back), "Token": g.challenge(r, name, bits), "Bits": bits,
+		"Action": ChallengePath, "Back": pages.LocalPath(back), "Token": g.challenge(r, name, bits), "Bits": bits,
 		"Again": again, "Text": pages.ChallengeText, "Script": template.JS(script),
 	})
 	n.Extra = template.HTML(form.String())

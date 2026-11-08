@@ -161,3 +161,36 @@ func (r rewrite) RoundTrip(req *http.Request) (*http.Response, error) {
 	nr, _ := http.NewRequestWithContext(req.Context(), req.Method, u, req.Body)
 	return http.DefaultTransport.RoundTrip(nr)
 }
+
+func TestAPackageLinkCannotPointBesideItsFolder(t *testing.T) {
+	base := t.TempDir()
+	write := func(links map[string]string) string {
+		path := filepath.Join(base, "pkg.tgz")
+		f, err := os.Create(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gz := gzip.NewWriter(f)
+		tw := tar.NewWriter(gz)
+		for name, to := range links {
+			if err := tw.WriteHeader(&tar.Header{Name: "package/" + name, Typeflag: tar.TypeSymlink, Linkname: to}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		tw.Close()
+		gz.Close()
+		f.Close()
+		return path
+	}
+	dir := filepath.Join(base, "node")
+	for _, to := range []string{"../../node-evil/x", "../../../etc", "/etc/passwd"} {
+		os.RemoveAll(dir)
+		if err := untarGz(write(map[string]string{"bin/out": to}), dir, "package/"); err == nil {
+			t.Errorf("a link to %q was written", to)
+		}
+	}
+	os.RemoveAll(dir)
+	if err := untarGz(write(map[string]string{"bin/cli": "../lib/cli.js", "lib/self": "."}), dir, "package/"); err != nil {
+		t.Fatalf("a link inside the package was refused: %v", err)
+	}
+}

@@ -510,7 +510,10 @@ func untarGz(archive, dir, strip string) error {
 			}
 			out.Close()
 		case tar.TypeSymlink:
-			if filepath.IsAbs(hdr.Linkname) || strings.Contains(hdr.Linkname, "..") && !strings.HasPrefix(filepath.Clean(filepath.Join(filepath.Dir(target), hdr.Linkname)), filepath.Clean(dir)) {
+			// The link's target is judged on a separator: a bare prefix let
+			// "../../node-evil/x", from bin/ of a package unpacked in .../node, through
+			// as inside .../node.
+			if to := filepath.Clean(filepath.Join(filepath.Dir(target), hdr.Linkname)); filepath.IsAbs(hdr.Linkname) || (to != filepath.Clean(dir) && !strings.HasPrefix(to, filepath.Clean(dir)+string(os.PathSeparator))) {
 				return fmt.Errorf("deps: symlink escapes the target: %s -> %s", hdr.Name, hdr.Linkname)
 			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
