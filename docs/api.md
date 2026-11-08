@@ -279,6 +279,81 @@ the house's conversation, whose picker says whom the operator talks to.
 | --- | --- | --- |
 | GET | `/autofix` | → `[{at, domain, reason, attempt, turn_id, outcome, cost_usd, recovered, skipped?}]`, oldest first |
 
+## The autonomous agent
+
+One for the whole network of nodes (`internal/autopilot`), running on one of
+them, off until `autopilot.enabled`. Switching it on is refused while another
+node has it on, and of two that both have it on (a cut mesh that healed) the
+one switched on later stands down. It is moved with `/autopilot/move`: its
+notebook, guidelines, limits and the list of sites it made go to the other
+node, which starts a new session; its conversations and journal stay. It
+reads every other node over the mesh (their sites and their state) and works
+on the node it runs on. Once on it
+wakes by itself, looks at every site (state, errors, people in the last seven
+days, what went wrong since it last looked), and decides what to do: repair,
+improve a site through that site's own conversation, or create a new site. It
+works in conversations of its own, `autopilot#<id>`, in the installation's
+root under a jail narrower than the house's (no docker, no `git push`, no
+`tasks/`, nothing of `data/` but its HOME), and over the socket it is a caller
+of its own (`auth.AutopilotScopes`): every site's read, restart, deploy, tasks
+and backups, creating a site, handing work to a site and the routes below
+marked *agent*. Never settings, tokens, modules, users, nodes, deletion, or
+publishing a site it did not make.
+
+Its brakes are the settings', which it cannot reach: `provider` and `model`
+(Claude with Opus by default), `sites_per_week` (2, in any seven days),
+`zones` (the names its sites may have; empty is any), `publish` (`auto`, the
+default, or `ask`), `min_minutes`/`max_minutes` (15 and 720: the bounds of
+when it asks to be woken), `quota_percent` (80: above that share of a
+subscription window, the 5-hour or the weekly one, it is not woken and hands
+nothing out until the window resets, so the rest is the operator's) and
+`context_percent` (60: at that share of the model's context window the next
+wake starts a new session, which picks up from the notebook it keeps in its
+HOME). There are no dollar caps: the window is the measure.
+
+Each turn ends with `Summary:` and `Next: <duration>, <why>`; the house wakes
+it then, or earlier when a site turn it started ends or an error-level event
+names a site, never more often than `min_minutes`. A site it creates is never
+published at creation: it builds it over as many turns as it takes and says
+it is finished with `/autopilot/sites/{domain}/ready`, which publishes it
+(`publish: auto`) or asks the operator (`ask`). A manifest's
+`"autopilot": false` keeps it out of a site. Every wake, turn (with the shell
+commands it ran), site, call to the house and refusal is a line of
+`data/autopilot/journal.jsonl`; what must survive a restart is
+`data/autopilot/state.json`, and the operator's guidelines are
+`data/autopilot/guidelines.md` (the default ones until written).
+
+| method | path | result |
+| --- | --- | --- |
+| GET | `/autopilot` | *agent too* → `{enabled, limits, state: {session, context, window, turn, next_wake, next_reason, skipped, delegated, answers, alerts, created, last_result}, running, sites_left, context_percent, quota, notebook, guidelines, custom_guidelines}` |
+| GET | `/autopilot/journal` | *agent too* → `[{at, kind, message, domain?, turn_id?, commands?, next?}]`, oldest first; `?limit=` (200) |
+| PUT | `/autopilot/settings` | body: `settings.autopilot` → the status; switching it on has it look at once |
+| PUT | `/autopilot/guidelines` | body: `{text}` (Markdown; empty is the default ones) → the status |
+| POST | `/autopilot/on` | switch it on → the status |
+| POST | `/autopilot/off` | switch it off; a turn at work ends on its own → the status |
+| POST | `/autopilot/stop` | the kill switch: off, and its turn and every site turn it started cut now → the status |
+| POST | `/autopilot/move` | body: `{node}` (id or name): hand it to another node of the network; refused while it is at work → the status |
+| POST | `/autopilot/adopt` | body: what `move` sends; the node it leaves calls it over the mesh → the status |
+| POST | `/autopilot/wake` | have it look on its next pass → `{ok}` |
+| POST | `/autopilot/ask` | *agent* body: `{domain, text}` → `{turn_id}`: a turn in the site's conversation for it (origin `autopilot`, jailed in the site, no `git push`); at most 3 at once, one per site |
+| POST | `/autopilot/sites/{domain}/ready` | *agent* one of its sites is finished → `{published, waiting}` |
+| POST | `/autopilot/sites/{domain}/publish` | publish one of its finished sites (with `publish: ask`) → the status |
+| POST | `/autopilot/sites/{domain}/decline` | keep one of its sites off the internet; it is told → the status |
+| GET | `/autopilot/chats` | its conversations, one per session, as for a site's |
+| POST | `/autopilot/chats` | as for a site, for its conversations |
+| DELETE | `/autopilot/chats` | as for a site, for its conversations |
+| GET | `/autopilot/chats/{id}` | as for a site: the operator reads a session and may write into it, which is how they talk to it |
+| POST | `/autopilot/chats/{id}` | as above |
+| DELETE | `/autopilot/chats/{id}` | as above |
+| POST | `/autopilot/chats/{id}/stop` | as above |
+| POST | `/autopilot/chats/{id}/reap` | as above |
+| GET | `/autopilot/chats/{id}/export` | as above |
+| GET | `/autopilot/chats/{id}/processes` | as above |
+| POST | `/autopilot/chats/{id}/processes/{pid}/kill` | as above |
+| GET | `/autopilot/chats/{id}/files` | as above |
+| POST | `/autopilot/chats/{id}/files` | as above |
+| DELETE | `/autopilot/chats/{id}/files/{file}` | as above |
+
 ## Push notifications
 
 Web push (VAPID, aes128gcm) to the operator's devices. What is pushed is a

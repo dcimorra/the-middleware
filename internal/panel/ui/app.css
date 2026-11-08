@@ -1493,7 +1493,7 @@ input.set-num, .card input.set-num { max-width: 180px; }
   .set-panels .card.set-card { padding: 16px; }
   .set-card.pad0 > .card-pad { padding: 16px 16px 2px; }
   .set-head { flex-wrap: wrap; }
-  .set-head-actions { justify-content: flex-start; }
+  .set-head-actions { justify-content: flex-start; flex: 1 1 100%; min-width: 0; }
   .set-panel iframe.page-preview { height: 300px; }
   .set-switch-field .hint { margin-left: 0; margin-top: 4px; }
 }
@@ -2516,3 +2516,7 @@ details.site-env[open] > summary { margin-bottom: 10px; }
 .site-res-track { position: relative; }
 /* What the site uses now, a notch on the bar under the thumb. */
 .site-res-mark { position: absolute; top: -2px; width: 3px; height: 22px; margin-left: -1.5px; border-radius: 2px; background: var(--warn); opacity: .85; pointer-events: none; }
+/* The autonomous agent's screen: its notebook and the commands of its
+   journal are text to read whole, wrapped, never a line off the screen. */
+pre.pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; margin: .5rem 0 0; }
+.set-card textarea.mono { width: 100%; box-sizing: border-box; }

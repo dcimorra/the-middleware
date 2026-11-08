@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/dcimorra/the-middleware/internal/auth"
+	"github.com/dcimorra/the-middleware/internal/autopilot"
+	"github.com/dcimorra/the-middleware/internal/chat"
 	"github.com/dcimorra/the-middleware/internal/engine"
 	"github.com/dcimorra/the-middleware/internal/events"
 	"github.com/dcimorra/the-middleware/internal/manifest"
@@ -121,6 +123,8 @@ type Server struct {
 	// publisher, when set, publishes sites on creation and unpublishes
 	// them on deletion (RegisterInbound sets it).
 	publisher *publish.Publisher
+	// pilot is the autonomous agent (RegisterAutopilot sets it).
+	pilot *autopilot.Pilot
 	// moves are the sites moving to another node, by name.
 	moves moves
 	// repairs are the house's AI looking at arrived sites that do not start.
@@ -354,6 +358,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// its scopes open, for the site in the path. Public routes are public
 	// to it as to anyone.
 	if !public && len(caller.Scopes) > 0 && !auth.Allows(caller.Scopes, pattern, siteIn(pattern, r.URL.Path)) && !turnReadsOwnEvents(caller, pattern, r) {
+		if caller.Autopilot {
+			if s.pilot != nil {
+				s.pilot.Note(autopilot.Entry{Kind: autopilot.KindRefused, Message: "the house refused " + r.Method + " " + r.URL.Path})
+			}
+			if s.opts.Bus != nil {
+				s.opts.Bus.Emit(events.Event{Type: "api.turn_refused", Subject: chat.Autopilot, Actor: "autopilot", Level: "warn", Message: "a turn of the autonomous agent asked the socket for " + pattern, Data: map[string]any{"method": r.Method, "path": r.URL.Path}})
+			}
+			s.writeError(w, r, Errorf(http.StatusForbidden, "the autonomous agent may read, restart, deploy and manage the tasks and backups of the sites, create sites and hand them work, and nothing else; %s is the operator's", pattern))
+			return
+		}
 		if caller.Turn != "" {
 			// An agent reaching for the operator's routes is worth knowing
 			// about: it is what a prompt injected into a site's turn does.
@@ -365,6 +379,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.writeError(w, r, Errorf(http.StatusForbidden, "this token's scopes (%s) do not open %s", strings.Join(caller.Scopes, ", "), pattern))
 		return
+	}
+	if caller.Autopilot && !public {
+		// Every call it makes is in its journal, and a site whose
+		// manifest keeps it out is not there for it.
+		site := siteIn(pattern, r.URL.Path)
+		if s.pilot == nil {
+			s.writeError(w, r, Errorf(http.StatusServiceUnavailable, "the autonomous agent is not running"))
+			return
+		}
+		if site != "" && s.pilot.Excluded(site) {
+			s.pilot.Note(autopilot.Entry{Kind: autopilot.KindRefused, Domain: site, Message: "its manifest keeps the agent out: " + r.Method + " " + r.URL.Path})
+			s.writeError(w, r, Errorf(http.StatusForbidden, "%s's manifest keeps the autonomous agent out (\"autopilot\": false)", site))
+			return
+		}
+		if r.Method != http.MethodGet {
+			s.pilot.Note(autopilot.Entry{Kind: autopilot.KindCall, Domain: site, Message: r.Method + " " + r.URL.RequestURI()})
+		}
 	}
 	if !public && caller.Delegate() && !s.gateDelegate(w, r, caller, pattern) {
 		return

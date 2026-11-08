@@ -56,6 +56,13 @@ type Event struct {
 	Status string `json:"status,omitempty"`
 	// Limits are the windows a KindLimits event reports.
 	Limits []Window `json:"limits,omitempty"`
+	// Context is how much of the model's context window the session
+	// holds at the end of the run, in tokens, and Window how large that
+	// window is; on a KindResult, zero when the CLI did not say. What
+	// works on its own across many turns (internal/autopilot) starts a
+	// fresh session before the CLI compacts this one behind its back.
+	Context int `json:"context,omitempty"`
+	Window  int `json:"window,omitempty"`
 }
 
 // Request is one turn.

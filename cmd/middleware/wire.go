@@ -25,6 +25,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/audit"
 	"github.com/dcimorra/the-middleware/internal/auth"
 	"github.com/dcimorra/the-middleware/internal/autofix"
+	"github.com/dcimorra/the-middleware/internal/autopilot"
 	"github.com/dcimorra/the-middleware/internal/backups"
 	"github.com/dcimorra/the-middleware/internal/cgroups"
 	"github.com/dcimorra/the-middleware/internal/chat"
@@ -176,6 +177,7 @@ type wireHook struct {
 	notifier  *push.Notifier
 	auditor   *audit.Auditor
 	fixer     *autofix.Fixer
+	pilot     *autopilot.Pilot
 	updater   *update.Updater
 	mesh      *nodes.Mesh
 	fw        *firewall.Firewall
@@ -473,6 +475,12 @@ func buildWire(a *app.App) app.Hook {
 			return w.fixer.Repairs(), nil
 		})
 	}
+	// The autonomous agent (internal/autopilot): off until the operator
+	// switches it on, and held to its brakes here and in the API.
+	if chatManager != nil {
+		w.pilot = buildPilot(a, w)
+		srv.RegisterAutopilot(w.pilot, chatManager)
+	}
 	srv.RegisterDomains(domains.New(domains.Options{DataDir: dataDir(a)}))
 	if theCache != nil {
 		srv.RegisterCache(theCache)
@@ -588,6 +596,9 @@ func (w *wireHook) Run(ctx context.Context, a *app.App) error {
 	}
 	if w.fixer != nil {
 		go w.fixer.Run(ctx)
+	}
+	if w.pilot != nil {
+		go w.pilot.Run(ctx)
 	}
 	if w.backups != nil {
 		go w.backups.Run(ctx)

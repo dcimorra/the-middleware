@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -328,4 +329,29 @@ func readDir(p string) []string {
 		out = append(out, e.Name())
 	}
 	return out
+}
+
+// Unattended narrows a jail of the installation's root (NewJail with
+// workdir == root) for an agent that works with nobody watching (the
+// autonomous agent, internal/autopilot): what the house's own
+// conversation may do because the operator is reading it, it may not.
+// Docker is root on the machine; `git push` is how anything a prompt
+// injected would leave it; and every entry of the root but sites/ and
+// data/ (whose entries NewJail already denies one by one) is denied,
+// tasks/ above all: a task runs outside any jail, so writing one would be
+// a way around every rule here.
+func (j *Jail) Unattended(root string) {
+	root = absolute(root)
+	j.Commands = append(j.Commands, siteOnlyCommands...)
+	j.Commands = append(j.Commands, "git push")
+	for _, ent := range readDir(root) {
+		if ent == "sites" || ent == "data" {
+			continue
+		}
+		p := filepath.Join(root, ent)
+		if !slices.Contains(j.Deny, p) {
+			j.Deny = append(j.Deny, p)
+		}
+	}
+	sort.Strings(j.Deny)
 }

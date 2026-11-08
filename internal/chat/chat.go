@@ -151,6 +151,10 @@ const (
 	// OriginRepair is the house's automatic repairs of a site (autofix):
 	// nobody on the other side, and a prompt made of the site's own log.
 	OriginRepair = "repair"
+	// OriginAutopilot is a site's conversation the house's autonomous
+	// agent hands work to (internal/autopilot): nobody watching either,
+	// and a prompt written by an agent that read what visitors wrote.
+	OriginAutopilot = "autopilot"
 )
 
 // Conversation is one conversation's file.
@@ -541,7 +545,7 @@ func (m *Manager) workdir(name string) (string, error) {
 	if !validID(id) {
 		return "", fmt.Errorf("%q is not a conversation", name)
 	}
-	if domain == Middleware {
+	if IsHouse(domain) {
 		return m.opts.Root, nil
 	}
 	if !manifest.ValidName(domain) {
@@ -576,7 +580,7 @@ func (m *Manager) Resolve(name string) (Settings, error) {
 	m.mu.Lock()
 	s := Settings{Provider: m.limits.DefaultProvider, Workdir: dir}
 	m.mu.Unlock()
-	if domain != Middleware {
+	if !IsHouse(domain) {
 		site := agent.ReadSiteSettings(dir)
 		if site.Provider != "" {
 			s.Provider = site.Provider
@@ -586,7 +590,10 @@ func (m *Manager) Resolve(name string) (Settings, error) {
 	}
 	home := filepath.Join(m.opts.Root, "data", "homes", domain)
 	s.Jail = agent.NewJail(m.opts.Root, dir, home)
-	if domain != Middleware {
+	if domain == Autopilot {
+		s.Jail.Unattended(m.opts.Root)
+	}
+	if !IsHouse(domain) {
 		var dirs []string
 		for _, r := range lentTo(dir) {
 			other := filepath.Join(m.opts.Root, "sites", r)
@@ -902,7 +909,11 @@ func (m *Manager) SendWith(name, text string, o SendOptions) (string, error) {
 		system += "\nThis is an automatic repair with nobody watching: `git push` is not available in it, so leave committing and pushing to the operator.\n"
 		req.System = system
 	}
-	if turnEnv != nil && domain != Middleware && c.Origin != OriginSite && c.Origin != OriginRepair {
+	if c.Origin == OriginAutopilot {
+		system += "\n" + AutopilotTask + "\n"
+		req.System = system
+	}
+	if turnEnv != nil && !IsHouse(domain) && c.Origin != OriginSite && c.Origin != OriginRepair && c.Origin != OriginAutopilot {
 		for k, v := range turnEnv(domain) {
 			if _, set := req.Env[k]; !set {
 				req.Env[k] = v
@@ -987,6 +998,9 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 	var tools []string
 	var questions []Question
 	var cost float64
+	// ctxUsed and ctxWindow are the session's size at the end, when the
+	// agent said (agent.Event.Context).
+	var ctxUsed, ctxWindow int
 	sessionID := ""
 	var errText string
 	ended := false
@@ -1138,6 +1152,9 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 				if ev.Cost > cost {
 					cost = ev.Cost
 				}
+				if ev.Context > 0 {
+					ctxUsed, ctxWindow = ev.Context, ev.Window
+				}
 				if text.Len() == 0 && ev.Text != "" {
 					text.WriteString(ev.Text)
 					steps = append(steps, Step{Kind: "text", Text: ev.Text})
@@ -1269,7 +1286,7 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 		m.emit("agent.error", name, "error", errText, map[string]any{"turn_id": turnID, "cost": cost, "origin": c.Origin})
 		return
 	}
-	m.emit("agent.done", name, "", "", map[string]any{"turn_id": turnID, "cost": cost, "session_id": sessionID, "text": text.String(), "tools": len(tools), "origin": c.Origin})
+	m.emit("agent.done", name, "", "", map[string]any{"turn_id": turnID, "cost": cost, "session_id": sessionID, "text": text.String(), "tools": len(tools), "origin": c.Origin, "context": ctxUsed, "window": ctxWindow})
 }
 
 func (m *Manager) emit(typ, domain, level, msg string, data map[string]any) {
@@ -1373,7 +1390,9 @@ func newID() string {
 // passed as system context so the user's own words stay the prompt.
 func Preamble(domain, workdir string, j agent.Jail) string {
 	var b strings.Builder
-	if domain == Middleware {
+	if domain == Autopilot {
+		b.WriteString(autopilotPreamble(workdir, j))
+	} else if domain == Middleware {
 		b.WriteString("You are working on the middleware installation itself, the supervisor that serves every site on this machine. ")
 		b.WriteString("Your working directory is the installation root: " + workdir + ". ")
 		b.WriteString("You may read and edit the installation's own files, its settings and its tasks. ")
@@ -1435,7 +1454,7 @@ func Preamble(domain, workdir string, j agent.Jail) string {
 		root := filepath.Dir(filepath.Dir(workdir))
 		for _, d := range j.Deny {
 			line := "  - " + d
-			if domain != Middleware {
+			if !IsHouse(domain) {
 				if h := denyHint(root, domain, d); h != "" {
 					line += " (for " + h + ")"
 				}

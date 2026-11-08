@@ -71,6 +71,10 @@ type Manifest struct {
 	// when the installation turns it on: some sites are not touched
 	// without someone looking. The panel cannot override it.
 	Autofix *bool `json:"autofix,omitempty"`
+	// Autopilot false keeps the house's autonomous agent away from this
+	// site: it is left out of what the agent sees, and every call of the
+	// agent's that names it is refused (internal/autopilot).
+	Autopilot *bool `json:"autopilot,omitempty"`
 	// Attack is under-attack mode: a proof of work before anything is
 	// served (internal/attack).
 	Attack *attack.Rules `json:"attack,omitempty"`
@@ -568,7 +572,9 @@ var projectRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 // Reserved names cannot be projects: "middleware" is the house's own
 // conversation, and the rest are what a Host header without a dot says.
-var reserved = map[string]bool{"middleware": true, "localhost": true}
+// autopilot names the house's autonomous agent's conversations
+// (chat.Autopilot), which run in the root as the house's own do.
+var reserved = map[string]bool{"middleware": true, "localhost": true, "autopilot": true}
 
 // IsProject reports whether a site folder's name is a project: a name with
 // no dot, which answers no hostname. A project has its workers, its tasks

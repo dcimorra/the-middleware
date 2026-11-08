@@ -16,6 +16,7 @@ import (
 
 	"github.com/dcimorra/the-middleware/internal/archive"
 	"github.com/dcimorra/the-middleware/internal/auth"
+	"github.com/dcimorra/the-middleware/internal/autopilot"
 	"github.com/dcimorra/the-middleware/internal/events"
 	"github.com/dcimorra/the-middleware/internal/inbound"
 	"github.com/dcimorra/the-middleware/internal/manifest"
@@ -204,6 +205,23 @@ func (s *Server) sitesCreate(w http.ResponseWriter, r *http.Request) (any, error
 	}
 	domain := strings.ToLower(strings.TrimSpace(body.Domain))
 	fromRepo := strings.TrimSpace(body.Repository) != ""
+	// The autonomous agent creates within its allowance and its names,
+	// and never straight onto the internet: a site is created before its
+	// files are written, and the operator wants finished sites public,
+	// not proofs of concept. It is published when the agent says it is
+	// finished (POST /autopilot/sites/{domain}/ready).
+	pilot := auth.FromContext(r.Context()).Autopilot
+	if pilot {
+		if s.pilot == nil {
+			return nil, Errorf(http.StatusServiceUnavailable, "the autonomous agent is not running")
+		}
+		if err := s.pilot.MayCreate(domain); err != nil {
+			s.pilot.Note(autopilot.Entry{Kind: autopilot.KindRefused, Domain: domain, Message: "site creation refused: " + err.Error()})
+			return nil, Errorf(http.StatusForbidden, "%v", err)
+		}
+		no := false
+		body.Publish = &no
+	}
 	if fromRepo {
 		s.mu.Lock()
 		src := s.repos
@@ -225,6 +243,9 @@ func (s *Server) sitesCreate(w http.ResponseWriter, r *http.Request) (any, error
 	site, err := m.Create(domain, body.Manifest, body.Template)
 	if err != nil {
 		return nil, err
+	}
+	if pilot {
+		s.pilot.Created(domain)
 	}
 	if fromRepo {
 		// The folder has its site.json and nothing else: the first deploy

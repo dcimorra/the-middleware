@@ -54,6 +54,12 @@ func TestASiteTurnIsFoundAboveAProcess(t *testing.T) {
 		{name: "another site's mark under a site's turn", mark: "b.test", turns: map[int]string{self: "a.test"}, fails: true},
 		{name: "the house's turn", turns: map[int]string{self: Middleware}, want: ""},
 		{name: "a mark that names no site", mark: "../etc", want: ""},
+		// The autonomous agent is a caller of its own, never the operator's,
+		// and a site's turn cannot pass itself off as it, nor it as one.
+		{name: "the autonomous agent's turn", turns: map[int]string{self: Autopilot + "#00ff"}, want: Autopilot},
+		{name: "the autonomous agent's mark alone", mark: Autopilot + "#00ff", want: Autopilot},
+		{name: "its mark under a site's turn", mark: Autopilot, turns: map[int]string{self: "a.test"}, fails: true},
+		{name: "a house mark under its turn", mark: Middleware, turns: map[int]string{self: Autopilot + "#00ff"}, want: Autopilot},
 	}
 	for _, c := range cases {
 		var env []string

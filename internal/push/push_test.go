@@ -188,6 +188,17 @@ func TestOnlyTheListedEventsArePushed(t *testing.T) {
 	if _, ok := For(events.Event{Type: "agent.done", Subject: "a.example#12ab", Data: map[string]any{"origin": "site"}}); ok {
 		t.Error("a site door's turn was pushed")
 	}
+	// The autonomous agent works with nobody waiting: neither its turns
+	// nor the ones it hands to sites push; a site waiting to go public does.
+	if _, ok := For(events.Event{Type: "agent.done", Subject: "autopilot#12ab", Data: map[string]any{"origin": "panel"}}); ok {
+		t.Error("an autonomous agent's turn was pushed")
+	}
+	if _, ok := For(events.Event{Type: "agent.done", Subject: "a.example#12ab", Data: map[string]any{"origin": "autopilot"}}); ok {
+		t.Error("a site turn the autonomous agent handed out was pushed")
+	}
+	if m, ok := For(events.Event{Type: "autopilot.ready", Subject: "a.example"}); !ok || m.URL != "/#/autopilot" {
+		t.Errorf("a finished site waiting: %+v %v", m, ok)
+	}
 	m, ok := For(events.Event{Type: "agent.done", Subject: "a.example#12ab", Data: map[string]any{"origin": "panel", "text": "Done.\nMore"}})
 	if !ok || m.Body != "Done." || m.URL != "/#/sites/a.example/chat?c=12ab" {
 		t.Errorf("a panel turn: %+v %v", m, ok)

@@ -388,3 +388,24 @@ func TestABackgroundShellDoesNotHoldTheRun(t *testing.T) {
 		t.Fatalf("a result under a running subagent ended the run: %v %+v", done, evs)
 	}
 }
+
+// The session's size is the main agent's last call (what it read, from
+// the cache or not, plus what it wrote), not a subagent's, and the
+// window is the result's: what the autonomous agent rotates its session
+// by.
+func TestTheResultSaysHowMuchOfTheContextTheSessionHolds(t *testing.T) {
+	p := &parser{}
+	for _, l := range []string{
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":10,"cache_creation_input_tokens":1000,"cache_read_input_tokens":40000,"output_tokens":200}}}`,
+		`{"type":"assistant","parent_tool_use_id":"t1","message":{"content":[{"type":"text","text":"sub"}],"usage":{"input_tokens":5,"cache_read_input_tokens":90000,"output_tokens":1}}}`,
+	} {
+		p.Line(l)
+	}
+	evs, done := p.Line(`{"type":"result","subtype":"success","result":"ok","total_cost_usd":0.1,"modelUsage":{"claude-opus-5-5":{"contextWindow":200000},"claude-haiku-4-5":{"contextWindow":100000}}}`)
+	if !done || len(evs) != 2 || evs[1].Kind != agent.KindResult {
+		t.Fatalf("%+v", evs)
+	}
+	if evs[1].Context != 41210 || evs[1].Window != 200000 {
+		t.Fatalf("context %d of %d, want 41210 of 200000", evs[1].Context, evs[1].Window)
+	}
+}
