@@ -32,7 +32,7 @@ var (
 	ErrBadDomain   = errors.New("not a valid domain name (lower-case ASCII, at least one dot)")
 	ErrUnmanaged   = errors.New("the folder has no site.json")
 	ErrOutside     = errors.New("path leaves the site folder")
-	ErrBadTemplate = errors.New("unknown template: want static, node, go or docker")
+	ErrBadTemplate = errors.New("unknown template: want static, node, go, docker, fastapi, django, php, astro or project")
 	ErrInvalid     = errors.New("invalid manifest")
 	ErrForbidden   = errors.New("not for this caller")
 )

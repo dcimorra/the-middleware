@@ -31,6 +31,10 @@ func TestTheRepositoryRootDecidesWhatTheSiteIs(t *testing.T) {
 	if m, kind := RepoManifest(vite, "dev", ""); kind != "static-build" || m.Static.Root != "dist" || m.Deploy.GitHub.Branch != "dev" {
 		t.Fatalf("vite: %s %+v", kind, m)
 	}
+	next := Repo{FullName: "a/n", Files: []string{"package.json"}, PackageJSON: []byte(`{"scripts":{"build":"next build"}}`)}
+	if m, kind := RepoManifest(next, "", ""); kind != "static-build" || m.Static.Root != "out" {
+		t.Fatalf("next export: %s %+v", kind, m.Static)
+	}
 	if _, kind := RepoManifest(Repo{FullName: "a/g", Files: []string{"go.mod", "main.go"}}, "", ""); kind != "go" {
 		t.Fatalf("go: %s", kind)
 	}

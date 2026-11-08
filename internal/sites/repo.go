@@ -121,8 +121,13 @@ func RepoManifest(r Repo, branch, template string) (*manifest.Manifest, string) 
 	case "static-build":
 		gh.Build = [][]string{npmInstall, {"npm", "run", "build"}}
 		root := "dist"
-		if strings.Contains(pkg.Scripts["build"], "react-scripts") {
+		switch b := pkg.Scripts["build"]; {
+		case strings.Contains(b, "react-scripts"):
 			root = "build"
+		case strings.Contains(b, "next"):
+			// A Next.js app with no start script is a static export
+			// (output: "export"), which writes out/.
+			root = "out"
 		}
 		m.Static = &manifest.Static{Root: root}
 	case "go":

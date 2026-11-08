@@ -262,7 +262,7 @@ const siteUsage = `usage: middleware site <command> [flags]
 
   list                        every site folder
   show <domain|name> [--service s]  one site, with its manifest and its services
-  add <domain> [--template static|node|go|docker|project] [--manifest file.json|-]
+  add <domain> [--template static|node|go|docker|fastapi|django|php|astro|project] [--manifest file.json|-]
               [--publish=false] [--door tunnel|ports]
                               published by default when a DNS module is on
   rm <domain> [--archive]     unpublish, then delete or move to data/archive/

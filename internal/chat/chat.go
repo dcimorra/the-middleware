@@ -1378,7 +1378,7 @@ func Preamble(domain, workdir string, j agent.Jail) string {
 		b.WriteString("Your working directory is the installation root: " + workdir + ". ")
 		b.WriteString("You may read and edit the installation's own files, its settings and its tasks. ")
 		b.WriteString("You may create new sites, in either of two ways: make the folder sites/<domain>/ with the project inside and a site.json (the engine picks it up within a few seconds), ")
-		b.WriteString("or run `middleware site add <domain> --template <static|node|go|docker>` or `middleware site add <domain> --manifest -` with the manifest on stdin; the command talks to the supervisor over its unix socket and needs no credentials. ")
+		b.WriteString("or run `middleware site add <domain> --template <static|node|go|docker|fastapi|django|php|astro>` or `middleware site add <domain> --manifest -` with the manifest on stdin; the command talks to the supervisor over its unix socket and needs no credentials. ")
 		b.WriteString("Once a site exists, hand detailed work on it to that site's own conversation unless you are asked to continue yourself. ")
 		b.WriteString("You must not edit a site that already existed when this turn began: each of those has its own conversation, and the paths listed below are denied.\n")
 	} else {

@@ -19,6 +19,11 @@ import { delegate, can } from "../lib/access.js";
 import { menu } from "./site-menu.js";
 import { randomLabel, withLabel, commonParent, MAX_WORDS } from "../lib/words.js";
 
+// Templates that only make sense from nothing: from a repository there is
+// no "fastapi" kind to detect, and the house would quietly fall back to
+// static files.
+const OWN_TEMPLATES = new Set(["fastapi", "django", "php", "astro"]);
+
 export function sitesScreen({ query }) {
   const search = h("input", { type: "search", placeholder: t("sites.search"), "aria-label": t("sites.search"), autocomplete: "off" });
   const newBtn = h("button", { type: "button", class: "btn primary", "data-shortcut": "new" }, icon("plus"), t("sites.new"));
@@ -177,7 +182,7 @@ export function sitesScreen({ query }) {
   async function newSite() {
     const domain = h("input", { type: "text", placeholder: "example.com", autocomplete: "off", autocapitalize: "off", spellcheck: "false", required: true });
     const template = h("select", null,
-      ...["static", "node", "go", "docker", "project"].map((k) => h("option", { value: k }, t("template." + k))),
+      ...["static", "node", "go", "docker", "fastapi", "django", "php", "astro", "project"].map((k) => h("option", { value: k, "data-own": OWN_TEMPLATES.has(k) ? "1" : null }, t("template." + k))),
     );
     // Publishing is on by default: a site is something people reach. A
     // name without a dot is a project and has nothing to publish.
@@ -238,6 +243,9 @@ export function sitesScreen({ query }) {
       repoFields.hidden = !fromRepo;
       if (fromRepo) template.prepend(auto);
       else auto.remove();
+      // These bring files of their own (a Dockerfile, a project); a
+      // repository brings its own, and the house does not detect them.
+      for (const o of template.options) if (o.dataset.own) o.disabled = fromRepo;
       template.value = fromRepo ? "auto" : (isProject() ? "project" : "static");
       if (fromRepo && !repoList.childElementCount) {
         try {
