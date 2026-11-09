@@ -92,7 +92,7 @@ func TestAnAgentWakesTowardItsGoalAndSleepsAsItSays(t *testing.T) {
 		t.Fatalf("turns started: %d", len(fc.prompts))
 	}
 	p := fc.prompts[0]
-	for _, want := range []string{"Write one useful post a day.", "new session", "Sending email", "lacks SMTP_HOST", "Next:"} {
+	for _, want := range []string{"Write one useful post a day.", "new session", "Your vault is empty", "Next:"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("the prompt does not say %q:\n%s", want, p)
 		}
@@ -347,5 +347,27 @@ func TestAWakeDoesNotHoldTheCrewWhileTheChatStartsTheTurn(t *testing.T) {
 	fc.mu.Unlock()
 	if st.State.Turn == "" || n != 1 {
 		t.Errorf("turn %q, %d prompts: a second pass started another", st.State.Turn, n)
+	}
+}
+
+// An agent's room (its desk and home) is weighed, shown, and its wake
+// told to make room first once it is over what the operator gave it.
+func TestAnAgentIsToldWhenItsRoomIsFull(t *testing.T) {
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	c, fc, _ := newCrew(t, &now, nil)
+	a, _ := c.Create(Agent{Name: "x", Goal: "g", DiskMB: 1})
+	if err := os.WriteFile(filepath.Join(c.Desk(a.ID), "big"), make([]byte, 3<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_ = c.SetEnabled(a.ID, true)
+	c.Pass()
+	if len(fc.prompts) != 1 || !strings.Contains(fc.prompts[0], "Your room is FULL: your desk and home hold 3 MiB, over the 1 MiB") {
+		t.Fatalf("the wake does not say the room is full: %v", fc.prompts)
+	}
+	if st, _ := c.Get(a.ID); st.DiskUsed != 3 {
+		t.Errorf("disk used %d", st.DiskUsed)
+	}
+	if _, err := c.Create(Agent{Name: "y", Goal: "g", DiskMB: -1}); err == nil {
+		t.Error("a negative room")
 	}
 }

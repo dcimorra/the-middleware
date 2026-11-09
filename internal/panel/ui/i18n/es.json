@@ -2472,10 +2472,6 @@
   "crew.vault.remove": "Quitar {key}",
   "crew.vault.removeQ": "¿Quitar {key}?",
   "crew.vault.removeBody": "Deja de tenerlo desde su próximo turno.",
-  "crew.caps": "Lo que le da la casa",
-  "crew.capsHint": "Todos los agentes lo tienen todo; si a una le falta un nombre en el baúl, te lo pide cuando lo necesite.",
-  "crew.cap.ready": "Listo",
-  "crew.cap.lacks": "Le falta {keys}",
   "crew.notebook": "Cuaderno",
   "crew.notebookHint": "Su memoria entre sesiones, reescrita en cada turno.",
   "crew.notebookEmpty": "Aún no ha escrito nada.",
@@ -2486,5 +2482,9 @@
   "crew.noSessions": "Aún no ha tenido ninguna sesión: enciéndelo.",
   "crew.placeholder": "Dile algo al agente…",
   "crew.proposalsOpen": "{n} propuestas abiertas",
+  "crew.room": "Espacio",
+  "crew.roomOf": "{used} de {room} MiB",
+  "crew.roomMB": "Espacio (MiB)",
+  "crew.roomHint": "Lo que pueden ocupar su escritorio y su HOME: las herramientas que se construye, lo que instalan y sus ficheros. Si se pasa, cada vez que despierte se le dice que haga sitio antes que nada.",
   "crew.network": "De la red"
 }

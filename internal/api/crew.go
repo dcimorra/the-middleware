@@ -66,7 +66,7 @@ func (s *Server) RegisterCrew(c *crew.Crew, m *chat.Manager) {
 		}
 		return c.List(), nil
 	})
-	s.Handle("POST", base, "Create an agent (body: name, goal, provider?, model?, min_minutes?, max_minutes?, quota_percent?, context_percent?); it starts off", func(w http.ResponseWriter, r *http.Request) (any, error) {
+	s.Handle("POST", base, "Create an agent (body: name, goal, provider?, model?, min_minutes?, max_minutes?, quota_percent?, context_percent?, disk_mb?); it starts off", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		if err := operator(r); err != nil {
 			return nil, err
 		}
@@ -233,8 +233,16 @@ func (s *Server) RegisterCrew(c *crew.Crew, m *chat.Manager) {
 		}
 		return st.Vault, nil
 	})
-	s.Handle("PUT", one+"/vault/{key}", "Set a value in an agent's vault (body: value); encrypted, in its turns' environment from the next one", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		if err := operator(r); err != nil {
+	// Who writes the vault, for its journal: the agent keeps there what
+	// it made itself (an account's password), the operator what they gave.
+	by := func(r *http.Request) string {
+		if cl := auth.FromContext(r.Context()); cl.Crew != "" || cl.Autopilot {
+			return "it"
+		}
+		return "the operator"
+	}
+	s.Handle("PUT", one+"/vault/{key}", "Set a value in an agent's vault (body: value); encrypted, in its turns' environment from the next one. The agent may keep its own there too", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if err := mine(r); err != nil {
 			return nil, err
 		}
 		id, err := agentOf(r)
@@ -247,75 +255,25 @@ func (s *Server) RegisterCrew(c *crew.Crew, m *chat.Manager) {
 		if err := ReadJSON(r, &body); err != nil {
 			return nil, err
 		}
-		if err := c.SetSecret(id, r.PathValue("key"), body.Value); err != nil {
+		if err := c.SetSecret(id, r.PathValue("key"), body.Value, by(r)); err != nil {
 			return nil, fail(err)
 		}
 		st, err := c.Get(id)
 		return st.Vault, fail(err)
 	})
-	s.Handle("DELETE", one+"/vault/{key}", "Remove a value from an agent's vault", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		if err := operator(r); err != nil {
+	s.Handle("DELETE", one+"/vault/{key}", "Remove a value from an agent's vault (the agent may remove its own too)", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if err := mine(r); err != nil {
 			return nil, err
 		}
 		id, err := agentOf(r)
 		if err != nil {
 			return nil, err
 		}
-		if err := c.DeleteSecret(id, strings.ToUpper(r.PathValue("key"))); err != nil {
+		if err := c.DeleteSecret(id, strings.ToUpper(r.PathValue("key")), by(r)); err != nil {
 			return nil, fail(err)
 		}
 		st, err := c.Get(id)
 		return st.Vault, fail(err)
-	})
-	s.Handle("POST", one+"/mail", "Send an email from the agent's account (body: to, subject, body, html?), with its vault's SMTP details", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		if err := mine(r); err != nil {
-			return nil, err
-		}
-		id, err := agentOf(r)
-		if err != nil {
-			return nil, err
-		}
-		var body crew.Outgoing
-		if err := ReadJSON(r, &body); err != nil {
-			return nil, err
-		}
-		if err := c.SendMail(r.Context(), id, body); err != nil {
-			return nil, Errorf(http.StatusBadGateway, "%v", err)
-		}
-		return map[string]bool{"sent": true}, nil
-	})
-	s.Handle("GET", one+"/mail", "The agent's inbox, newest first (?unseen=1, ?limit=N up to 100)", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		if err := mine(r); err != nil {
-			return nil, err
-		}
-		id, err := agentOf(r)
-		if err != nil {
-			return nil, err
-		}
-		n, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-		list, err := c.ListMail(r.Context(), id, isTrue(r.URL.Query().Get("unseen")), n)
-		if err != nil {
-			return nil, Errorf(http.StatusBadGateway, "%v", err)
-		}
-		return list, nil
-	})
-	s.Handle("GET", one+"/mail/{uid}", "One message of the agent's inbox, as text, with the links of its HTML; marked as read", func(w http.ResponseWriter, r *http.Request) (any, error) {
-		if err := mine(r); err != nil {
-			return nil, err
-		}
-		id, err := agentOf(r)
-		if err != nil {
-			return nil, err
-		}
-		uid, err := strconv.ParseUint(r.PathValue("uid"), 10, 32)
-		if err != nil || uid == 0 {
-			return nil, Errorf(http.StatusBadRequest, "%q is not a message's uid", r.PathValue("uid"))
-		}
-		msg, err := c.ReadMail(r.Context(), id, uint32(uid))
-		if err != nil {
-			return nil, Errorf(http.StatusBadGateway, "%v", err)
-		}
-		return msg, nil
 	})
 	if m != nil {
 		// Its sessions, read in the panel and written into by the

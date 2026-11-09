@@ -74,8 +74,10 @@ func (c *Crew) setVaultLocked(id string, vals map[string]string) error {
 	return fsx.WriteJSON(c.vaultPath(id), v, 0o600)
 }
 
-// SetSecret writes one value; the operator's, from the panel.
-func (c *Crew) SetSecret(id, key, value string) error {
+// SetSecret writes one value: the operator's from the panel, or the
+// agent's own (a password it chose for an account it opened, a token it
+// was issued), by says which for its journal.
+func (c *Crew) SetSecret(id, key, value, by string) error {
 	key = strings.ToUpper(strings.TrimSpace(key))
 	if len(value) > maxFieldVal {
 		return fmt.Errorf("the value is longer than %d bytes", maxFieldVal)
@@ -89,12 +91,12 @@ func (c *Crew) SetSecret(id, key, value string) error {
 	if err := c.setVaultLocked(id, map[string]string{key: value}); err != nil {
 		return err
 	}
-	c.note(mb, Entry{Kind: KindVault, Message: "the operator set " + key})
+	c.note(mb, Entry{Kind: KindVault, Message: by + " set " + key})
 	return nil
 }
 
-// DeleteSecret removes one value.
-func (c *Crew) DeleteSecret(id, key string) error {
+// DeleteSecret removes one value; by is who, as for SetSecret.
+func (c *Crew) DeleteSecret(id, key, by string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	mb := c.get(id)
@@ -109,12 +111,11 @@ func (c *Crew) DeleteSecret(id, key string) error {
 	if err := fsx.WriteJSON(c.vaultPath(id), v, 0o600); err != nil {
 		return err
 	}
-	c.note(mb, Entry{Kind: KindVault, Message: "the operator removed " + key})
+	c.note(mb, Entry{Kind: KindVault, Message: by + " removed " + key})
 	return nil
 }
 
-// Env is the vault in clear, for a turn's environment and the house's own
-// calls on the agent's behalf (its mail). A value that does not decrypt
+// Env is the vault in clear, for a turn's environment. A value that does not decrypt
 // is left out rather than handed over as ciphertext.
 func (c *Crew) Env(id string) map[string]string {
 	out := map[string]string{}

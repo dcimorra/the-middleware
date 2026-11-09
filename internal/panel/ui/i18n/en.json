@@ -2472,10 +2472,6 @@
   "crew.vault.remove": "Remove {key}",
   "crew.vault.removeQ": "Remove {key}?",
   "crew.vault.removeBody": "It no longer has it from its next turn.",
-  "crew.caps": "What the house gives it",
-  "crew.capsHint": "Every agent has all of these; one that lacks a name in the vault asks you for it when it needs it.",
-  "crew.cap.ready": "Ready",
-  "crew.cap.lacks": "Lacks {keys}",
   "crew.notebook": "Notebook",
   "crew.notebookHint": "Its memory across sessions, rewritten every turn.",
   "crew.notebookEmpty": "It has written nothing yet.",
@@ -2486,5 +2482,9 @@
   "crew.noSessions": "It has had no session yet: switch it on.",
   "crew.placeholder": "Tell the agent something…",
   "crew.proposalsOpen": "{n} proposals open",
+  "crew.room": "Room",
+  "crew.roomOf": "{used} of {room} MiB",
+  "crew.roomMB": "Room (MiB)",
+  "crew.roomHint": "What its desk and home may hold: the tools it builds, what they install, its files. Over it, each wake tells it to make room first.",
   "crew.network": "The network's"
 }

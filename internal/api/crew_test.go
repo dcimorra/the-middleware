@@ -45,13 +45,16 @@ func TestACrewTurnOnTheSocketIsConfinedToItsAgent(t *testing.T) {
 		"GET /api/v1/crew",
 		"GET /api/v1/crew/" + other.ID,
 		`PUT /api/v1/crew/` + me.ID + `/vault/API_KEY {"value":"x"}`,
+		`PUT /api/v1/crew/` + other.ID + `/vault/API_KEY {"value":"x"}`,
 		`POST /api/v1/crew/` + me.ID + `/on`,
 		`POST /api/v1/auth/tokens {"name":"mine"}`,
 		"GET /api/v1/sites",
 		"GET /api/v1/sites/a.example",
 		"GET /api/v1/settings",
 	}
-	want := []int{200, 201, 200, 403, 403, 403, 403, 403, 403, 403, 403}
+	// Its own vault it may write (what it creates is kept there); not
+	// another agent's.
+	want := []int{200, 201, 200, 403, 403, 200, 403, 403, 403, 403, 403, 403}
 	got := peer(t, sock, []string{chat.MarkVar + "=" + chat.CrewDomain(me.ID) + "#0123abcd"}, calls...)
 	for i := range calls {
 		if got[i] != want[i] {

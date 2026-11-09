@@ -108,10 +108,9 @@ function agentScreen(id, tab) {
   const reqCard = h("div", { class: "card set-card" });
   const goalCard = h("div", { class: "card set-card" });
   const vaultCard = h("div", { class: "card set-card" });
-  const capsCard = h("div", { class: "card set-card" });
   const bookCard = h("div", { class: "card set-card" });
   const journalCard = h("div", { class: "card set-card" });
-  p.body.append(stateCard, reqCard, goalCard, vaultCard, capsCard, bookCard, journalCard);
+  p.body.append(stateCard, reqCard, goalCard, vaultCard, bookCard, journalCard);
 
   const post = (path, body, msg) => async (e) => {
     const btn = (e && e.currentTarget) || document.createElement("button");
@@ -150,6 +149,9 @@ function agentScreen(id, tab) {
       if (w.used < 0) continue;
       meters.push(h("div", { class: "usage-row" }, h("div", { class: "row" }, h("span", { class: "grow" }, t("autopilot.window", { name: w.label || w.name })), h("span", { class: "muted small" }, t("autopilot.windowOf", { pct: Math.round(w.used), stop: a.quota_percent || 80 }))), meter(w.used)));
     }
+    // Its room: the desk and home it builds its own tools in.
+    const room = a.disk_mb || 2048;
+    meters.push(h("div", { class: "usage-row" }, h("div", { class: "row" }, h("span", { class: "grow" }, t("crew.room")), h("span", { class: "muted small" }, t("crew.roomOf", { used: st.disk_used || 0, room }))), meter(Math.round(100 * (st.disk_used || 0) / room))));
     clear(stateCard).append(cardHead(a.name, t("crew.stateHint"), toggle, stop, wake), ...lines, ...meters);
   }
 
@@ -175,13 +177,14 @@ function agentScreen(id, tab) {
     const maxM = num(a.max_minutes || 720, 1, 10080);
     const quota = num(a.quota_percent || 80, 1, 100);
     const ctx = num(a.context_percent || 60, 10, 95);
+    const disk = num(a.disk_mb || 2048, 64, 1048576);
     const save = h("button", { type: "button", class: "btn primary" }, t("common.save"));
     const bar = saveBar(save);
     save.addEventListener("click", async () => {
       save.classList.add("busy");
       try {
         await api.put(base, { name: name.value, goal: goal.value, provider: prov.value, model: model.value || undefined,
-          min_minutes: Number(minM.value), max_minutes: Number(maxM.value), quota_percent: Number(quota.value), context_percent: Number(ctx.value) });
+          min_minutes: Number(minM.value), max_minutes: Number(maxM.value), quota_percent: Number(quota.value), context_percent: Number(ctx.value), disk_mb: Number(disk.value) });
         bar.saved();
         refresh();
       } catch (e) { toastError(e); } finally { save.classList.remove("busy"); }
@@ -197,16 +200,10 @@ function agentScreen(id, tab) {
         h("div", { class: "form-row" }, field(t("automation.provider"), prov), field(t("automation.model"), model)),
         h("div", { class: "form-row" }, field(t("autopilot.minMinutes"), minM), field(t("autopilot.maxMinutes"), maxM)),
         h("div", { class: "form-row" }, field(t("autopilot.quota"), quota, t("autopilot.quotaHint")), field(t("autopilot.contextAt"), ctx, t("autopilot.contextHint"))),
+        h("div", { class: "form-row" }, field(t("crew.roomMB"), disk, t("crew.roomHint"))),
       ]), bar.el);
     bar.watch(form);
     clear(goalCard).append(cardHead(t("crew.goalTitle"), t("crew.goalCardHint")), form);
-  }
-
-  function renderCaps(st) {
-    const items = (st.capabilities || []).map((c) => h("li", null,
-      h("strong", null, c.title),
-      h("span", { class: c.ready ? "level-ok" : "level-warn" }, c.ready ? t("crew.cap.ready") : t("crew.cap.lacks", { keys: (c.missing || []).join(", ") }))));
-    clear(capsCard).append(cardHead(t("crew.caps"), t("crew.capsHint")), h("ul", { class: "set-recent-list" }, ...items));
   }
 
   function renderBook(st) {
@@ -236,7 +233,6 @@ function agentScreen(id, tab) {
     renderState(st);
     renderRequests(reqCard, st, { base, id, refresh });
     renderVault(vaultCard, st, { base, refresh });
-    renderCaps(st);
     renderBook(st);
     return st;
   }
