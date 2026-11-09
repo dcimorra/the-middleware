@@ -167,7 +167,7 @@ func SiteOfProcess(procRoot string, pid int, turns map[int]string) (string, erro
 	site := ""
 	note := func(name string) error {
 		domain, _ := split(name)
-		if domain == Middleware || (domain != Autopilot && !manifest.ValidName(domain)) {
+		if domain == Middleware || (domain != Autopilot && !IsCrew(domain) && !manifest.ValidName(domain)) {
 			return nil
 		}
 		if site != "" && site != domain {

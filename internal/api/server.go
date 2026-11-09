@@ -20,6 +20,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/auth"
 	"github.com/dcimorra/the-middleware/internal/autopilot"
 	"github.com/dcimorra/the-middleware/internal/chat"
+	"github.com/dcimorra/the-middleware/internal/crew"
 	"github.com/dcimorra/the-middleware/internal/engine"
 	"github.com/dcimorra/the-middleware/internal/events"
 	"github.com/dcimorra/the-middleware/internal/manifest"
@@ -123,6 +124,8 @@ type Server struct {
 	// publisher, when set, publishes sites on creation and unpublishes
 	// them on deletion (RegisterInbound sets it).
 	publisher *publish.Publisher
+	// crew is the operator's crew (RegisterCrew sets it).
+	crew *crew.Crew
 	// pilot is the autonomous agent (RegisterAutopilot sets it).
 	pilot *autopilot.Pilot
 	// moves are the sites moving to another node, by name.
@@ -368,6 +371,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, r, Errorf(http.StatusForbidden, "the autonomous agent may read, restart, deploy and manage the tasks and backups of the sites, create sites and hand them work, and nothing else; %s is the operator's", pattern))
 			return
 		}
+		if caller.Crew != "" {
+			if c := s.crewOf(); c != nil {
+				c.Note(caller.Crew, crew.Entry{Kind: autopilot.KindRefused, Message: "the house refused " + r.Method + " " + r.URL.Path})
+			}
+			if s.opts.Bus != nil {
+				s.opts.Bus.Emit(events.Event{Type: "api.turn_refused", Subject: caller.Crew, Actor: "crew", Level: "warn", Message: "a turn of the crew agent asked the socket for " + pattern, Data: map[string]any{"method": r.Method, "path": r.URL.Path}})
+			}
+			s.writeError(w, r, Errorf(http.StatusForbidden, "a crew agent reaches its own status, requests, vault and mail, and nothing else; %s is the operator's", pattern))
+			return
+		}
 		if caller.Turn != "" {
 			// An agent reaching for the operator's routes is worth knowing
 			// about: it is what a prompt injected into a site's turn does.
@@ -396,6 +409,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			s.pilot.Note(autopilot.Entry{Kind: autopilot.KindCall, Domain: site, Message: r.Method + " " + r.URL.RequestURI()})
 		}
+	}
+	if caller.Crew != "" && !public && segmentIn(pattern, r.URL.Path, "{agent}") != caller.Crew {
+		// Its scope opens the crew's routes; which agent they are for is
+		// in the path, and only its own is its.
+		s.writeError(w, r, Errorf(http.StatusForbidden, "a crew agent reaches its own routes only"))
+		return
 	}
 	if !public && caller.Delegate() && !s.gateDelegate(w, r, caller, pattern) {
 		return
@@ -445,11 +464,17 @@ func turnReadsOwnEvents(c auth.Caller, pattern string, r *http.Request) bool {
 // siteIn is the {domain} of path under pattern, or "". The mux does not
 // fill PathValue until it dispatches, and the scope check runs before.
 func siteIn(pattern, path string) string {
+	return strings.ToLower(segmentIn(pattern, path, "{domain}"))
+}
+
+// segmentIn is the part of path that stands where the pattern has
+// wildcard, before the mux has set the path values.
+func segmentIn(pattern, path, wildcard string) string {
 	_, p, _ := strings.Cut(pattern, " ")
 	ps, xs := strings.Split(p, "/"), strings.Split(path, "/")
 	for i, seg := range ps {
-		if seg == "{domain}" && i < len(xs) {
-			return strings.ToLower(xs[i])
+		if seg == wildcard && i < len(xs) {
+			return xs[i]
 		}
 	}
 	return ""

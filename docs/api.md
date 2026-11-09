@@ -366,6 +366,46 @@ commands it ran), site, call to the house and refusal is a line of
 | POST | `/autopilot/chats/{id}/files` | as above |
 | DELETE | `/autopilot/chats/{id}/files/{file}` | as above |
 
+## The crew
+
+Autonomous agents the operator creates (`internal/crew`, [crew.md](crew.md)), each with a goal in their words, off until switched on. Its turns run in conversations `crew~<id>#<hex>`, jailed to `data/crew/<id>/desk`, and reach the socket as a caller of their own held to the routes marked *agent* below, for their own id only (`auth.CrewScopes`, never a token's).
+
+| method | path | result |
+| --- | --- | --- |
+| GET | `/crew` | the operator's agents, by name: `[{agent, state, running, domain, context_percent, quota, requests (open), vault, capabilities, desk}]` |
+| POST | `/crew` | body: `{name, goal, provider?, model?, min_minutes?, max_minutes?, quota_percent?, context_percent?}` → its status (201); it starts off |
+| GET | `/crew/{agent}` | *agent too* → its status, with every request and its notebook |
+| PUT | `/crew/{agent}` | body: as for POST → the status; a new goal wakes it |
+| DELETE | `/crew/{agent}` | its turn cut, its folder, vault, journal and conversations gone → `{deleted}` |
+| POST | `/crew/{agent}/on` | switch it on: it looks at once (refused without a goal) → the status |
+| POST | `/crew/{agent}/off` | switch it off; a turn at work finishes → the status |
+| POST | `/crew/{agent}/stop` | switched off and its turn cut now → the status |
+| POST | `/crew/{agent}/wake` | have it look on its next pass → the status |
+| GET | `/crew/{agent}/journal` | *agent too* → `[{at, kind, message, turn_id?, commands?, next?}]`, oldest first; `?limit=` (200) |
+| GET | `/crew/{agent}/requests` | *agent too* → `[{id, at, title, text, fields: [{key, secret}], options, urgent, status, answer, choice, filled, answered}]`, the open first |
+| POST | `/crew/{agent}/requests` | *agent* body: `{title, text?, fields?, options?, urgent?}` → the request (201); pushed to the operator (critical when urgent, again after an hour); at most 20 open |
+| POST | `/crew/{agent}/requests/{id}/answer` | body: `{answer?, choice?, values?: {KEY: value}, dismiss?}` → the request; values go to its vault, and it is woken within a minute |
+| GET | `/crew/{agent}/vault` | *agent too* → the names in its vault, never the values |
+| PUT | `/crew/{agent}/vault/{key}` | body: `{value}` → the names; encrypted, in its turns' environment from the next one |
+| DELETE | `/crew/{agent}/vault/{key}` | → the names |
+| POST | `/crew/{agent}/mail` | *agent too* body: `{to, subject, body, html?}` → `{sent}`, from its account over SMTP; 50 a day at most |
+| GET | `/crew/{agent}/mail` | *agent too* → its inbox over IMAP, newest first: `[{uid, from, subject, date, seen}]`; `?unseen=1`, `?limit=` (20, up to 100) |
+| GET | `/crew/{agent}/mail/{uid}` | *agent too* → `{uid, from, subject, date, text, links}`; marked as read |
+| GET | `/crew/{agent}/chats` | its conversations, one per session, as for a site's |
+| POST | `/crew/{agent}/chats` | as for a site, for its conversations |
+| DELETE | `/crew/{agent}/chats` | as above |
+| GET | `/crew/{agent}/chats/{id}` | as for a site: the operator reads a session and writes into it, which is how they talk to it |
+| POST | `/crew/{agent}/chats/{id}` | as above |
+| DELETE | `/crew/{agent}/chats/{id}` | as above |
+| POST | `/crew/{agent}/chats/{id}/stop` | as above |
+| POST | `/crew/{agent}/chats/{id}/reap` | as above |
+| GET | `/crew/{agent}/chats/{id}/export` | as above |
+| GET | `/crew/{agent}/chats/{id}/processes` | as above |
+| POST | `/crew/{agent}/chats/{id}/processes/{pid}/kill` | as above |
+| GET | `/crew/{agent}/chats/{id}/files` | as above |
+| POST | `/crew/{agent}/chats/{id}/files` | as above |
+| DELETE | `/crew/{agent}/chats/{id}/files/{file}` | as above |
+
 ## Push notifications
 
 Web push (VAPID, aes128gcm) to the operator's devices. What is pushed is a

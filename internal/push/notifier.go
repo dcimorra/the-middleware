@@ -69,6 +69,23 @@ func For(e events.Event) (Message, bool) {
 		return Message{Kind: KindTurn, Title: "The autonomous agent proposes a fix", Body: orHouse(site) + ": " + e.Message, URL: "/#/autopilot", Tag: "autopilot-proposal"}, true
 	case "autopilot.stood_down":
 		return Message{Kind: KindCritical, Title: "The autonomous agent stood down here", Body: e.Message, URL: "/#/autopilot", Tag: "autopilot-down"}, true
+	case "crew.request":
+		// An agent of the crew asks the operator: urgent is a check only
+		// a person can pass (an SMS code, a captcha), and it waits on it.
+		name, _ := e.Data["name"].(string)
+		if name == "" {
+			name = site
+		}
+		rid, _ := e.Data["request"].(string)
+		where := "/#/agents/" + url.PathEscape(site)
+		if urgent, _ := e.Data["urgent"].(bool); urgent {
+			title := name + " needs you now"
+			if again, _ := e.Data["again"].(bool); again {
+				title = name + " is still waiting for you"
+			}
+			return Message{Kind: KindCritical, Title: title, Body: e.Message, URL: where, Tag: "crew-" + site + "-" + rid}, true
+		}
+		return Message{Kind: KindTurn, Title: name + " asks you something", Body: e.Message, URL: where, Tag: "crew-" + site + "-" + rid}, true
 	case "agent.done", "agent.error":
 		// The site door's conversations have a program on the other side,
 		// not a person waiting.
@@ -79,7 +96,7 @@ func For(e events.Event) (Message, bool) {
 		// Nor the autonomous agent's turns, or the ones it hands to sites:
 		// it works all day with nobody waiting, and a push a turn would
 		// bury the ones that matter. Its journal says what it did.
-		if o, _ := e.Data["origin"].(string); o == "autopilot" || domain == "autopilot" {
+		if o, _ := e.Data["origin"].(string); o == "autopilot" || domain == "autopilot" || strings.HasPrefix(domain, "crew~") {
 			return Message{}, false
 		}
 		where := "/#/sites/" + url.PathEscape(domain) + "/chat"

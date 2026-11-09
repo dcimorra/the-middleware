@@ -48,6 +48,9 @@ func socketContext(ctx context.Context, conn net.Conn, siteOf func(int) (string,
 	if err != nil {
 		return ctx
 	}
+	if id, ok := chat.CrewID(site); ok {
+		return auth.WithSocketCrew(ctx, id)
+	}
 	if site == chat.Autopilot {
 		return auth.WithSocketAutopilot(ctx)
 	}
