@@ -152,6 +152,11 @@ type Created struct {
 	Published bool      `json:"published,omitempty"`
 	// Waiting is a site kept off the internet for the operator to approve.
 	Waiting bool `json:"waiting,omitempty"`
+	// Deleted is when the operator deleted it from the agent's page, and
+	// Reason what they said: the record stays, so the agent learns from
+	// it and it still counts against the week's allowance.
+	Deleted time.Time `json:"deleted,omitzero"`
+	Reason  string    `json:"reason,omitempty"`
 }
 
 // State is data/autopilot/state.json: what must survive a restart.
@@ -400,16 +405,42 @@ func (p *Pilot) Created(domain string) {
 	p.emit("autopilot.site", domain, "", "created by the autonomous agent; not published until it is finished")
 }
 
-// Mine says domain is a site it created.
+// Mine says domain is a site it created and that still exists.
 func (p *Pilot) Mine(domain string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, c := range p.st.Created {
-		if c.Domain == domain {
+		if c.Domain == domain && c.Deleted.IsZero() {
 			return true
 		}
 	}
 	return false
+}
+
+// Deleted records that the operator deleted one of its sites, and why:
+// in its journal, and told on its next wake, so it learns what was not
+// wanted rather than finding the site gone.
+func (p *Pilot) Deleted(domain, reason string) {
+	reason = clip(oneLine(strings.TrimSpace(reason)), 500)
+	now := p.opts.Now().UTC()
+	p.mu.Lock()
+	for i := range p.st.Created {
+		if p.st.Created[i].Domain == domain && p.st.Created[i].Deleted.IsZero() {
+			p.st.Created[i].Deleted, p.st.Created[i].Reason = now, reason
+			p.st.Created[i].Waiting, p.st.Created[i].Published = false, false
+		}
+	}
+	p.saveLocked()
+	p.mu.Unlock()
+	msg := "deleted by the operator"
+	if reason != "" {
+		msg += ": " + reason
+	} else {
+		msg += " (no reason given)"
+	}
+	p.Note(Entry{Kind: KindSite, Domain: domain, Message: msg})
+	p.alert(domain + ": " + msg + ". It is gone for good; note in your notebook what was not wanted, and do not make it again.")
+	p.emit("autopilot.deleted", domain, "", msg)
 }
 
 // ErrNotMine is a site the agent did not create, which is not its to
@@ -933,6 +964,7 @@ func (p *Pilot) promptLocked(cfg settings.Autopilot, now time.Time, reason strin
 	var waiting, building []string
 	for _, c := range p.st.Created {
 		switch {
+		case !c.Deleted.IsZero():
 		case c.Waiting:
 			waiting = append(waiting, c.Domain)
 		case !c.Published:

@@ -347,6 +347,7 @@ commands it ran), site, call to the house and refusal is a line of
 | POST | `/autopilot/sites/{domain}/ready` | *agent* one of its sites is finished → `{published, waiting}` |
 | POST | `/autopilot/sites/{domain}/publish` | publish one of its finished sites (with `publish: ask`) → the status |
 | POST | `/autopilot/sites/{domain}/decline` | keep one of its sites off the internet; it is told → the status |
+| DELETE | `/autopilot/sites/{domain}` | delete one of its sites (`?reason=` or body `{reason}`): off the internet and gone; the record stays in its state and journal, still counts against the week, and it is told why on its next wake → the status |
 | GET | `/autopilot/proposals` | what it proposed, newest first: `[{id, at, domain, title, text, status, decided, conversation, turn_id, ended, outcome}]`; status is `open`, `sent`, `fixed`, `failed` or `dismissed` |
 | POST | `/autopilot/proposals` | *agent* body: `{domain, title, text}` (no domain: the house) → the proposal: a change it may not make itself, for the operator to decide; an open one with the same title is rewritten; at most 20 open |
 | POST | `/autopilot/proposals/{id}/send` | body: `{note?}` → the proposal: a new conversation of its site (or of the house) starts in the operator's name with the proposal as its message; its end marks it `fixed` or `failed` |

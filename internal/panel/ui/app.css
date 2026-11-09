@@ -998,6 +998,7 @@ body.chat-fit .page-body > .card { max-height: 28vh; overflow-y: auto; }
 .chat-tool pre.diff .add { color: var(--ok); }
 .chat-tool ul.todos { margin: 4px 0 6px 16px; padding: 8px 12px; list-style: none; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font-size: 13px; }
 .chat-tool ul.todos li.completed { color: var(--text-3); text-decoration: line-through; }
+.struck { text-decoration: line-through; }
 .badge.run.live { background: var(--accent-soft); }
 .badge.run.ok { background: var(--ok-soft); color: var(--ok); }
 .badge.run.bad { color: var(--bad); }
