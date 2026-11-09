@@ -91,18 +91,18 @@ var scopeRoutes = map[string][]string{
 		"GET /api/v1/autopilot/proposals",
 		"POST /api/v1/autopilot/proposals",
 		"POST /api/v1/autopilot/sites/{domain}/ready",
-		// Its requests, vault and mail, kept by the crew as agent
+		// Its requests and vault, kept by the crew as agent
 		// "network"; the API holds it to that one.
 		"GET /api/v1/crew/{agent}",
 		"GET /api/v1/crew/{agent}/requests",
 		"POST /api/v1/crew/{agent}/requests",
 		"GET /api/v1/crew/{agent}/vault",
-		"POST /api/v1/crew/{agent}/mail",
-		"GET /api/v1/crew/{agent}/mail",
-		"GET /api/v1/crew/{agent}/mail/{uid}",
+		"PUT /api/v1/crew/{agent}/vault/{key}",
+		"DELETE /api/v1/crew/{agent}/vault/{key}",
 	},
 	// crew is an agent of the operator's crew (CrewScopes): its own
-	// status, journal, requests, vault names and mail, for its own id
+	// status, journal, requests and its vault (it keeps there what it
+	// creates: an account's password), for its own id
 	// only (the API checks {agent} against the caller). Never a token's.
 	"crew": {
 		"GET /api/v1/crew/{agent}",
@@ -110,9 +110,8 @@ var scopeRoutes = map[string][]string{
 		"GET /api/v1/crew/{agent}/requests",
 		"POST /api/v1/crew/{agent}/requests",
 		"GET /api/v1/crew/{agent}/vault",
-		"POST /api/v1/crew/{agent}/mail",
-		"GET /api/v1/crew/{agent}/mail",
-		"GET /api/v1/crew/{agent}/mail/{uid}",
+		"PUT /api/v1/crew/{agent}/vault/{key}",
+		"DELETE /api/v1/crew/{agent}/vault/{key}",
 	},
 	// import is a site arriving from another installation (V1): its
 	// bundle, its last copy, the commit, and seeing whether it came up or

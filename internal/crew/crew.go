@@ -35,9 +35,9 @@ package crew
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -57,7 +57,7 @@ import (
 
 // Network is the id of the network's own agent (internal/autopilot) in
 // the crew. It is listed and asks the operator as every agent does, and
-// has their vault and mail, but its wakes, its switch and its settings
+// has their vault and desk, but its wakes, its switch and its settings
 // are the autopilot's: it watches the sites of a whole network, one for
 // all its nodes, and that engine is not this one.
 const Network = "network"
@@ -89,8 +89,11 @@ type Agent struct {
 	QuotaPercent float64 `json:"quota_percent,omitempty"`
 	// ContextPercent is the share of the context window at which the next
 	// wake opens a new session from its notebook.
-	ContextPercent int       `json:"context_percent,omitempty"`
-	Created        time.Time `json:"created"`
+	ContextPercent int `json:"context_percent,omitempty"`
+	// DiskMB is the room its desk and its home may take, 2 GiB by
+	// default: it builds its own tools and keeps its own files there.
+	DiskMB  int       `json:"disk_mb,omitempty"`
+	Created time.Time `json:"created"`
 }
 
 // Limits fills the defaults.
@@ -116,6 +119,9 @@ func (a Agent) Limits() Agent {
 	if a.ContextPercent <= 0 {
 		a.ContextPercent = 60
 	}
+	if a.DiskMB <= 0 {
+		a.DiskMB = 2048
+	}
 	return a
 }
 
@@ -135,6 +141,9 @@ func (a Agent) Validate() error {
 	}
 	if a.QuotaPercent < 0 || a.QuotaPercent > 100 || a.ContextPercent < 0 || a.ContextPercent > 95 {
 		return errors.New("quota_percent is 0 to 100 and context_percent 0 to 95")
+	}
+	if a.DiskMB < 0 || a.DiskMB > 1<<20 {
+		return errors.New("disk_mb is 0 (2 GiB) to 1048576 (1 TiB)")
 	}
 	if a.Provider != "" && !providerRe.MatchString(a.Provider) {
 		return fmt.Errorf("%q is not an agent's name", a.Provider)
@@ -162,8 +171,6 @@ type State struct {
 	Skipped    string `json:"skipped,omitempty"`
 	LastResult string `json:"last_result,omitempty"`
 	Turns      int    `json:"turns,omitempty"`
-	// Mail is when it sent its last messages, for the daily cap.
-	Mail []time.Time `json:"mail,omitempty"`
 }
 
 // Options configure the crew. The functions are the house's, given by the
@@ -207,6 +214,9 @@ type member struct {
 	// the crew for the turn's vault and agent), and another pass must
 	// not start a second turn meanwhile.
 	starting bool
+	// disk is what its desk and home held at diskAt, in MiB.
+	disk   int64
+	diskAt time.Time
 }
 
 // Crew supervises the agents.
@@ -214,9 +224,6 @@ type Crew struct {
 	opts Options
 	mu   sync.Mutex
 	m    map[string]*member
-	// mailTLS and mailPlain are how the tests reach their own servers.
-	mailTLS   *tls.Config
-	mailPlain bool
 }
 
 // Limits on what an agent may have going.
@@ -285,7 +292,6 @@ type Entry = autopilot.Entry
 const (
 	KindRequest = "request" // it asked the operator for something
 	KindAnswer  = "answer"  // the operator answered, or dismissed it
-	KindMail    = "mail"    // it sent an email
 	KindVault   = "vault"   // the operator changed its vault
 )
 
@@ -535,10 +541,12 @@ type Status struct {
 	Quota          []agent.Window `json:"quota,omitempty"`
 	Requests       []Request      `json:"requests"`
 	// Vault is the names it holds, never the values.
-	Vault        []string     `json:"vault"`
-	Capabilities []Capability `json:"capabilities"`
-	Notebook     string       `json:"notebook,omitempty"`
-	Desk         string       `json:"desk"`
+	Vault    []string `json:"vault"`
+	Notebook string   `json:"notebook,omitempty"`
+	Desk     string   `json:"desk"`
+	// DiskUsed is what its desk and its home hold, in MiB, as last
+	// measured; DiskMB in its settings is what it may use.
+	DiskUsed int64 `json:"disk_used"`
 }
 
 // Get is one agent's status.
@@ -583,7 +591,7 @@ func (c *Crew) statusLocked(mb *member, full bool) Status {
 	}
 	keys := c.vaultKeys(mb.a.ID)
 	st.Vault = keys
-	st.Capabilities = capabilities(keys)
+	st.DiskUsed = mb.disk
 	for _, r := range mb.reqs {
 		if !full && r.Status != StatusOpen {
 			continue
@@ -680,8 +688,58 @@ func (c *Crew) Pass() {
 	c.mu.Unlock()
 	sort.Strings(ids)
 	for _, id := range ids {
+		c.measure(id)
 		c.pass(id)
 	}
+}
+
+// diskEvery is how often an agent's room is measured: walking a desk
+// with a browser profile or a model in it is not free.
+const diskEvery = 10 * time.Minute
+
+// measure weighs an agent's desk and home, outside the lock, and notes
+// when it goes over the room it has: its next wake is told to make room
+// before anything else. Nothing is deleted for it; the operator sees
+// the number on its page and may give it more.
+func (c *Crew) measure(id string) {
+	now := c.opts.Now()
+	c.mu.Lock()
+	mb := c.get(id)
+	if mb == nil || mb.a.Kind == KindNetwork || (!mb.diskAt.IsZero() && now.Sub(mb.diskAt) < diskEvery) {
+		c.mu.Unlock()
+		return
+	}
+	mb.diskAt = now
+	c.mu.Unlock()
+	used := (dirSize(c.Desk(id)) + dirSize(c.home(id))) >> 20
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.get(id) != mb {
+		return
+	}
+	limit := int64(mb.a.Limits().DiskMB)
+	if used > limit && mb.disk <= limit {
+		c.note(mb, Entry{Kind: autopilot.KindRefused, Message: fmt.Sprintf("its desk and home hold %d MiB, over the %d MiB it has", used, limit)})
+	}
+	mb.disk = used
+}
+
+// dirSize is what the regular files under dir take, symlinks not
+// followed.
+func dirSize(dir string) int64 {
+	var n int64
+	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.Type().IsRegular() {
+			if info, err := d.Info(); err == nil {
+				n += info.Size()
+			}
+		}
+		return nil
+	})
+	return n
 }
 
 func (c *Crew) pass(id string) {
@@ -957,13 +1015,13 @@ func (c *Crew) askTextLocked(mb *member) string {
 	} else {
 		b.WriteString("- Your vault is empty: the operator has given you no credentials or data yet.\n")
 	}
-	b.WriteString("\n## What the house gives you\n")
-	for _, cp := range capabilities(keys) {
-		line := "- " + cp.Title + ": " + cp.What
-		if len(cp.Missing) > 0 {
-			line += " Not ready: your vault lacks " + strings.Join(cp.Missing, ", ") + "; ask for them when you need it."
+	cfg := mb.a.Limits()
+	if mb.a.Kind != KindNetwork && !mb.diskAt.IsZero() {
+		if int64(cfg.DiskMB) < mb.disk {
+			fmt.Fprintf(&b, "- Your room is FULL: your desk and home hold %d MiB, over the %d MiB you have. Make room before anything else (caches, downloads, old drafts), or ask the operator for more and say why.\n", mb.disk, cfg.DiskMB)
+		} else {
+			fmt.Fprintf(&b, "- Your room: your desk and home hold %d MiB of the %d MiB you have.\n", mb.disk, cfg.DiskMB)
 		}
-		b.WriteString(line + "\n")
 	}
 	var open, answered strings.Builder
 	for _, r := range mb.reqs {

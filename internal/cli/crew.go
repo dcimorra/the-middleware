@@ -26,10 +26,8 @@ const crewUsage = `usage: middleware crew <command> [--agent <id>]
   answer <id> [--text T] [--choice O] [--set KEY=value] [--dismiss]
                       answer one of its requests
   vault               the names in its vault
-  mail send --to A --subject S [--html] -
-                      send an email from its account, the body on stdin
-  mail list [--unseen] [--limit 20]
-  mail read <uid>     one message of its inbox, as text
+  vault set KEY -     keep a value in its vault, read from stdin
+  vault rm KEY        remove a value from its vault
 
 Inside an agent's turn --agent is its own (MIDDLEWARE_CREW).
 `
@@ -64,10 +62,6 @@ func (e *Env) crew(args []string) error {
 	text := fs.String("text", "", "answer: the words")
 	choice := fs.String("choice", "", "answer: the option picked")
 	dismiss := fs.Bool("dismiss", false, "answer: dismiss it")
-	to := fs.String("to", "", "mail send: the address")
-	subject := fs.String("subject", "", "mail send: the subject")
-	asHTML := fs.Bool("html", false, "mail send: the body is HTML")
-	unseen := fs.Bool("unseen", false, "mail list: only unread ones")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -133,13 +127,7 @@ func (e *Env) crew(args []string) error {
 			fmt.Fprintf(e.Stdout, "subscription %s: %.0f%% used\n", w.Name, w.Used)
 		}
 		fmt.Fprintf(e.Stdout, "vault: %s\n", orNone(strings.Join(st.Vault, ", ")))
-		for _, cp := range st.Capabilities {
-			state := "ready"
-			if !cp.Ready {
-				state = "lacks " + strings.Join(cp.Missing, ", ")
-			}
-			fmt.Fprintf(e.Stdout, "  %-18s %s\n", cp.Title, state)
-		}
+		fmt.Fprintf(e.Stdout, "room: %d of %d MiB in its desk and home\n", st.DiskUsed, st.Agent.Limits().DiskMB)
 		fmt.Fprintf(e.Stdout, "\ngoal:\n%s\n", strings.TrimSpace(st.Agent.Goal))
 		for _, r := range st.Requests {
 			if r.Status == crew.StatusOpen {
@@ -259,6 +247,21 @@ func (e *Env) crew(args []string) error {
 		}
 		return e.simple(c, cl, "POST", base+"/requests/"+url.PathEscape(pos[0])+"/answer", rep, "answered: it is woken within a minute")
 	case "vault":
+		if len(pos) > 0 {
+			switch {
+			case pos[0] == "set" && len(pos) == 3 && pos[2] == "-":
+				v, err := stdin()
+				if err != nil {
+					return err
+				}
+				// A value piped in ends with the newline echo put there.
+				v = strings.TrimRight(v, "\r\n")
+				return e.simple(c, cl, "PUT", base+"/vault/"+url.PathEscape(strings.ToUpper(pos[1])), map[string]string{"value": v}, strings.ToUpper(pos[1])+" kept in the vault")
+			case pos[0] == "rm" && len(pos) == 2:
+				return e.simple(c, cl, "DELETE", base+"/vault/"+url.PathEscape(strings.ToUpper(pos[1])), nil, strings.ToUpper(pos[1])+" removed from the vault")
+			}
+			return fmt.Errorf("usage: middleware crew vault [set KEY - | rm KEY]")
+		}
 		var keys []string
 		if err := cl.Do("GET", base+"/vault", nil, &keys); err != nil {
 			return err
@@ -271,77 +274,6 @@ func (e *Env) crew(args []string) error {
 			fmt.Fprintln(e.Stdout, k)
 		}
 		return nil
-	case "mail":
-		if len(pos) == 0 {
-			return fmt.Errorf("usage: middleware crew mail send|list|read")
-		}
-		switch pos[0] {
-		case "send":
-			if len(pos) != 2 || pos[1] != "-" || *to == "" {
-				return fmt.Errorf("usage: middleware crew mail send --to <address> --subject <subject> [--html] - (the body on stdin)")
-			}
-			body, err := stdin()
-			if err != nil {
-				return err
-			}
-			return e.simple(c, cl, "POST", base+"/mail", crew.Outgoing{To: *to, Subject: *subject, Body: body, HTML: *asHTML}, "sent to "+*to)
-		case "list":
-			q := "?limit=" + strconv.Itoa(max(*limit, 0))
-			if *unseen {
-				q += "&unseen=1"
-			}
-			var raw []byte
-			if err := cl.Do("GET", base+"/mail"+q, nil, &raw); err != nil {
-				return err
-			}
-			if c.json {
-				e.printJSON(raw)
-				return nil
-			}
-			var msgs []crew.Message
-			if err := json.Unmarshal(raw, &msgs); err != nil {
-				return err
-			}
-			if len(msgs) == 0 {
-				fmt.Fprintln(e.Stdout, "no messages")
-				return nil
-			}
-			rows := [][]string{}
-			for _, m := range msgs {
-				seen := "new"
-				if m.Seen {
-					seen = ""
-				}
-				rows = append(rows, []string{strconv.FormatUint(uint64(m.UID), 10), m.Date.Local().Format("01-02 15:04"), seen, m.From, m.Subject})
-			}
-			Table(e.Stdout, []string{"UID", "DATE", "", "FROM", "SUBJECT"}, rows)
-			return nil
-		case "read":
-			if len(pos) != 2 {
-				return fmt.Errorf("usage: middleware crew mail read <uid>")
-			}
-			var raw []byte
-			if err := cl.Do("GET", base+"/mail/"+url.PathEscape(pos[1]), nil, &raw); err != nil {
-				return err
-			}
-			if c.json {
-				e.printJSON(raw)
-				return nil
-			}
-			var m crew.Message
-			if err := json.Unmarshal(raw, &m); err != nil {
-				return err
-			}
-			fmt.Fprintf(e.Stdout, "From: %s\nDate: %s\nSubject: %s\n\n%s\n", m.From, m.Date.Local().Format("2006-01-02 15:04"), m.Subject, m.Text)
-			if len(m.Links) > 0 {
-				fmt.Fprintln(e.Stdout, "\nLinks:")
-				for _, l := range m.Links {
-					fmt.Fprintln(e.Stdout, "  "+l)
-				}
-			}
-			return nil
-		}
-		return fmt.Errorf("usage: middleware crew mail send|list|read")
 	}
 	return fmt.Errorf("unknown crew command %q\n%s", sub, crewUsage)
 }

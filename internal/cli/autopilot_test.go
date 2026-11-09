@@ -73,7 +73,7 @@ func pilotServer(t *testing.T) (root string, cl *Client, p *autopilot.Pilot, ask
 		Running: func(string) bool { return false },
 	})
 	srv.RegisterAutopilot(p, nil)
-	// It is the crew's "network" member for its requests, vault and mail;
+	// It is the crew's "network" member for its requests and vault;
 	// "other" is a crew agent it must not reach.
 	box, err := secrets.New(make([]byte, 32))
 	if err != nil {
@@ -127,9 +127,8 @@ func TestTheAutonomousAgentHasWhatItIsToldAndNothingThatHoldsItBack(t *testing.T
 		{"crew request --title <title> [--field KEY] [--secret KEY] [--option <choice>] [--urgent] -", "A Cloudflare token for the new zone.", []string{"crew", "request", "--title", "Zone token", "--secret", "CF_TOKEN", "-"}},
 		{"crew requests [<id>]", "", []string{"crew", "requests"}},
 		{"crew vault", "", []string{"crew", "vault"}},
-		{"crew mail send --to <address> --subject <subject> [--html] -", "Hello.", []string{"crew", "mail", "send", "--to", "a@example.com", "--subject", "Hi", "-"}},
-		{"crew mail list [--unseen] [--limit 20]", "", []string{"crew", "mail", "list"}},
-		{"crew mail read <uid>", "", []string{"crew", "mail", "read", "1"}},
+		{"crew vault set KEY -", "s3cret\n", []string{"crew", "vault", "set", "ACCOUNT_PASSWORD", "-"}},
+		{"crew vault rm KEY", "", []string{"crew", "vault", "rm", "ACCOUNT_PASSWORD"}},
 	}
 	covered := map[string]bool{}
 	for _, tr := range tries {
@@ -197,7 +196,7 @@ func TestTheAutonomousAgentHasWhatItIsToldAndNothingThatHoldsItBack(t *testing.T
 		{"PUT", "/api/v1/autopilot/guidelines"},
 		{"PUT", "/api/v1/sites/a.test/manifest"},
 		{"DELETE", "/api/v1/sites/a.test"},
-		{"PUT", "/api/v1/crew/network/vault/CF_TOKEN"},
+		{"PUT", "/api/v1/crew/other/vault/CF_TOKEN"},
 		{"POST", "/api/v1/crew"},
 	} {
 		err := cl.Do(raw.method, raw.path, map[string]any{"text": "x", "enabled": false, "value": "x", "name": "x"}, nil)

@@ -59,8 +59,7 @@ func crewServer(t *testing.T) (*Client, *crew.Crew, string) {
 }
 
 // Every command a crew agent's preamble promises runs here as its turns
-// run it, and none is refused for want of permission (mail fails for want
-// of an account, which is the answer it is told to expect); and what is
+// run it, and none is refused for want of permission; and what is
 // the operator's, another agent's or a site's is refused to it.
 func TestACrewAgentHasWhatItIsToldAndNothingElse(t *testing.T) {
 	cl, c, other := crewServer(t)
@@ -74,9 +73,8 @@ func TestACrewAgentHasWhatItIsToldAndNothingElse(t *testing.T) {
 		{"crew request --title <title> [--field KEY] [--secret KEY] [--option <choice>] [--urgent] -", "I need the mailbox's details.", []string{"crew", "request", "--title", "Mailbox", "--field", "SMTP_HOST", "--secret", "SMTP_PASSWORD", "-"}},
 		{"crew requests [<id>]", "", []string{"crew", "requests"}},
 		{"crew vault", "", []string{"crew", "vault"}},
-		{"crew mail send --to <address> --subject <subject> [--html] -", "Hello.", []string{"crew", "mail", "send", "--to", "a@example.com", "--subject", "Hi", "-"}},
-		{"crew mail list [--unseen] [--limit 20]", "", []string{"crew", "mail", "list"}},
-		{"crew mail read <uid>", "", []string{"crew", "mail", "read", "1"}},
+		{"crew vault set KEY -", "s3cret\n", []string{"crew", "vault", "set", "ACCOUNT_PASSWORD", "-"}},
+		{"crew vault rm KEY", "", []string{"crew", "vault", "rm", "ACCOUNT_PASSWORD"}},
 	}
 	covered := map[string]bool{}
 	for _, tr := range tries {
@@ -113,7 +111,8 @@ func TestACrewAgentHasWhatItIsToldAndNothingElse(t *testing.T) {
 	}
 	for _, raw := range []struct{ method, path string }{
 		{"PUT", "/api/v1/crew/helper"},
-		{"PUT", "/api/v1/crew/helper/vault/SMTP_HOST"},
+		{"PUT", "/api/v1/crew/other/vault/SMTP_HOST"},
+		{"DELETE", "/api/v1/crew/other/vault/SMTP_HOST"},
 		{"DELETE", "/api/v1/crew/helper"},
 		{"POST", "/api/v1/crew"},
 		{"PUT", "/api/v1/settings"},
@@ -124,8 +123,34 @@ func TestACrewAgentHasWhatItIsToldAndNothingElse(t *testing.T) {
 			t.Errorf("%s %s: not refused to the agent: %v", raw.method, raw.path, err)
 		}
 	}
+	// What it kept in its vault itself was there, and is its own in the
+	// journal; the value went in without the newline echo put there.
+	kept := false
+	for _, e := range mustJournal(t, c, "helper") {
+		if e.Message == "it set ACCOUNT_PASSWORD" {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Error("its own vault value is not in its journal")
+	}
+	if out, err := runIn(t, cl, "pw\n", "crew", "vault", "set", "token", "-"); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	if v := c.Env("helper")["TOKEN"]; v != "pw" {
+		t.Errorf("kept %q", v)
+	}
 	reqs, err := c.Requests("helper")
 	if err != nil || len(reqs) != 1 || len(reqs[0].Fields) != 2 || !reqs[0].Fields[1].Secret {
 		t.Errorf("its request: %+v %v", reqs, err)
 	}
+}
+
+func mustJournal(t *testing.T, c *crew.Crew, id string) []crew.Entry {
+	t.Helper()
+	list, err := c.Journal(id, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return list
 }

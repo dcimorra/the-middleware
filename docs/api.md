@@ -372,8 +372,8 @@ Autonomous agents the operator creates (`internal/crew`, [crew.md](crew.md)), ea
 
 | method | path | result |
 | --- | --- | --- |
-| GET | `/crew` | the operator's agents, by name: `[{agent, state, running, domain, context_percent, quota, requests (open), vault, capabilities, desk}]` |
-| POST | `/crew` | body: `{name, goal, provider?, model?, min_minutes?, max_minutes?, quota_percent?, context_percent?}` → its status (201); it starts off |
+| GET | `/crew` | the operator's agents, by name: `[{agent, state, running, domain, context_percent, quota, requests (open), vault, desk, disk_used}]` |
+| POST | `/crew` | body: `{name, goal, provider?, model?, min_minutes?, max_minutes?, quota_percent?, context_percent?, disk_mb?}` → its status (201); it starts off |
 | GET | `/crew/{agent}` | *agent too* → its status, with every request and its notebook |
 | PUT | `/crew/{agent}` | body: as for POST → the status; a new goal wakes it |
 | DELETE | `/crew/{agent}` | its turn cut, its folder, vault, journal and conversations gone → `{deleted}` |
@@ -386,11 +386,8 @@ Autonomous agents the operator creates (`internal/crew`, [crew.md](crew.md)), ea
 | POST | `/crew/{agent}/requests` | *agent* body: `{title, text?, fields?, options?, urgent?}` → the request (201); pushed to the operator (critical when urgent, again after an hour); at most 20 open |
 | POST | `/crew/{agent}/requests/{id}/answer` | body: `{answer?, choice?, values?: {KEY: value}, dismiss?}` → the request; values go to its vault, and it is woken within a minute |
 | GET | `/crew/{agent}/vault` | *agent too* → the names in its vault, never the values |
-| PUT | `/crew/{agent}/vault/{key}` | body: `{value}` → the names; encrypted, in its turns' environment from the next one |
-| DELETE | `/crew/{agent}/vault/{key}` | → the names |
-| POST | `/crew/{agent}/mail` | *agent too* body: `{to, subject, body, html?}` → `{sent}`, from its account over SMTP; 50 a day at most |
-| GET | `/crew/{agent}/mail` | *agent too* → its inbox over IMAP, newest first: `[{uid, from, subject, date, seen}]`; `?unseen=1`, `?limit=` (20, up to 100) |
-| GET | `/crew/{agent}/mail/{uid}` | *agent too* → `{uid, from, subject, date, text, links}`; marked as read |
+| PUT | `/crew/{agent}/vault/{key}` | *agent too* body: `{value}` → the names; encrypted, in its turns' environment from the next one (the agent keeps there what it creates) |
+| DELETE | `/crew/{agent}/vault/{key}` | *agent too* → the names |
 | GET | `/crew/{agent}/chats` | its conversations, one per session, as for a site's |
 | POST | `/crew/{agent}/chats` | as for a site, for its conversations |
 | DELETE | `/crew/{agent}/chats` | as above |
