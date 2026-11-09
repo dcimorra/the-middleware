@@ -2485,5 +2485,6 @@
   "crew.sessionsHint": "One conversation per session. Write here to talk to it; it answers in the same session.",
   "crew.noSessions": "It has had no session yet: switch it on.",
   "crew.placeholder": "Tell the agent something…",
+  "crew.proposalsOpen": "{n} proposals open",
   "crew.network": "The network's"
 }

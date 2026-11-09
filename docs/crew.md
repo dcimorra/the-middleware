@@ -5,6 +5,26 @@ The network's agent (`internal/autopilot`) looks after the sites. The crew
 is made at the panel (**Agents**) with a name and a goal in the operator's
 own words, starts off, and once switched on works by itself toward it.
 
+## The network's agent is one of them
+
+The crew has a member from the start, `network`, that is the network's
+agent. Its engine stays `internal/autopilot` (one per network, movable
+between nodes, watching every site, its guidelines and proposals), so the
+crew never sends it a turn and refuses to switch, wake, stop, edit or
+delete it (`crew.ErrNetwork`): those are `/autopilot`'s. What it shares
+with the rest of the crew:
+
+- **Requests and urgent pushes**: `middleware crew request` from its turns
+  lands in `data/crew/network/requests.json`; each wake's prompt carries
+  its open and newly answered requests (`Crew.AskText`), and an answer
+  wakes the Pilot at once (`Options.OnAnswer`).
+- **Vault and mail**: its turns get the vault in their environment, and
+  `crew vault` / `crew mail` work as for any agent. The autopilot's socket
+  caller may reach `/api/v1/crew/network/...` and no other agent's.
+- **The panel**: it is first in **Agents**, and its page is
+  `#/agents/network` (the old `#/autopilot` links land there); the menu
+  no longer has an entry of its own.
+
 ## What an agent is
 
 `data/crew/<id>/`:

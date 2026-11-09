@@ -949,6 +949,20 @@ func (m *Manager) SendWith(name, text string, o SendOptions) (string, error) {
 			}
 		}
 		req.Env["MIDDLEWARE_CREW"] = cid
+	} else if domain == Autopilot {
+		// The network's agent is the crew's "network": its vault and its
+		// requests are kept there (internal/crew).
+		m.mu.Lock()
+		crewEnv := m.opts.CrewEnv
+		m.mu.Unlock()
+		if crewEnv != nil {
+			for k, v := range crewEnv(CrewNetwork) {
+				if _, set := req.Env[k]; !set {
+					req.Env[k] = v
+				}
+			}
+		}
+		req.Env["MIDDLEWARE_CREW"] = CrewNetwork
 	} else if turnEnv != nil && !IsHouse(domain) && c.Origin != OriginSite && c.Origin != OriginRepair && c.Origin != OriginAutopilot {
 		for k, v := range turnEnv(domain) {
 			if _, set := req.Env[k]; !set {

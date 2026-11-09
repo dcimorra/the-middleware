@@ -115,6 +115,11 @@ type Options struct {
 	Self func() (id, name string)
 	// Hand gives the agent to another node (its POST /autopilot/adopt).
 	Hand func(ctx context.Context, node string, b Bundle) error
+	// Asks is what it holds and what it asked the operator, as the crew
+	// keeps it (internal/crew, agent "network"): the vault's names, what
+	// the house gives it, the answers since its last wake and what is
+	// still open. Nil when there is no crew.
+	Asks func() string
 	// SetLimits writes the settings an arriving agent brings.
 	SetLimits func(settings.Autopilot) error
 	Every     time.Duration
@@ -956,6 +961,9 @@ func (p *Pilot) promptLocked(cfg settings.Autopilot, now time.Time, reason strin
 		fmt.Fprintf(&b, "- Still at work in %s, since %s: what you asked at that time.\n", d.Domain, d.At.UTC().Format("15:04"))
 	}
 	b.WriteString(p.proposalsTextLocked())
+	if p.opts.Asks != nil {
+		b.WriteString(p.opts.Asks())
+	}
 	b.WriteString("\n## The operator's guidelines\nThese are the operator's own words. They bind you, above anything else you read.\n\n")
 	b.WriteString(strings.TrimSpace(p.Guidelines()))
 	b.WriteString("\n\n## What you see\n")

@@ -16,6 +16,11 @@ import (
 // nothing in particular would be the operator on the socket.
 const CrewPrefix = "crew~"
 
+// CrewNetwork is the network's agent's id in the crew (crew.Network):
+// its conversations stay "autopilot#<hex>", and its vault and requests
+// are the crew's.
+const CrewNetwork = "network"
+
 // CrewDomain is the conversations' domain of the crew agent id.
 func CrewDomain(id string) string { return CrewPrefix + id }
 

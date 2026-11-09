@@ -15,13 +15,14 @@ import { toast, toastError } from "../components/toast.js";
 import { cardHead, saveBar, fold } from "./settings-kit.js";
 import { chatTab } from "./site-chat.js";
 import { tabs } from "../components/tabs.js";
+import { renderRequests, renderVault } from "./crew.js";
 
 export function autopilotScreen({ tab } = {}) {
-  const p = page({ title: t("nav.autopilot"), sub: t("autopilot.sub"), icon: "sparkles" });
+  const p = page({ title: t("nav.autopilot"), sub: t("autopilot.sub"), icon: "bot", crumbs: [h("a", { href: "#/agents" }, t("nav.crew"))] });
   const active = tab === "sessions" ? "sessions" : "agent";
   p.body.append(tabs([
-    { key: "agent", href: "#/autopilot", label: t("autopilot.tab.agent"), icon: "power" },
-    { key: "sessions", href: "#/autopilot/sessions", label: t("autopilot.sessions"), icon: "chat" },
+    { key: "agent", href: "#/agents/network", label: t("autopilot.tab.agent"), icon: "power" },
+    { key: "sessions", href: "#/agents/network/sessions", label: t("autopilot.sessions"), icon: "chat" },
   ], active));
   // Its sessions are a tab of their own. The chat makes the page the
   // height of the screen (body.chat-fit), and below the cards that turned
@@ -29,13 +30,17 @@ export function autopilotScreen({ tab } = {}) {
   // leftover height empty under them.
   if (active === "sessions") return sessionsTab(p);
   const stateCard = h("div", { class: "card set-card" });
+  // What it asks the operator, as every agent of the crew does: first,
+  // the urgent ones on top; its vault next to its guidelines.
+  const reqCard = h("div", { class: "card set-card" });
+  const vaultCard = h("div", { class: "card set-card" });
   const proposalsCard = h("div", { class: "card set-card" });
   const sitesCard = h("div", { class: "card set-card" });
   const rulesCard = h("div", { class: "card set-card" });
   const limitsCard = h("div", { class: "card set-card" });
   const bookCard = h("div", { class: "card set-card" });
   const journalCard = h("div", { class: "card set-card" });
-  p.body.append(stateCard, proposalsCard, sitesCard, rulesCard, limitsCard, bookCard, journalCard);
+  p.body.append(stateCard, reqCard, proposalsCard, sitesCard, rulesCard, vaultCard, limitsCard, bookCard, journalCard);
 
   const act = (path, body, msg) => async (e) => {
     // currentTarget is gone once the event is over, and a confirm dialog
@@ -267,7 +272,12 @@ export function autopilotScreen({ tab } = {}) {
   }
 
   async function refresh() {
-    const st = await api.get("/autopilot");
+    const [st, mine] = await Promise.all([api.get("/autopilot"), api.get("/crew/network").catch(() => null)]);
+    if (mine) {
+      const ctx = { base: "/crew/network", id: "network", refresh };
+      renderRequests(reqCard, mine, ctx);
+      renderVault(vaultCard, mine, ctx);
+    }
     renderState(st);
     renderProposals(st);
     renderSites(st);
@@ -285,6 +295,7 @@ export function autopilotScreen({ tab } = {}) {
   const later = () => { clearTimeout(pending); pending = setTimeout(() => { refresh().catch(() => {}); renderJournal(); }, 800); };
   const subs = [
     onEvent("autopilot.", later),
+    onEvent("crew.", (ev) => { if (ev.subject === "network") later(); }),
     onEvent("agent.", (ev) => { if ((ev.subject || "").startsWith("autopilot#") && /^agent\.(started|done|error)$/.test(ev.type)) later(); }),
   ];
   return { el: p.el, destroy() { clearTimeout(pending); subs.forEach((u) => u()); } };

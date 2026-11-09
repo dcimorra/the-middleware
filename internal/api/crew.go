@@ -34,7 +34,7 @@ func (s *Server) RegisterCrew(c *crew.Crew, m *chat.Manager) {
 	// mine is the operator or the agent itself (the gate holds an agent
 	// to its own {agent} already).
 	mine := func(r *http.Request) error {
-		if cl := auth.FromContext(r.Context()); cl.Crew != "" {
+		if cl := auth.FromContext(r.Context()); cl.Crew != "" || (cl.Autopilot && r.PathValue("agent") == crew.Network) {
 			return nil
 		}
 		return operator(r)

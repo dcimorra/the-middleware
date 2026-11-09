@@ -55,10 +55,26 @@ import (
 	"github.com/dcimorra/the-middleware/internal/secrets"
 )
 
+// Network is the id of the network's own agent (internal/autopilot) in
+// the crew. It is listed and asks the operator as every agent does, and
+// has their vault and mail, but its wakes, its switch and its settings
+// are the autopilot's: it watches the sites of a whole network, one for
+// all its nodes, and that engine is not this one.
+const Network = "network"
+
+// KindNetwork marks the network's agent.
+const KindNetwork = "network"
+
+// ErrNetwork is what the crew answers for what is the autopilot's.
+var ErrNetwork = errors.New("the network's agent is switched, set and woken at its own routes (/autopilot)")
+
 // Agent is an agent's settings, agent.json.
 type Agent struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Kind is "" for an agent of the operator's, KindNetwork for the
+	// network's own.
+	Kind string `json:"kind,omitempty"`
 	// Goal is the operator's words: what it works toward and how.
 	Goal    string `json:"goal"`
 	Enabled bool   `json:"enabled,omitempty"`
@@ -173,8 +189,11 @@ type Options struct {
 	Usage func(provider string) []agent.Window
 	// Forget removes an agent's conversations, when it is deleted.
 	Forget func(domain string)
-	Every  time.Duration
-	Now    func() time.Time
+	// OnAnswer is called when the operator answers one of an agent's
+	// requests: what wakes the network's agent, whose wakes are not ours.
+	OnAnswer func(id string)
+	Every    time.Duration
+	Now      func() time.Time
 }
 
 // member is an agent as the crew holds it.
@@ -228,6 +247,13 @@ func New(opts Options) *Crew {
 		_ = fsx.ReadJSON(filepath.Join(c.base(), a.ID, "state.json"), &mb.st)
 		_ = fsx.ReadJSON(filepath.Join(c.base(), a.ID, "requests.json"), &mb.reqs)
 		c.m[a.ID] = mb
+	}
+	if c.m[Network] == nil {
+		a := Agent{ID: Network, Name: "Network agent", Kind: KindNetwork, Created: c.now()}
+		mb := &member{a: a, j: autopilot.OpenJournal(filepath.Join(c.dir(Network), "journal.jsonl"))}
+		if c.saveAgentLocked(mb) == nil {
+			c.m[Network] = mb
+		}
 	}
 	return c
 }
@@ -345,7 +371,7 @@ func (c *Crew) Create(a Agent) (Agent, error) {
 	}
 	base := Slug(a.Name)
 	id := base
-	for n := 2; c.m[id] != nil || exists(c.dir(id)); n++ {
+	for n := 2; id == Network || c.m[id] != nil || exists(c.dir(id)); n++ {
 		id = fmt.Sprintf("%s-%d", base, n)
 	}
 	a.ID, a.Created, a.Enabled = id, c.now(), false
@@ -365,6 +391,9 @@ func exists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 // Update replaces an agent's settings; the switch is SetEnabled's.
 func (c *Crew) Update(id string, a Agent) (Agent, error) {
+	if id == Network {
+		return Agent{}, ErrNetwork
+	}
 	a.Name = strings.TrimSpace(a.Name)
 	if err := a.Validate(); err != nil {
 		return Agent{}, err
@@ -394,6 +423,9 @@ func (c *Crew) Update(id string, a Agent) (Agent, error) {
 // Delete stops an agent and forgets it: its folder, its HOME and its
 // conversations. Its journal goes with it; the events stay.
 func (c *Crew) Delete(id string) error {
+	if id == Network {
+		return ErrNetwork
+	}
 	c.mu.Lock()
 	mb := c.get(id)
 	if mb == nil {
@@ -420,6 +452,9 @@ func (c *Crew) Delete(id string) error {
 // SetEnabled switches an agent on (it looks at once) or off (a turn at
 // work finishes).
 func (c *Crew) SetEnabled(id string, on bool) error {
+	if id == Network {
+		return ErrNetwork
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	mb := c.get(id)
@@ -447,6 +482,9 @@ func (c *Crew) SetEnabled(id string, on bool) error {
 
 // Halt switches an agent off and cuts its turn now.
 func (c *Crew) Halt(id string) error {
+	if id == Network {
+		return ErrNetwork
+	}
 	c.mu.Lock()
 	mb := c.get(id)
 	if mb == nil {
@@ -467,6 +505,9 @@ func (c *Crew) Halt(id string) error {
 
 // Wake has an agent look now.
 func (c *Crew) Wake(id string) error {
+	if id == Network {
+		return ErrNetwork
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	mb := c.get(id)
@@ -648,6 +689,9 @@ func (c *Crew) pass(id string) {
 	}
 	cfg := mb.a.Limits()
 	c.remindLocked(mb, now)
+	if mb.a.Kind == KindNetwork {
+		return
+	}
 	if mb.st.Turn != "" {
 		// An end never heard (a turn lost to a crash) does not hold it.
 		running := c.opts.Running != nil && c.opts.Running(mb.st.Session)
@@ -857,6 +901,22 @@ func (c *Crew) promptLocked(mb *member, cfg Agent, now time.Time, reason string)
 	if mb.st.LastResult != "" {
 		fmt.Fprintf(&b, "- Your last turn said: %s\n", mb.st.LastResult)
 	}
+	b.WriteString(c.askTextLocked(mb))
+	fmt.Fprintf(&b, `
+## This turn
+Decide what is worth doing now toward your goal, do it, and stop: one turn is a step, not the whole plan. When something only the operator can give you stops a path, ask for it (urgent when it is a check meant for a person) and go on with another.
+Before you end, rewrite your notebook. Then end your reply with these two lines, exactly:
+Summary: <one line: what you did this turn>
+Next: <when to wake you, from %s to %s, like 40m, 3h or 1h30m>, <why then>
+`, short(time.Duration(cfg.MinMinutes)*time.Minute), short(time.Duration(cfg.MaxMinutes)*time.Minute))
+	return b.String()
+}
+
+// askTextLocked is what a wake says of the vault, what the house gives,
+// and the requests: the operator's answers since the last wake and what
+// is still open.
+func (c *Crew) askTextLocked(mb *member) string {
+	var b strings.Builder
 	keys := c.vaultKeys(mb.a.ID)
 	if len(keys) > 0 {
 		fmt.Fprintf(&b, "- Your vault holds (each in your environment under its name): %s.\n", strings.Join(keys, ", "))
@@ -896,12 +956,28 @@ func (c *Crew) promptLocked(mb *member, cfg Agent, now time.Time, reason string)
 	if open.Len() > 0 {
 		b.WriteString("\n## Your requests still open\nDo not ask again for these; carry on with what does not depend on them.\n" + open.String())
 	}
-	fmt.Fprintf(&b, `
-## This turn
-Decide what is worth doing now toward your goal, do it, and stop: one turn is a step, not the whole plan. When something only the operator can give you stops a path, ask for it (urgent when it is a check meant for a person) and go on with another.
-Before you end, rewrite your notebook. Then end your reply with these two lines, exactly:
-Summary: <one line: what you did this turn>
-Next: <when to wake you, from %s to %s, like 40m, 3h or 1h30m>, <why then>
-`, short(time.Duration(cfg.MinMinutes)*time.Minute), short(time.Duration(cfg.MaxMinutes)*time.Minute))
 	return b.String()
+}
+
+// AskText is askTextLocked for the network's agent, whose prompt the
+// autopilot writes: what it says is marked as told, as a wake of ours
+// marks it, so an answer is given once.
+func (c *Crew) AskText(id string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	mb := c.get(id)
+	if mb == nil {
+		return ""
+	}
+	text := c.askTextLocked(mb)
+	told := false
+	for i := range mb.reqs {
+		if mb.reqs[i].Status != StatusOpen && !mb.reqs[i].Told {
+			mb.reqs[i].Told, told = true, true
+		}
+	}
+	if told {
+		c.saveRequestsLocked(mb)
+	}
+	return text
 }

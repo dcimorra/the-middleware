@@ -495,7 +495,7 @@ func buildWire(a *app.App) app.Hook {
 		srv.RegisterAutopilot(w.pilot, chatManager)
 		// The operator's own agents (internal/crew): each off until
 		// switched on, jailed to its desk, its own caller on the socket.
-		w.crew = buildCrew(a)
+		w.crew = buildCrew(a, w)
 		srv.RegisterCrew(w.crew, chatManager)
 	}
 	srv.RegisterDomains(domains.New(domains.Options{DataDir: dataDir(a)}))

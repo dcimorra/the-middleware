@@ -15,7 +15,9 @@ import (
 	"github.com/dcimorra/the-middleware/internal/autopilot"
 	"github.com/dcimorra/the-middleware/internal/backups"
 	"github.com/dcimorra/the-middleware/internal/chat"
+	"github.com/dcimorra/the-middleware/internal/crew"
 	"github.com/dcimorra/the-middleware/internal/events"
+	"github.com/dcimorra/the-middleware/internal/secrets"
 	"github.com/dcimorra/the-middleware/internal/settings"
 	"github.com/dcimorra/the-middleware/internal/sites"
 	"github.com/dcimorra/the-middleware/internal/tasks"
@@ -71,6 +73,18 @@ func pilotServer(t *testing.T) (root string, cl *Client, p *autopilot.Pilot, ask
 		Running: func(string) bool { return false },
 	})
 	srv.RegisterAutopilot(p, nil)
+	// It is the crew's "network" member for its requests, vault and mail;
+	// "other" is a crew agent it must not reach.
+	box, err := secrets.New(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := crew.New(crew.Options{Root: root, Bus: bus, Box: box, Running: func(string) bool { return false }})
+	if _, err := c.Create(crew.Agent{Name: "Other", Goal: "Something else."}); err != nil {
+		t.Fatal(err)
+	}
+	srv.RegisterCrew(c, nil)
+	t.Setenv("MIDDLEWARE_CREW", crew.Network)
 	ln, err := api.ListenSocket(api.SocketPath(root))
 	if err != nil {
 		t.Fatal(err)
@@ -110,6 +124,12 @@ func TestTheAutonomousAgentHasWhatItIsToldAndNothingThatHoldsItBack(t *testing.T
 		{"autopilot publish <domain>", "", []string{"autopilot", "publish", "new.test"}},
 		{"autopilot propose <domain|house> --title <title> -", "The pool has no limit.", []string{"autopilot", "propose", "a.test", "--title", "Bound the pool", "-"}},
 		{"autopilot proposals [<id>]", "", []string{"autopilot", "proposals"}},
+		{"crew request --title <title> [--field KEY] [--secret KEY] [--option <choice>] [--urgent] -", "A Cloudflare token for the new zone.", []string{"crew", "request", "--title", "Zone token", "--secret", "CF_TOKEN", "-"}},
+		{"crew requests [<id>]", "", []string{"crew", "requests"}},
+		{"crew vault", "", []string{"crew", "vault"}},
+		{"crew mail send --to <address> --subject <subject> [--html] -", "Hello.", []string{"crew", "mail", "send", "--to", "a@example.com", "--subject", "Hi", "-"}},
+		{"crew mail list [--unseen] [--limit 20]", "", []string{"crew", "mail", "list"}},
+		{"crew mail read <uid>", "", []string{"crew", "mail", "read", "1"}},
 	}
 	covered := map[string]bool{}
 	for _, tr := range tries {
@@ -152,6 +172,11 @@ func TestTheAutonomousAgentHasWhatItIsToldAndNothingThatHoldsItBack(t *testing.T
 		{"autopilot", "publish", "a.test"},
 		{"autopilot", "proposals", "send", "x"},
 		{"autopilot", "proposals", "dismiss", "x"},
+		{"crew", "list"},
+		{"crew", "answer", "rx", "--text", "yes"},
+		{"crew", "status", "--agent", "other"},
+		{"crew", "vault", "--agent", "other"},
+		{"crew", "requests", "--agent", "other"},
 	} {
 		out, err := run(t, cl, try...)
 		var apiErr *APIError
@@ -172,8 +197,10 @@ func TestTheAutonomousAgentHasWhatItIsToldAndNothingThatHoldsItBack(t *testing.T
 		{"PUT", "/api/v1/autopilot/guidelines"},
 		{"PUT", "/api/v1/sites/a.test/manifest"},
 		{"DELETE", "/api/v1/sites/a.test"},
+		{"PUT", "/api/v1/crew/network/vault/CF_TOKEN"},
+		{"POST", "/api/v1/crew"},
 	} {
-		err := cl.Do(raw.method, raw.path, map[string]any{"text": "x", "enabled": false}, nil)
+		err := cl.Do(raw.method, raw.path, map[string]any{"text": "x", "enabled": false, "value": "x", "name": "x"}, nil)
 		var apiErr *APIError
 		if !errorsAs(err, &apiErr) || apiErr.Status != http.StatusForbidden {
 			t.Errorf("%s %s: not refused to the agent: %v", raw.method, raw.path, err)

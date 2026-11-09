@@ -2485,5 +2485,6 @@
   "crew.sessionsHint": "Una conversación por sesión. Escribe aquí para hablar con él; responde en la misma sesión.",
   "crew.noSessions": "Aún no ha tenido ninguna sesión: enciéndelo.",
   "crew.placeholder": "Dile algo al agente…",
+  "crew.proposalsOpen": "{n} propuestas abiertas",
   "crew.network": "De la red"
 }
