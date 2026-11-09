@@ -35,12 +35,25 @@ export function crewScreen({ id, tab } = {}) {
   p.body.append(card);
   newBtn.addEventListener("click", () => createAgent());
   async function render() {
-    const list = await api.get("/crew");
-    if (!list.length) {
+    const [list, pilot] = await Promise.all([api.get("/crew"), api.get("/autopilot").catch(() => null)]);
+    // The network's agent is one of the crew to the operator: first in
+    // the list, with its own page (its sites, proposals and network).
+    const pilotRow = pilot ? (() => {
+      const s = pilot.state || {};
+      const label = !pilot.enabled ? t("crew.state.off") : pilot.running ? t("crew.state.working") : s.skipped ? t("crew.state.held") : s.next_wake ? t("crew.state.next", { at: fmtTime(s.next_wake) }) : t("crew.state.on");
+      const waiting = (s.proposals || []).filter((x) => x.status === "open").length;
+      return h("li", null,
+        h("a", { href: "#/autopilot" }, h("strong", null, t("nav.autopilot"))),
+        h("span", { class: pilot.enabled ? "level-ok" : "muted" }, label),
+        h("span", { class: "badge" }, t("crew.network")),
+        waiting ? h("span", { class: "badge level-warn" }, t("crew.requestsOpen", { n: waiting })) : null,
+        s.last_result ? h("span", { class: "muted small" }, s.last_result) : null);
+    })() : null;
+    if (!list.length && !pilotRow) {
       clear(card).append(cardHead(t("crew.none"), t("crew.noneHint")));
       return null;
     }
-    clear(card).append(h("ul", { class: "set-recent-list" }, ...list.map((st) => {
+    clear(card).append(h("ul", { class: "set-recent-list" }, pilotRow, ...list.map((st) => {
       const s = stateOf(st);
       const waiting = (st.requests || []).filter((r) => r.status === "open");
       const urgent = waiting.some((r) => r.urgent);
