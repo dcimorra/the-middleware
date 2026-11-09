@@ -196,7 +196,7 @@ func TestOnlyTheListedEventsArePushed(t *testing.T) {
 	if _, ok := For(events.Event{Type: "agent.done", Subject: "a.example#12ab", Data: map[string]any{"origin": "autopilot"}}); ok {
 		t.Error("a site turn the autonomous agent handed out was pushed")
 	}
-	if m, ok := For(events.Event{Type: "autopilot.ready", Subject: "a.example"}); !ok || m.URL != "/#/autopilot" {
+	if m, ok := For(events.Event{Type: "autopilot.ready", Subject: "a.example"}); !ok || m.URL != "/#/agents/network" {
 		t.Errorf("a finished site waiting: %+v %v", m, ok)
 	}
 	m, ok := For(events.Event{Type: "agent.done", Subject: "a.example#12ab", Data: map[string]any{"origin": "panel", "text": "Done.\nMore"}})

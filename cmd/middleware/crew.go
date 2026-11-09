@@ -16,7 +16,7 @@ import (
 // chat for their sessions, the usage book for the subscription's windows,
 // and the house's key for their vaults. The chat is told back where an
 // agent's turn gets its vault and its agent from.
-func buildCrew(a *app.App) *crew.Crew {
+func buildCrew(a *app.App, w *wireHook) *crew.Crew {
 	box, err := secrets.Open(a.Root)
 	if err != nil {
 		box = nil
@@ -51,6 +51,13 @@ func buildCrew(a *app.App) *crew.Crew {
 				return nil
 			}
 			return u.Windows
+		},
+		// The network's agent is woken by its own engine: an answer to one
+		// of its requests is a reason to look now.
+		OnAnswer: func(id string) {
+			if id == crew.Network && w.pilot != nil {
+				w.pilot.Wake()
+			}
 		},
 		Forget: func(domain string) {
 			_, _ = chatManager.Purge(domain)

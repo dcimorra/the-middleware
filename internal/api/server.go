@@ -410,6 +410,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			s.pilot.Note(autopilot.Entry{Kind: autopilot.KindCall, Domain: site, Message: r.Method + " " + r.URL.RequestURI()})
 		}
 	}
+	if caller.Autopilot && !public {
+		if a := segmentIn(pattern, r.URL.Path, "{agent}"); a != "" && a != crew.Network {
+			s.writeError(w, r, Errorf(http.StatusForbidden, "the network's agent reaches its own requests, vault and mail (%s) only", crew.Network))
+			return
+		}
+	}
 	if caller.Crew != "" && !public && segmentIn(pattern, r.URL.Path, "{agent}") != caller.Crew {
 		// Its scope opens the crew's routes; which agent they are for is
 		// in the path, and only its own is its.

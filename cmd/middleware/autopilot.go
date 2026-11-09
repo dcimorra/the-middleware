@@ -14,6 +14,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/app"
 	"github.com/dcimorra/the-middleware/internal/autopilot"
 	"github.com/dcimorra/the-middleware/internal/chat"
+	"github.com/dcimorra/the-middleware/internal/crew"
 	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/nodes"
 	"github.com/dcimorra/the-middleware/internal/settings"
@@ -140,6 +141,12 @@ func buildPilot(a *app.App, w *wireHook) *autopilot.Pilot {
 			}
 			a.SetSettings(cur)
 			return nil
+		},
+		Asks: func() string {
+			if w.crew == nil {
+				return ""
+			}
+			return w.crew.AskText(crew.Network)
 		},
 		Usage: func(provider string) []agent.Window {
 			u, ok := usageBook(a.Root).Get(provider)

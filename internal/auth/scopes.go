@@ -91,6 +91,15 @@ var scopeRoutes = map[string][]string{
 		"GET /api/v1/autopilot/proposals",
 		"POST /api/v1/autopilot/proposals",
 		"POST /api/v1/autopilot/sites/{domain}/ready",
+		// Its requests, vault and mail, kept by the crew as agent
+		// "network"; the API holds it to that one.
+		"GET /api/v1/crew/{agent}",
+		"GET /api/v1/crew/{agent}/requests",
+		"POST /api/v1/crew/{agent}/requests",
+		"GET /api/v1/crew/{agent}/vault",
+		"POST /api/v1/crew/{agent}/mail",
+		"GET /api/v1/crew/{agent}/mail",
+		"GET /api/v1/crew/{agent}/mail/{uid}",
 	},
 	// crew is an agent of the operator's crew (CrewScopes): its own
 	// status, journal, requests, vault names and mail, for its own id

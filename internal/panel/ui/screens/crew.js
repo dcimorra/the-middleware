@@ -17,6 +17,7 @@ import { toast, toastError } from "../components/toast.js";
 import { cardHead, saveBar, fold } from "./settings-kit.js";
 import { chatTab } from "./site-chat.js";
 import { tabs } from "../components/tabs.js";
+import { autopilotScreen } from "./autopilot.js";
 
 function stateOf(st) {
   const a = st.agent || {}, s = st.state || {};
@@ -28,6 +29,10 @@ function stateOf(st) {
 }
 
 export function crewScreen({ id, tab } = {}) {
+  // The network's agent is one of the crew, with its engine of its own
+  // (one per network, watching every site): its page is the one it had,
+  // with the crew's requests and vault on it.
+  if (id === "network") return autopilotScreen({ tab });
   if (id) return agentScreen(id, tab);
   const newBtn = h("button", { type: "button", class: "btn primary" }, icon("plus"), t("crew.new"));
   const p = page({ title: t("nav.crew"), sub: t("crew.sub"), icon: "bot", actions: [newBtn] });
@@ -35,12 +40,30 @@ export function crewScreen({ id, tab } = {}) {
   p.body.append(card);
   newBtn.addEventListener("click", () => createAgent());
   async function render() {
-    const list = await api.get("/crew");
-    if (!list.length) {
+    const [all, pilot] = await Promise.all([api.get("/crew"), api.get("/autopilot").catch(() => null)]);
+    const net = all.find((st) => st.agent.kind === "network");
+    const list = all.filter((st) => st.agent.kind !== "network");
+    // The network's agent is one of the crew to the operator: first in
+    // the list, with its own page (its sites, proposals and network).
+    const pilotRow = pilot ? (() => {
+      const s = pilot.state || {};
+      const label = !pilot.enabled ? t("crew.state.off") : pilot.running ? t("crew.state.working") : s.skipped ? t("crew.state.held") : s.next_wake ? t("crew.state.next", { at: fmtTime(s.next_wake) }) : t("crew.state.on");
+      const proposals = (s.proposals || []).filter((x) => x.status === "open").length;
+      const waiting = ((net && net.requests) || []).filter((r) => r.status === "open");
+      const urgent = waiting.some((r) => r.urgent);
+      return h("li", null,
+        h("a", { href: "#/agents/network" }, h("strong", null, t("nav.autopilot"))),
+        h("span", { class: pilot.enabled ? "level-ok" : "muted" }, label),
+        h("span", { class: "badge" }, t("crew.network")),
+        waiting.length ? h("span", { class: "badge " + (urgent ? "level-error" : "level-warn") }, t(urgent ? "crew.urgentOpen" : "crew.requestsOpen", { n: waiting.length })) : null,
+        proposals ? h("span", { class: "badge" }, t("crew.proposalsOpen", { n: proposals })) : null,
+        s.last_result ? h("span", { class: "muted small" }, s.last_result) : null);
+    })() : null;
+    if (!list.length && !pilotRow) {
       clear(card).append(cardHead(t("crew.none"), t("crew.noneHint")));
       return null;
     }
-    clear(card).append(h("ul", { class: "set-recent-list" }, ...list.map((st) => {
+    clear(card).append(h("ul", { class: "set-recent-list" }, pilotRow, ...list.map((st) => {
       const s = stateOf(st);
       const waiting = (st.requests || []).filter((r) => r.status === "open");
       const urgent = waiting.some((r) => r.urgent);
@@ -130,51 +153,6 @@ function agentScreen(id, tab) {
     clear(stateCard).append(cardHead(a.name, t("crew.stateHint"), toggle, stop, wake), ...lines, ...meters);
   }
 
-  // What it waits for, the urgent first. What the operator types into a
-  // field goes to the vault, never into the request.
-  function renderRequests(st) {
-    const all = st.requests || [];
-    const waiting = all.filter((r) => r.status === "open").sort((x, y) => Number(Boolean(y.urgent)) - Number(Boolean(x.urgent)));
-    const done = all.filter((r) => r.status !== "open").slice(0, 15);
-    const item = (r) => {
-      const li = h("li", { class: "proposal" + (r.urgent && r.status === "open" ? " urgent" : "") },
-        h("div", { class: "proposal-head" },
-          h("span", { class: "badge " + (r.status === "open" ? (r.urgent ? "level-error" : "level-warn") : "muted") }, t("crew.req." + (r.status === "open" ? (r.urgent ? "urgent" : "open") : r.status === "answered" ? "answered_" : r.status))),
-          h("span", { class: "muted", title: fmtTime(r.at) }, fmtAgo(r.at, t))),
-        h("strong", { class: "proposal-title" }, r.title),
-        r.text ? h("pre", { class: "mono small pre-wrap" }, r.text) : null);
-      if (r.status !== "open") {
-        if ((r.filled || []).length) li.append(h("p", { class: "small" }, t("crew.req.filled", { keys: r.filled.join(", ") })));
-        if (r.choice) li.append(h("p", { class: "small" }, t("crew.req.chose", { choice: r.choice })));
-        if (r.answer) li.append(h("p", { class: "small" }, r.answer));
-        return li;
-      }
-      const inputs = (r.fields || []).map((f) => ({ f, input: h("input", { type: f.secret ? "password" : "text", autocomplete: "off", spellcheck: "false" }) }));
-      let choice = "";
-      const choices = (r.options || []).length ? h("div", { class: "form-row" }, ...r.options.map((o) => {
-        const b = h("button", { type: "button", class: "btn sm" }, o);
-        b.addEventListener("click", () => { choice = o; choices.querySelectorAll("button").forEach((x) => x.classList.toggle("primary", x === b)); });
-        return b;
-      })) : null;
-      const words = h("textarea", { rows: 2, placeholder: t("crew.req.answerPlaceholder") });
-      const send = h("button", { type: "button", class: "btn sm primary" }, icon("send"), t("crew.req.send"));
-      send.addEventListener("click", (e) => {
-        const values = {};
-        for (const { f, input } of inputs) if (input.value) values[f.key] = input.value;
-        post(`requests/${enc(r.id)}/answer`, { answer: words.value, choice, values }, t("crew.req.sent"))(e);
-      });
-      const drop = h("button", { type: "button", class: "btn sm ghost" }, t("crew.req.dismiss"));
-      drop.addEventListener("click", (e) => post(`requests/${enc(r.id)}/answer`, { dismiss: true, answer: words.value }, null)(e));
-      const talk = h("a", { class: "btn sm ghost", href: `#/agents/${enc(id)}/sessions` }, icon("chat"), t("crew.req.talk"));
-      li.append(...inputs.map(({ f, input }) => field(f.key, input)), choices, field(t("crew.req.answer"), words), h("div", { class: "form-row" }, send, drop, talk));
-      return li;
-    };
-    const parts = [cardHead(t("crew.requests"), t("crew.requestsHint"))];
-    parts.push(waiting.length ? h("ul", { class: "set-recent-list proposals" }, ...waiting.map(item)) : h("p", { class: "hint" }, t("crew.req.none")));
-    if (done.length) parts.push(fold(t("crew.req.answered", { n: done.length }), null, [h("ul", { class: "set-recent-list proposals" }, ...done.map(item))]));
-    clear(reqCard).append(...parts);
-  }
-
   async function renderGoal(st) {
     const a = st.agent;
     const name = h("input", { type: "text", maxlength: "80", value: a.name });
@@ -224,28 +202,6 @@ function agentScreen(id, tab) {
     clear(goalCard).append(cardHead(t("crew.goalTitle"), t("crew.goalCardHint")), form);
   }
 
-  function renderVault(st) {
-    const keys = st.vault || [];
-    const list = keys.map((k) => {
-      const x = h("button", { type: "button", class: "icon-btn sm", "aria-label": t("crew.vault.remove", { key: k }), title: t("crew.vault.remove", { key: k }) }, icon("x", { size: 16 }));
-      x.addEventListener("click", async () => {
-        if (!(await confirm({ title: t("crew.vault.removeQ", { key: k }), body: t("crew.vault.removeBody"), confirmLabel: t("common.delete"), danger: true }))) return;
-        try { await api.del(`${base}/vault/${enc(k)}`); refresh(); } catch (e) { toastError(e); }
-      });
-      return h("li", null, h("code", null, k), h("span", { class: "grow" }), x);
-    });
-    const key = h("input", { type: "text", placeholder: "SMTP_HOST", spellcheck: "false", autocomplete: "off" });
-    const val = h("input", { type: "password", autocomplete: "new-password", spellcheck: "false" });
-    const add = h("button", { type: "button", class: "btn" }, icon("plus"), t("crew.vault.add"));
-    add.addEventListener("click", async () => {
-      add.classList.add("busy");
-      try { await api.put(`${base}/vault/${enc(key.value.trim().toUpperCase())}`, { value: val.value }); key.value = ""; val.value = ""; toast(t("crew.vault.saved"), "ok"); refresh(); } catch (e) { toastError(e); } finally { add.classList.remove("busy"); }
-    });
-    clear(vaultCard).append(cardHead(t("crew.vault"), t("crew.vaultHint")),
-      list.length ? h("ul", { class: "set-recent-list" }, ...list) : h("p", { class: "hint" }, t("crew.vault.empty")),
-      h("div", { class: "form-row" }, field(t("crew.vault.key"), key), field(t("crew.vault.value"), val), add));
-  }
-
   function renderCaps(st) {
     const items = (st.capabilities || []).map((c) => h("li", null,
       h("strong", null, c.title),
@@ -278,8 +234,8 @@ function agentScreen(id, tab) {
   async function refresh() {
     const st = await api.get(base);
     renderState(st);
-    renderRequests(st);
-    renderVault(st);
+    renderRequests(reqCard, st, { base, id, refresh });
+    renderVault(vaultCard, st, { base, refresh });
     renderCaps(st);
     renderBook(st);
     return st;
@@ -319,4 +275,81 @@ function sessionsTab(p, id) {
   show();
   const unsub = onEvent("agent.", (ev) => { if ((ev.subject || "").startsWith(`crew~${id}#`)) show(); });
   return { el: p.el, destroy() { unsub(); if (chat) chat.destroy(); } };
+}
+
+// poster is a button's POST to an agent's route, then the page again.
+function poster(base, refresh) {
+  return (path, body, msg) => async (e) => {
+    const btn = (e && e.currentTarget) || document.createElement("button");
+    btn.classList.add("busy");
+    try { await api.post(`${base}/${path}`, body); if (msg) toast(msg, "ok"); await refresh(); } catch (err) { toastError(err); } finally { btn.classList.remove("busy"); }
+  };
+}
+
+// What it waits for, the urgent first. What the operator types into a
+// field goes to the vault, never into the request.
+export function renderRequests(reqCard, st, { base, id, refresh }) {
+  const post = poster(base, refresh);
+  const all = st.requests || [];
+  const waiting = all.filter((r) => r.status === "open").sort((x, y) => Number(Boolean(y.urgent)) - Number(Boolean(x.urgent)));
+  const done = all.filter((r) => r.status !== "open").slice(0, 15);
+  const item = (r) => {
+    const li = h("li", { class: "proposal" + (r.urgent && r.status === "open" ? " urgent" : "") },
+      h("div", { class: "proposal-head" },
+        h("span", { class: "badge " + (r.status === "open" ? (r.urgent ? "level-error" : "level-warn") : "muted") }, t("crew.req." + (r.status === "open" ? (r.urgent ? "urgent" : "open") : r.status === "answered" ? "answered_" : r.status))),
+        h("span", { class: "muted", title: fmtTime(r.at) }, fmtAgo(r.at, t))),
+      h("strong", { class: "proposal-title" }, r.title),
+      r.text ? h("pre", { class: "mono small pre-wrap" }, r.text) : null);
+    if (r.status !== "open") {
+      if ((r.filled || []).length) li.append(h("p", { class: "small" }, t("crew.req.filled", { keys: r.filled.join(", ") })));
+      if (r.choice) li.append(h("p", { class: "small" }, t("crew.req.chose", { choice: r.choice })));
+      if (r.answer) li.append(h("p", { class: "small" }, r.answer));
+      return li;
+    }
+    const inputs = (r.fields || []).map((f) => ({ f, input: h("input", { type: f.secret ? "password" : "text", autocomplete: "off", spellcheck: "false" }) }));
+    let choice = "";
+    const choices = (r.options || []).length ? h("div", { class: "form-row" }, ...r.options.map((o) => {
+      const b = h("button", { type: "button", class: "btn sm" }, o);
+      b.addEventListener("click", () => { choice = o; choices.querySelectorAll("button").forEach((x) => x.classList.toggle("primary", x === b)); });
+      return b;
+    })) : null;
+    const words = h("textarea", { rows: 2, placeholder: t("crew.req.answerPlaceholder") });
+    const send = h("button", { type: "button", class: "btn sm primary" }, icon("send"), t("crew.req.send"));
+    send.addEventListener("click", (e) => {
+      const values = {};
+      for (const { f, input } of inputs) if (input.value) values[f.key] = input.value;
+      post(`requests/${enc(r.id)}/answer`, { answer: words.value, choice, values }, t("crew.req.sent"))(e);
+    });
+    const drop = h("button", { type: "button", class: "btn sm ghost" }, t("crew.req.dismiss"));
+    drop.addEventListener("click", (e) => post(`requests/${enc(r.id)}/answer`, { dismiss: true, answer: words.value }, null)(e));
+    const talk = h("a", { class: "btn sm ghost", href: `#/agents/${enc(id)}/sessions` }, icon("chat"), t("crew.req.talk"));
+    li.append(...inputs.map(({ f, input }) => field(f.key, input)), choices, field(t("crew.req.answer"), words), h("div", { class: "form-row" }, send, drop, talk));
+    return li;
+  };
+  const parts = [cardHead(t("crew.requests"), t("crew.requestsHint"))];
+  parts.push(waiting.length ? h("ul", { class: "set-recent-list proposals" }, ...waiting.map(item)) : h("p", { class: "hint" }, t("crew.req.none")));
+  if (done.length) parts.push(fold(t("crew.req.answered", { n: done.length }), null, [h("ul", { class: "set-recent-list proposals" }, ...done.map(item))]));
+  clear(reqCard).append(...parts);
+}
+
+export function renderVault(vaultCard, st, { base, refresh }) {
+  const keys = st.vault || [];
+  const list = keys.map((k) => {
+    const x = h("button", { type: "button", class: "icon-btn sm", "aria-label": t("crew.vault.remove", { key: k }), title: t("crew.vault.remove", { key: k }) }, icon("x", { size: 16 }));
+    x.addEventListener("click", async () => {
+      if (!(await confirm({ title: t("crew.vault.removeQ", { key: k }), body: t("crew.vault.removeBody"), confirmLabel: t("common.delete"), danger: true }))) return;
+      try { await api.del(`${base}/vault/${enc(k)}`); refresh(); } catch (e) { toastError(e); }
+    });
+    return h("li", null, h("code", null, k), h("span", { class: "grow" }), x);
+  });
+  const key = h("input", { type: "text", placeholder: "SMTP_HOST", spellcheck: "false", autocomplete: "off" });
+  const val = h("input", { type: "password", autocomplete: "new-password", spellcheck: "false" });
+  const add = h("button", { type: "button", class: "btn" }, icon("plus"), t("crew.vault.add"));
+  add.addEventListener("click", async () => {
+    add.classList.add("busy");
+    try { await api.put(`${base}/vault/${enc(key.value.trim().toUpperCase())}`, { value: val.value }); key.value = ""; val.value = ""; toast(t("crew.vault.saved"), "ok"); refresh(); } catch (e) { toastError(e); } finally { add.classList.remove("busy"); }
+  });
+  clear(vaultCard).append(cardHead(t("crew.vault"), t("crew.vaultHint")),
+    list.length ? h("ul", { class: "set-recent-list" }, ...list) : h("p", { class: "hint" }, t("crew.vault.empty")),
+    h("div", { class: "form-row" }, field(t("crew.vault.key"), key), field(t("crew.vault.value"), val), add));
 }

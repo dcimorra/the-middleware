@@ -29,7 +29,6 @@ import { openBanner } from "./screens/settings-access.js";
 import { settingsScreen } from "./screens/settings.js";
 import { systemScreen } from "./screens/system.js";
 import { houseScreen } from "./screens/house.js";
-import { autopilotScreen } from "./screens/autopilot.js";
 import { crewScreen } from "./screens/crew.js";
 import { llmUsageScreen } from "./screens/llm-usage.js";
 import { dashboardScreen } from "./screens/dashboard.js";
@@ -68,7 +67,6 @@ const NAV = [
   ["audit", "/audit", "g a", "alert"],
   ["edge", "/edge", "g x", "link"],
   ["house", "/house", "g h", "sparkles"],
-  ["autopilot", "/autopilot", "g p", "power"],
   ["crew", "/agents", "g b", "bot"],
   ["llm", "/llm", "g u", "gauge"],
   ["events", "/events", "g e", "activity"],
@@ -201,7 +199,6 @@ route("/docs/:name?", docsScreen);
 route("/settings", settingsScreen);
 route("/system", systemScreen);
 route("/house", houseScreen);
-route("/autopilot/:tab?", autopilotScreen);
 route("/agents/:id?/:tab?", crewScreen);
 route("/llm", llmUsageScreen);
 // The screen was 'Claude usage' before it held every tool's: old links still land.
@@ -300,7 +297,9 @@ async function boot() {
     mounted = true;
     // A delegated user's screens are the sites; any other path (a
     // shortcut, an old link) lands on their list.
-    mount(main, (path) => (path === "/" || path === "/logout" ? "/sites" : delegate() && !/^\/sites(\/|\?|$)/.test(path) ? "/sites" : path));
+    // The network's agent was a screen of its own before it joined the
+    // crew: an old link or bookmark to it lands on its page there.
+    mount(main, (path) => (path === "/" || path === "/logout" ? "/sites" : delegate() && !/^\/sites(\/|\?|$)/.test(path) ? "/sites" : /^\/autopilot(\/|$)/.test(path) ? path.replace(/^\/autopilot/, "/agents/network") : path));
   } else {
     rerender();
   }

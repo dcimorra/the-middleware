@@ -1,6 +1,7 @@
 package crew
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -231,5 +232,61 @@ func TestSlugs(t *testing.T) {
 		if got := Slug(in); got != want || !chat.ValidCrewID(got) {
 			t.Errorf("Slug(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// The network's agent is in the crew from the start for its requests and
+// vault, but its own engine wakes it: the crew never sends it a turn,
+// nor switches, wakes or deletes it; an answer is handed to that engine,
+// and the text its next wake carries marks the answer as told.
+func TestTheNetworksAgentIsOneOfTheCrewWithItsOwnEngine(t *testing.T) {
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	c, fc, _ := newCrew(t, &now, nil)
+	woke := make(chan string, 1)
+	c.opts.OnAnswer = func(id string) { woke <- id }
+	if !c.Has(Network) {
+		t.Fatal("no network member")
+	}
+	for name, err := range map[string]error{
+		"on": c.SetEnabled(Network, true), "wake": c.Wake(Network), "stop": c.Halt(Network), "delete": c.Delete(Network),
+	} {
+		if !errors.Is(err, ErrNetwork) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if a, err := c.Create(Agent{Name: "network", Goal: "g"}); err == nil && a.ID == Network {
+		t.Error("a new agent took the network's id")
+	}
+	r, err := c.Ask(Network, Request{Title: "A token for the new zone", Fields: []Field{{Key: "CF_TOKEN", Secret: true}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Pass()
+	if len(fc.prompts) != 0 {
+		t.Fatal("the crew sent the network's agent a turn")
+	}
+	if !strings.Contains(c.AskText(Network), "A token for the new zone") {
+		t.Error("its open request is not in its wake's text")
+	}
+	if _, err := c.Answer(Network, r.ID, Reply{Answer: "done", Values: map[string]string{"CF_TOKEN": "s3cret"}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case id := <-woke:
+		if id != Network {
+			t.Errorf("woke %q", id)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the answer did not wake its engine")
+	}
+	text := c.AskText(Network)
+	if !strings.Contains(text, "CF_TOKEN") || strings.Contains(text, "s3cret") {
+		t.Errorf("its wake's text: %s", text)
+	}
+	if reqs, _ := c.Requests(Network); len(reqs) != 1 || !reqs[0].Told {
+		t.Errorf("the answer is not marked told: %+v", reqs)
+	}
+	if strings.Contains(c.AskText(Network), "answered your request") {
+		t.Error("the answer is told twice")
 	}
 }

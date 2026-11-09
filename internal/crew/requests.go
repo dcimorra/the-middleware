@@ -248,6 +248,9 @@ func (c *Crew) Answer(id, rid string, rep Reply) (Request, error) {
 	}
 	c.note(mb, Entry{Kind: KindAnswer, Message: autopilot.Clip(msg, 300)})
 	go c.emit("crew.answered", id, "", msg, map[string]any{"request": rid})
+	if c.opts.OnAnswer != nil {
+		go c.opts.OnAnswer(id)
+	}
 	return *r, nil
 }
 
