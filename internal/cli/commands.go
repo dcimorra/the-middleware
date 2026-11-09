@@ -42,6 +42,8 @@ const Usage = `  setup        print a one-time code to create the operator in th
                test copies: make one with the site's data, promote it back, undo, copy again
   autopilot    status | journal | sites | on | off | stop | wake | move <node> | ask <domain> - | publish <domain>
                the network's autonomous agent: its switch, the kill switch, where it runs, what it did
+  crew         list | status | journal | on | off | stop | wake | request | requests | answer | vault | mail
+               the operator's own autonomous agents, made in the panel (Agents)
   events       recent events (-f to follow)
   system       version, uptime, load, memory, disk
   token        add | list | rm — API tokens for scripts
@@ -90,6 +92,8 @@ func (e *Env) Run(name string, args []string) error {
 		return e.nodes(args)
 	case "autopilot":
 		return e.autopilot(args)
+	case "crew":
+		return e.crew(args)
 	}
 	return fmt.Errorf("unknown command %q", name)
 }

@@ -30,6 +30,7 @@ import { settingsScreen } from "./screens/settings.js";
 import { systemScreen } from "./screens/system.js";
 import { houseScreen } from "./screens/house.js";
 import { autopilotScreen } from "./screens/autopilot.js";
+import { crewScreen } from "./screens/crew.js";
 import { llmUsageScreen } from "./screens/llm-usage.js";
 import { dashboardScreen } from "./screens/dashboard.js";
 import { movesPill } from "./components/moves.js";
@@ -68,6 +69,7 @@ const NAV = [
   ["edge", "/edge", "g x", "link"],
   ["house", "/house", "g h", "sparkles"],
   ["autopilot", "/autopilot", "g p", "power"],
+  ["crew", "/agents", "g b", "bot"],
   ["llm", "/llm", "g u", "gauge"],
   ["events", "/events", "g e", "activity"],
   ["guard", "/guard", "g g", "eye"],
@@ -200,6 +202,7 @@ route("/settings", settingsScreen);
 route("/system", systemScreen);
 route("/house", houseScreen);
 route("/autopilot/:tab?", autopilotScreen);
+route("/agents/:id?/:tab?", crewScreen);
 route("/llm", llmUsageScreen);
 // The screen was 'Claude usage' before it held every tool's: old links still land.
 route("/claude", llmUsageScreen);

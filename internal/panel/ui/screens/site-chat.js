@@ -26,10 +26,13 @@ import { delegate } from "../lib/access.js";
 // house's, one per session, opened by the house and not by the panel, so
 // the operator reads them and writes into them but starts none.
 export function chatTab(domain) {
-  const pilot = domain === "autopilot";
+  // A crew agent's sessions ("crew~<id>") are read and written as the
+  // autopilot's are: opened by the house, one per session.
+  const crewID = domain.startsWith("crew~") ? domain.slice(5) : null;
+  const pilot = domain === "autopilot" || Boolean(crewID);
   const house = domain === "middleware" || pilot;
   const turns = h("div", { class: "chat-turns", "aria-live": "polite" });
-  const text = h("textarea", { rows: 1, placeholder: t(pilot ? "autopilot.placeholder" : house ? "chat.placeholderHouse" : "chat.placeholder"), "aria-label": t("chat.message") });
+  const text = h("textarea", { rows: 1, placeholder: t(crewID ? "crew.placeholder" : pilot ? "autopilot.placeholder" : house ? "chat.placeholderHouse" : "chat.placeholder"), "aria-label": t("chat.message") });
   const provider = h("select", { class: "chat-pill", "aria-label": t("chat.provider"), title: t("chat.provider") });
   // The model: a list while it is short, a box that searches as you type
   // once a provider brings hundreds (OpenCode with OpenRouter connected).
@@ -84,7 +87,7 @@ export function chatTab(domain) {
   // side, and its turns follow its own rules).
   const base = `/sites/${enc(domain)}`;
   // Where the conversations beyond the first live: a site's, or the house's.
-  const chatsBase = pilot ? "/autopilot" : house ? "/chat/middleware" : base;
+  const chatsBase = crewID ? `/crew/${enc(crewID)}` : pilot ? "/autopilot" : house ? "/chat/middleware" : base;
   const mainConv = () => ({ name: domain, path: house ? "/chat/middleware" : `${base}/chat`, origin: "panel" });
   const convOf = (id, origin) => id ? { name: `${domain}#${id}`, path: `${chatsBase}/chats/${enc(id)}`, origin: origin || "panel" } : mainConv();
   // A new conversation is a draft until its first message (or file) goes:

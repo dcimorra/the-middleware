@@ -29,6 +29,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/backups"
 	"github.com/dcimorra/the-middleware/internal/cgroups"
 	"github.com/dcimorra/the-middleware/internal/chat"
+	"github.com/dcimorra/the-middleware/internal/crew"
 	"github.com/dcimorra/the-middleware/internal/deps"
 	"github.com/dcimorra/the-middleware/internal/domains"
 	"github.com/dcimorra/the-middleware/internal/engine"
@@ -178,6 +179,7 @@ type wireHook struct {
 	auditor   *audit.Auditor
 	fixer     *autofix.Fixer
 	pilot     *autopilot.Pilot
+	crew      *crew.Crew
 	updater   *update.Updater
 	mesh      *nodes.Mesh
 	fw        *firewall.Firewall
@@ -491,6 +493,10 @@ func buildWire(a *app.App) app.Hook {
 	if chatManager != nil {
 		w.pilot = buildPilot(a, w)
 		srv.RegisterAutopilot(w.pilot, chatManager)
+		// The operator's own agents (internal/crew): each off until
+		// switched on, jailed to its desk, its own caller on the socket.
+		w.crew = buildCrew(a)
+		srv.RegisterCrew(w.crew, chatManager)
 	}
 	srv.RegisterDomains(domains.New(domains.Options{DataDir: dataDir(a)}))
 	if theCache != nil {
@@ -610,6 +616,9 @@ func (w *wireHook) Run(ctx context.Context, a *app.App) error {
 	}
 	if w.pilot != nil {
 		go w.pilot.Run(ctx)
+	}
+	if w.crew != nil {
+		go w.crew.Run(ctx)
 	}
 	if w.backups != nil {
 		go w.backups.Run(ctx)

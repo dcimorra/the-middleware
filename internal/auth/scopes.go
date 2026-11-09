@@ -92,6 +92,19 @@ var scopeRoutes = map[string][]string{
 		"POST /api/v1/autopilot/proposals",
 		"POST /api/v1/autopilot/sites/{domain}/ready",
 	},
+	// crew is an agent of the operator's crew (CrewScopes): its own
+	// status, journal, requests, vault names and mail, for its own id
+	// only (the API checks {agent} against the caller). Never a token's.
+	"crew": {
+		"GET /api/v1/crew/{agent}",
+		"GET /api/v1/crew/{agent}/journal",
+		"GET /api/v1/crew/{agent}/requests",
+		"POST /api/v1/crew/{agent}/requests",
+		"GET /api/v1/crew/{agent}/vault",
+		"POST /api/v1/crew/{agent}/mail",
+		"GET /api/v1/crew/{agent}/mail",
+		"GET /api/v1/crew/{agent}/mail/{uid}",
+	},
 	// import is a site arriving from another installation (V1): its
 	// bundle, its last copy, the commit, and seeing whether it came up or
 	// removing it when it did not. Always for one site, and made to
@@ -144,6 +157,10 @@ func AutopilotScopes() []string {
 	return []string{"read", "restart", "deploy", "tasks", "backups", "autopilot"}
 }
 
+// CrewScopes are what a turn of a crew agent opens over the socket: its
+// own routes, and no site, setting, token or other agent.
+func CrewScopes() []string { return []string{"crew"} }
+
 // ErrBadScope is a scope outside the list.
 var ErrBadScope = errors.New("scope")
 
@@ -156,6 +173,9 @@ func CheckScopes(scopes []string, validSite func(string) bool) error {
 		}
 		if hasSite && !validSite(site) {
 			return fmt.Errorf("%w: %q names no valid site", ErrBadScope, sc)
+		}
+		if action == "crew" {
+			return fmt.Errorf("%w: crew is the crew agents' own, never a token's", ErrBadScope)
 		}
 		if action == "autopilot" {
 			return fmt.Errorf("%w: autopilot is the autonomous agent's own, never a token's", ErrBadScope)

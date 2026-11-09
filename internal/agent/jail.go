@@ -355,3 +355,38 @@ func (j *Jail) Unattended(root string) {
 	}
 	sort.Strings(j.Deny)
 }
+
+// Crew narrows a jail NewJail made for an agent of the operator's crew
+// (internal/crew), whose working folder is data/crew/<id>/desk. NewJail
+// leaves open every folder above a site's own, since a site's folder
+// sits in sites/ with nothing of the house's next to it; here the
+// folders above hold the other agents and this one's own settings,
+// requests and vault, so their entries are denied but the way down. And
+// the logs NewJail lends by the folder's name (data/logs/desk) would be
+// a project's called "desk": they are taken back.
+func (j *Jail) Crew(root string) {
+	root = absolute(root)
+	desk := j.SiteDir
+	mine := filepath.Dir(desk)
+	add := func(p string) {
+		if !slices.Contains(j.Deny, p) {
+			j.Deny = append(j.Deny, p)
+		}
+	}
+	for _, e := range readDir(filepath.Dir(mine)) {
+		if p := filepath.Join(filepath.Dir(mine), e); p != mine {
+			add(p)
+		}
+	}
+	for _, e := range readDir(mine) {
+		if p := filepath.Join(mine, e); p != desk {
+			add(p)
+		}
+	}
+	logs := filepath.Join(root, "data", "logs", filepath.Base(desk))
+	if i := slices.Index(j.Lent, logs); i >= 0 {
+		j.Lent = slices.Delete(j.Lent, i, i+1)
+		add(logs)
+	}
+	sort.Strings(j.Deny)
+}

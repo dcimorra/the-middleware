@@ -49,7 +49,13 @@ export function liveChats({ onCount } = {}) {
     // reads this once when it opens.
     store.set("openChat", { domain: r.domain, id: r.id || "" });
     if ((currentNode() || "") !== r.node) setCurrentNode(r.node);
-    navigate(r.domain === "middleware" ? "/house" : `/sites/${encodeURIComponent(r.domain)}/chat`);
+    // The house's own, the network agent's and a crew agent's sessions
+    // live on their own pages, not under a site.
+    const where = r.domain === "middleware" ? "/house"
+      : r.domain === "autopilot" ? "/autopilot/sessions"
+        : r.domain.startsWith("crew~") ? `/agents/${encodeURIComponent(r.domain.slice(5))}/sessions`
+          : `/sites/${encodeURIComponent(r.domain)}/chat`;
+    navigate(where);
   }
 
   // Every node the operator's list names, each asked on its own: one that

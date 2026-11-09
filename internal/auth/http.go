@@ -38,6 +38,10 @@ type Caller struct {
 	// Autopilot is a socket request made from a turn of the house's
 	// autonomous agent; its Scopes are then AutopilotScopes().
 	Autopilot bool
+	// Crew is the agent of the operator's crew (internal/crew) whose turn
+	// made this socket request; its Scopes are then CrewScopes(), and the
+	// API holds it to its own agent's routes.
+	Crew string
 	// User is a delegate's name (users.go), UserID their id where they
 	// signed in, and Grants what they may do by site (perms.go). On the
 	// node a delegate's request was relayed to, User and Grants come from
@@ -64,6 +68,7 @@ const (
 	socketKey
 	turnKey
 	autopilotKey
+	crewKey
 )
 
 // WithSocket marks a context as belonging to a connection that arrived
@@ -85,6 +90,12 @@ func WithSocketAutopilot(ctx context.Context) context.Context {
 	return context.WithValue(WithSocket(ctx), autopilotKey, true)
 }
 
+// WithSocketCrew marks a socket connection made from inside a turn of
+// the crew agent id.
+func WithSocketCrew(ctx context.Context, id string) context.Context {
+	return context.WithValue(WithSocket(ctx), crewKey, id)
+}
+
 // IsSocket reports whether ctx came through WithSocket.
 func IsSocket(ctx context.Context) bool {
 	v, _ := ctx.Value(socketKey).(bool)
@@ -96,6 +107,9 @@ func IsSocket(ctx context.Context) bool {
 func SocketCaller(ctx context.Context) Caller {
 	if site, _ := ctx.Value(turnKey).(string); site != "" {
 		return Caller{Via: ViaSocket, Turn: site, Scopes: TurnScopes(site)}
+	}
+	if id, _ := ctx.Value(crewKey).(string); id != "" {
+		return Caller{Via: ViaSocket, Crew: id, Scopes: CrewScopes()}
 	}
 	if on, _ := ctx.Value(autopilotKey).(bool); on {
 		return Caller{Via: ViaSocket, Autopilot: true, Scopes: AutopilotScopes()}

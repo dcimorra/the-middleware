@@ -234,6 +234,12 @@ type Options struct {
 	// conversations (the panel's, not the ones its code opens through the
 	// door): what lets `git push` reach the site's repositories.
 	TurnEnv func(domain string) map[string]string
+	// CrewEnv, when set, is what a crew agent's turns get in their
+	// environment: its vault (internal/crew).
+	CrewEnv func(id string) map[string]string
+	// CrewSettings, when set, is the provider and model a crew agent's
+	// conversations run with.
+	CrewSettings func(id string) (provider, model string)
 }
 
 // Usage is the book of subscription limits the turns fill.
@@ -548,6 +554,13 @@ func (m *Manager) workdir(name string) (string, error) {
 	if IsHouse(domain) {
 		return m.opts.Root, nil
 	}
+	if cid, ok := CrewID(domain); ok {
+		dir := CrewDesk(m.opts.Root, cid)
+		if st, err := os.Stat(dir); err != nil || !st.IsDir() {
+			return "", fmt.Errorf("%s: no such agent", cid)
+		}
+		return dir, nil
+	}
 	if !manifest.ValidName(domain) {
 		return "", fmt.Errorf("%q is not a site or project", domain)
 	}
@@ -579,7 +592,18 @@ func (m *Manager) Resolve(name string) (Settings, error) {
 	}
 	m.mu.Lock()
 	s := Settings{Provider: m.limits.DefaultProvider, Workdir: dir}
+	crewSettings := m.opts.CrewSettings
 	m.mu.Unlock()
+	if cid, ok := CrewID(domain); ok {
+		if crewSettings != nil {
+			if p, model := crewSettings(cid); p != "" {
+				s.Provider, s.Model = p, model
+			}
+		}
+		s.Jail = agent.NewJail(m.opts.Root, dir, filepath.Join(m.opts.Root, "data", "homes", domain))
+		s.Jail.Crew(m.opts.Root)
+		return s, nil
+	}
 	if !IsHouse(domain) {
 		site := agent.ReadSiteSettings(dir)
 		if site.Provider != "" {
@@ -913,7 +937,19 @@ func (m *Manager) SendWith(name, text string, o SendOptions) (string, error) {
 		system += "\n" + AutopilotTask + "\n"
 		req.System = system
 	}
-	if turnEnv != nil && !IsHouse(domain) && c.Origin != OriginSite && c.Origin != OriginRepair && c.Origin != OriginAutopilot {
+	if cid, ok := CrewID(domain); ok {
+		m.mu.Lock()
+		crewEnv := m.opts.CrewEnv
+		m.mu.Unlock()
+		if crewEnv != nil {
+			for k, v := range crewEnv(cid) {
+				if _, set := req.Env[k]; !set {
+					req.Env[k] = v
+				}
+			}
+		}
+		req.Env["MIDDLEWARE_CREW"] = cid
+	} else if turnEnv != nil && !IsHouse(domain) && c.Origin != OriginSite && c.Origin != OriginRepair && c.Origin != OriginAutopilot {
 		for k, v := range turnEnv(domain) {
 			if _, set := req.Env[k]; !set {
 				req.Env[k] = v
@@ -1343,6 +1379,14 @@ func (m *Manager) SetPath(f func() string) {
 	m.mu.Unlock()
 }
 
+// SetCrew sets Options.CrewEnv and Options.CrewSettings after the manager
+// exists: the crew is built after the chat.
+func (m *Manager) SetCrew(env func(id string) map[string]string, settings func(id string) (string, string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.opts.CrewEnv, m.opts.CrewSettings = env, settings
+}
+
 // SetTurnEnv sets Options.TurnEnv after the manager exists: the wiring
 // has the site tokens and the modules only later.
 func (m *Manager) SetTurnEnv(f func(domain string) map[string]string) {
@@ -1390,7 +1434,10 @@ func newID() string {
 // passed as system context so the user's own words stay the prompt.
 func Preamble(domain, workdir string, j agent.Jail) string {
 	var b strings.Builder
-	if domain == Autopilot {
+	if cid, ok := CrewID(domain); ok {
+		b.WriteString(crewPreamble(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(workdir)))), cid, workdir, j))
+		return b.String()
+	} else if domain == Autopilot {
 		b.WriteString(autopilotPreamble(workdir, j))
 	} else if domain == Middleware {
 		b.WriteString("You are working on the middleware installation itself, the supervisor that serves every site on this machine. ")
