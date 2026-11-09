@@ -177,8 +177,56 @@ export function autopilotScreen({ tab } = {}) {
       li.append(del);
       return li;
     });
-    clear(sitesCard).append(cardHead(t("autopilot.sites"), t("autopilot.sitesHint", { left: st.sites_left, per: st.limits.sites_per_week })),
+    // Asking it for a site: the operator's idea, or simply one more. It
+    // is on top of the week's allowance, which is set right here too, so
+    // neither hides in the limits' fold.
+    const ask = h("button", { type: "button", class: "btn primary" }, icon("plus"), t("autopilot.order"));
+    ask.addEventListener("click", () => orderSite());
+    const orders = ((st.state && st.state.orders) || []).filter((o) => !o.done && !o.cancelled);
+    const asked = orders.map((o) => {
+      const back = h("button", { type: "button", class: "btn sm ghost" }, t("autopilot.orderCancel"));
+      back.addEventListener("click", async (e) => {
+        if (!(await confirm({ title: t("autopilot.orderCancelQ"), body: t("autopilot.orderCancelBody"), confirmLabel: t("autopilot.orderCancel") }))) return;
+        const btn = e.target.closest("button");
+        if (btn) btn.classList.add("busy");
+        try { await api.del(`/autopilot/orders/${enc(o.id)}`); refresh(); } catch (err) { toastError(err); } finally { if (btn) btn.classList.remove("busy"); }
+      });
+      return h("li", null, h("span", { class: "badge warn" }, t("autopilot.orderOpen")),
+        h("span", { class: "grow" }, o.text || t("autopilot.orderAny")),
+        h("span", { class: "muted", title: fmtTime(o.at) }, fmtAgo(o.at, t)), back);
+    });
+    const perWeek = h("input", { type: "number", min: "0", max: "50", value: String(st.limits.sites_per_week) });
+    const setWeek = h("button", { type: "button", class: "btn sm" }, t("common.save"));
+    setWeek.addEventListener("click", async () => {
+      setWeek.classList.add("busy");
+      try {
+        const cur = await api.get("/autopilot");
+        const n = Number(perWeek.value);
+        await api.put("/autopilot/settings", { ...cur.limits, enabled: cur.enabled, sites_per_week: n === 0 ? -1 : n });
+        toast(t("autopilot.perWeekSaved", { n }), "ok");
+        refresh();
+      } catch (e) { toastError(e); } finally { setWeek.classList.remove("busy"); }
+    });
+    clear(sitesCard).append(cardHead(t("autopilot.sites"), t("autopilot.sitesHint", { left: st.sites_left, per: st.limits.sites_per_week }), ask),
+      h("div", { class: "form-row" }, field(t("autopilot.perWeek"), perWeek, t("autopilot.perWeekHint")), setWeek),
+      asked.length ? h("ul", { class: "set-recent-list" }, ...asked) : null,
       rows.length ? h("ul", { class: "set-recent-list" }, ...rows) : h("p", { class: "hint" }, t("autopilot.noSites")));
+  }
+
+  // What the operator asks for is theirs to word, or to leave to it.
+  function orderSite() {
+    const text = h("textarea", { rows: 6, placeholder: t("autopilot.orderPlaceholder") });
+    return open({
+      title: t("autopilot.orderQ"), initialFocus: text,
+      body: h("div", null, h("p", null, t("autopilot.orderBody")), field(t("autopilot.orderWhat"), text, t("autopilot.orderWhatHint"))),
+      buttons: [{ label: t("common.cancel"), value: null }, { label: t("autopilot.orderSend"), primary: true, submit: true, value: true }],
+      onSubmit: async () => {
+        await api.post("/autopilot/orders", { text: text.value.trim() });
+        toast(t("autopilot.orderSent"), "ok");
+        refresh();
+        return true;
+      },
+    });
   }
 
   // Deleting one of its sites is the quick no: it goes off the internet

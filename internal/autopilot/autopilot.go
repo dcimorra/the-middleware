@@ -157,6 +157,9 @@ type Created struct {
 	// it and it still counts against the week's allowance.
 	Deleted time.Time `json:"deleted,omitzero"`
 	Reason  string    `json:"reason,omitempty"`
+	// Order is the operator's order it was made for (orders.go); such a
+	// site is not taken from the weekly allowance.
+	Order string `json:"order,omitempty"`
 }
 
 // State is data/autopilot/state.json: what must survive a restart.
@@ -187,6 +190,8 @@ type State struct {
 	Turns     int       `json:"turns,omitempty"`
 	// Proposals are what it asked the operator to decide (proposals.go).
 	Proposals []Proposal `json:"proposals,omitempty"`
+	// Orders are the sites the operator asked it for (orders.go).
+	Orders []Order `json:"orders,omitempty"`
 }
 
 // Limits on what it may have going at once.
@@ -306,6 +311,7 @@ func (p *Pilot) Status() Status {
 	st.Delegated = append([]Delegation(nil), p.st.Delegated...)
 	st.Created = append([]Created(nil), p.st.Created...)
 	st.Proposals = append([]Proposal(nil), p.st.Proposals...)
+	st.Orders = append([]Order(nil), p.st.Orders...)
 	left := p.sitesLeftLocked(cfg, now)
 	p.mu.Unlock()
 	out := Status{Enabled: cfg.Enabled, Limits: cfg, State: st, Running: st.Turn != "",
@@ -349,7 +355,7 @@ func (p *Pilot) overLocked(cfg settings.Autopilot, now time.Time) (string, time.
 func (p *Pilot) sitesLeftLocked(cfg settings.Autopilot, now time.Time) int {
 	n := 0
 	for _, c := range p.st.Created {
-		if now.Sub(c.At) < 7*24*time.Hour {
+		if c.Order == "" && now.Sub(c.At) < 7*24*time.Hour {
 			n++
 		}
 	}
@@ -369,7 +375,7 @@ func (p *Pilot) MayCreate(domain string) error {
 	}
 	now := p.opts.Now()
 	p.mu.Lock()
-	left := p.sitesLeftLocked(cfg, now)
+	left := p.sitesLeftLocked(cfg, now) + len(p.openOrdersLocked())
 	p.mu.Unlock()
 	if left <= 0 {
 		return fmt.Errorf("it may create %d sites in seven days and has created them", cfg.SitesPerWeek)
@@ -398,10 +404,15 @@ func (p *Pilot) MayCreate(domain string) error {
 func (p *Pilot) Created(domain string) {
 	now := p.opts.Now().UTC()
 	p.mu.Lock()
-	p.st.Created = append(p.st.Created, Created{Domain: domain, At: now})
+	order := p.orderForLocked(domain, now)
+	p.st.Created = append(p.st.Created, Created{Domain: domain, At: now, Order: order})
 	p.saveLocked()
 	p.mu.Unlock()
-	p.Note(Entry{Kind: KindSite, Domain: domain, Message: "created; off the internet until it is finished"})
+	msg := "created; off the internet until it is finished"
+	if order != "" {
+		msg = "created for the operator's order " + order + "; off the internet until it is finished"
+	}
+	p.Note(Entry{Kind: KindSite, Domain: domain, Message: msg})
 	p.emit("autopilot.site", domain, "", "created by the autonomous agent; not published until it is finished")
 }
 
@@ -957,7 +968,7 @@ func (p *Pilot) promptLocked(cfg settings.Autopilot, now time.Time, reason strin
 	if cfg.Publish == "ask" {
 		publish = "a site you create stays off the internet while you build it; when you mark it finished with `middleware autopilot publish <domain>` the operator is asked to publish it"
 	}
-	fmt.Fprintf(&b, "- New sites: you may create %d more in these seven days, with %s; %s.\n", left, zones, publish)
+	fmt.Fprintf(&b, "- New sites: you may create %d more of your own in these seven days (the operator sets this number), with %s; %s.\n", left, zones, publish)
 	if p.st.LastResult != "" {
 		fmt.Fprintf(&b, "- Your last turn said: %s\n", p.st.LastResult)
 	}
@@ -980,6 +991,7 @@ func (p *Pilot) promptLocked(cfg settings.Autopilot, now time.Time, reason strin
 	for _, d := range p.st.Delegated {
 		fmt.Fprintf(&b, "- Still at work in %s, since %s: what you asked at that time.\n", d.Domain, d.At.UTC().Format("15:04"))
 	}
+	b.WriteString(p.ordersTextLocked())
 	b.WriteString(p.proposalsTextLocked())
 	if p.opts.Asks != nil {
 		b.WriteString(p.opts.Asks())

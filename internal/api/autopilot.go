@@ -277,6 +277,33 @@ func (s *Server) RegisterAutopilot(p *autopilot.Pilot, m *chat.Manager) {
 		p.Published(domain, false)
 		return p.Status(), nil
 	})
+	s.Handle("POST", base+"/orders", "Ask the autonomous agent for a new site (body: text, what it should be; empty leaves the idea to it): it looks now, and the site is not taken from its weekly allowance", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if err := operator(r); err != nil {
+			return nil, err
+		}
+		var body struct {
+			Text string `json:"text"`
+		}
+		if r.ContentLength != 0 {
+			if err := ReadJSON(r, &body); err != nil {
+				return nil, err
+			}
+		}
+		o, err := p.Order(body.Text)
+		if err != nil {
+			return nil, Errorf(http.StatusConflict, "%v", err)
+		}
+		return o, nil
+	})
+	s.Handle("DELETE", base+"/orders/{id}", "Take back a site asked of the autonomous agent and not made yet; it is told", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if err := operator(r); err != nil {
+			return nil, err
+		}
+		if err := p.CancelOrder(r.PathValue("id")); err != nil {
+			return nil, Errorf(http.StatusNotFound, "%v", err)
+		}
+		return p.Status(), nil
+	})
 	s.Handle("DELETE", base+"/sites/{domain}", "Delete a site the autonomous agent made (?reason= or body: reason): off the internet and gone, the record kept in its journal and told on its next wake", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		if err := operator(r); err != nil {
 			return nil, err

@@ -43,6 +43,7 @@ const (
 	KindPublish = "publish" // one of its sites went public
 	KindPropose = "propose" // it proposed a fix to the operator
 	KindDecide  = "decide"  // the operator sent a proposal to be fixed, or dismissed it
+	KindOrder   = "order"   // the operator asked it for a site, or took that back
 )
 
 type journal struct {

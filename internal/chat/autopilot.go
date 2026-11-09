@@ -83,7 +83,7 @@ var AutopilotCommands = []TurnCommand{
 	{"site restart <domain>", "a new generation of a site, handed over without dropping requests"},
 	{"site deploy <domain>", "run a site's deploy recipe"},
 	{"site tasks <domain> [log <task>]", "a site's scheduled tasks and their output"},
-	{"site add <domain> --template <static|node|go|docker>", "create a site (counted against the weekly allowance)"},
+	{"site add <domain> --template <static|node|go|docker>", "create a site (counted against the weekly allowance, unless it is one the operator asked for)"},
 }
 
 // AutopilotConversation is the conversation of domain the autonomous agent
