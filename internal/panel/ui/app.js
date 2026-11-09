@@ -199,7 +199,7 @@ route("/docs/:name?", docsScreen);
 route("/settings", settingsScreen);
 route("/system", systemScreen);
 route("/house", houseScreen);
-route("/autopilot", autopilotScreen);
+route("/autopilot/:tab?", autopilotScreen);
 route("/llm", llmUsageScreen);
 // The screen was 'Claude usage' before it held every tool's: old links still land.
 route("/claude", llmUsageScreen);
