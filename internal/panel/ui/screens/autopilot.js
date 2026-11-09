@@ -14,18 +14,27 @@ import { confirm, field } from "../components/dialog.js";
 import { toast, toastError } from "../components/toast.js";
 import { cardHead, saveBar, fold } from "./settings-kit.js";
 import { chatTab } from "./site-chat.js";
+import { tabs } from "../components/tabs.js";
 
-export function autopilotScreen() {
+export function autopilotScreen({ tab } = {}) {
   const p = page({ title: t("nav.autopilot"), sub: t("autopilot.sub"), icon: "sparkles" });
+  const active = tab === "sessions" ? "sessions" : "agent";
+  p.body.append(tabs([
+    { key: "agent", href: "#/autopilot", label: t("autopilot.tab.agent"), icon: "power" },
+    { key: "sessions", href: "#/autopilot/sessions", label: t("autopilot.sessions"), icon: "chat" },
+  ], active));
+  // Its sessions are a tab of their own. The chat makes the page the
+  // height of the screen (body.chat-fit), and below the cards that turned
+  // every card into a short box scrolling on its own, with the screen's
+  // leftover height empty under them.
+  if (active === "sessions") return sessionsTab(p);
   const stateCard = h("div", { class: "card set-card" });
   const sitesCard = h("div", { class: "card set-card" });
   const rulesCard = h("div", { class: "card set-card" });
   const limitsCard = h("div", { class: "card set-card" });
   const bookCard = h("div", { class: "card set-card" });
   const journalCard = h("div", { class: "card set-card" });
-  const chatWrap = h("div", { class: "card set-card" });
-  p.body.append(stateCard, sitesCard, rulesCard, limitsCard, bookCard, journalCard, chatWrap);
-  let chat = null;
+  p.body.append(stateCard, sitesCard, rulesCard, limitsCard, bookCard, journalCard);
 
   const act = (path, body, msg) => async (e) => {
     const btn = e.currentTarget;
@@ -206,17 +215,6 @@ export function autopilotScreen() {
       items.length ? h("ul", { class: "set-recent-list" }, ...items) : h("p", { class: "hint" }, t("autopilot.journalEmpty")));
   }
 
-  async function renderChat() {
-    const list = await api.get("/autopilot/chats").catch(() => []);
-    if (!list.length) {
-      clear(chatWrap).append(cardHead(t("autopilot.sessions"), t("autopilot.sessionsHint")), h("p", { class: "hint" }, t("autopilot.noSessions")));
-      return;
-    }
-    if (chat) return;
-    chat = chatTab("autopilot");
-    clear(chatWrap).append(cardHead(t("autopilot.sessions"), t("autopilot.sessionsHint")), chat.el);
-  }
-
   async function refresh() {
     const st = await api.get("/autopilot");
     renderState(st);
@@ -229,14 +227,36 @@ export function autopilotScreen() {
     renderRules(st);
     await renderLimits(st);
     await renderJournal();
-    await renderChat();
     return null;
   });
   let pending = null;
-  const later = () => { clearTimeout(pending); pending = setTimeout(() => { refresh().catch(() => {}); renderJournal(); renderChat(); }, 800); };
+  const later = () => { clearTimeout(pending); pending = setTimeout(() => { refresh().catch(() => {}); renderJournal(); }, 800); };
   const subs = [
     onEvent("autopilot.", later),
     onEvent("agent.", (ev) => { if ((ev.subject || "").startsWith("autopilot#") && /^agent\.(started|done|error)$/.test(ev.type)) later(); }),
   ];
-  return { el: p.el, destroy() { clearTimeout(pending); if (chat) chat.destroy(); subs.forEach((u) => u()); } };
+  return { el: p.el, destroy() { clearTimeout(pending); subs.forEach((u) => u()); } };
+}
+
+// Its conversations, one per session: read here, and written into by the
+// operator, who can talk to it. Until it has had one there is nothing to
+// show but a line saying so.
+function sessionsTab(p) {
+  let chat = null;
+  const hint = h("div", { class: "card set-card" });
+  p.body.append(hint);
+  const show = async () => {
+    if (chat) return;
+    const list = await api.get("/autopilot/chats").catch(() => []);
+    if (!list.length) {
+      clear(hint).append(cardHead(t("autopilot.sessions"), t("autopilot.sessionsHint")), h("p", { class: "hint" }, t("autopilot.noSessions")));
+      return;
+    }
+    hint.remove();
+    chat = chatTab("autopilot");
+    p.body.append(chat.el);
+  };
+  show();
+  const unsub = onEvent("agent.", (ev) => { if ((ev.subject || "").startsWith("autopilot#")) show(); });
+  return { el: p.el, destroy() { unsub(); if (chat) chat.destroy(); } };
 }

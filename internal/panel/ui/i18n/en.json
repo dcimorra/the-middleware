@@ -2302,6 +2302,7 @@
   "autopilot.journalHint": "Every wake, turn, command, site, call to the house and refusal, newest first.",
   "autopilot.journalEmpty": "Nothing yet.",
   "autopilot.commands": "{n} commands",
+  "autopilot.tab.agent": "Agent",
   "autopilot.sessions": "Sessions",
   "autopilot.sessionsHint": "Its conversations, one per session. You can write to it here: it reads your message as a turn of its own.",
   "autopilot.noSessions": "It has had no session yet.",
