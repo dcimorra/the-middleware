@@ -314,10 +314,10 @@ Its brakes are the settings', which it cannot reach: `provider` and `model`
 default, or `ask`), `min_minutes`/`max_minutes` (15 and 720: the bounds of
 when it asks to be woken), `quota_percent` (80: above that share of a
 subscription window, the 5-hour or the weekly one, it is not woken and hands
-nothing out until the window resets, so the rest is the operator's) and
-`context_percent` (60: at that share of the model's context window the next
-wake starts a new session, which picks up from the notebook it keeps in its
-HOME). There are no dollar caps: the window is the measure.
+nothing out until the window resets, so the rest is the operator's). Every
+wake is a new conversation; what it chooses to remember is in the notebook it
+keeps in its HOME (`context_percent` is still accepted and no longer used).
+There are no dollar caps: the window is the measure.
 
 Each turn ends with `Summary:` and `Next: <duration>, <why>`; the house wakes
 it then, or earlier when a site turn it started ends or an error-level event
@@ -373,7 +373,7 @@ Autonomous agents the operator creates (`internal/crew`, [crew.md](crew.md)), ea
 | method | path | result |
 | --- | --- | --- |
 | GET | `/crew` | the operator's agents, by name: `[{agent, state, running, domain, context_percent, quota, requests (open), vault, desk, disk_used}]` |
-| POST | `/crew` | body: `{name, goal, provider?, model?, min_minutes?, max_minutes?, quota_percent?, context_percent?, disk_mb?}` → its status (201); it starts off |
+| POST | `/crew` | body: `{name, goal, provider?, model?, min_minutes?, max_minutes?, quota_percent?, disk_mb?}` → its status (201); it starts off |
 | GET | `/crew/{agent}` | *agent too* → its status, with every request and its notebook |
 | PUT | `/crew/{agent}` | body: as for POST → the status; a new goal wakes it |
 | DELETE | `/crew/{agent}` | its turn cut, its folder, vault, journal and conversations gone → `{deleted}` |

@@ -142,7 +142,7 @@ func TestItWakesWorksAndSleepsForAsLongAsItAsked(t *testing.T) {
 		t.Fatalf("switched on and not woken: %d turns", len(r.sent))
 	}
 	prompt := r.sent[0]
-	for _, want := range []string{"Read your notebook first", "Sites you create are finished products", "shop.test", "42 people", "UNTRUSTED-", "Next:"} {
+	for _, want := range []string{"Every wake is a new conversation", "Sites you create are finished products", "shop.test", "42 people", "UNTRUSTED-", "Next:"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("the prompt does not say %q:\n%s", want, prompt)
 		}
@@ -230,19 +230,19 @@ func TestAFullWindowPutsItOffUntilTheWindowResets(t *testing.T) {
 	}
 }
 
-// At the context share, the next wake opens a new session, which is told
-// to read its notebook.
-func TestAFullContextStartsANewSession(t *testing.T) {
+// Every wake opens a conversation of its own and is told its notebook is
+// where what it remembers is.
+func TestEveryWakeIsANewConversation(t *testing.T) {
 	r := newRig(t)
 	r.p.Pass()
-	r.end("Summary: a\nNext: 15m", 130_000, 200_000)
+	r.end("Summary: a\nNext: 15m", 1_000, 200_000)
 	r.advance(15 * time.Minute)
 	r.p.Pass()
-	if r.names[0] == r.names[1] {
-		t.Fatalf("still in %s at 65%% of the context", r.names[1])
+	if len(r.names) != 2 || r.names[0] == r.names[1] {
+		t.Fatalf("the second wake went on in the first conversation: %v", r.names)
 	}
-	if !strings.Contains(r.sent[1], "Read your notebook first") {
-		t.Error("the new session is not told to read its notebook")
+	if !strings.Contains(r.sent[1], "What you chose to remember is in your notebook") {
+		t.Error("the wake is not told where what it remembers is")
 	}
 }
 

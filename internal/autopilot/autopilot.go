@@ -25,10 +25,9 @@
 //   - Its journal (data/autopilot/journal.jsonl) has a line for every
 //     wake, turn, command, site, call to the house and refusal.
 //
-// Its context: each turn's end says how much of the model's window the
-// session holds (agent.Event.Context); at ContextPercent the next wake
-// opens a new conversation and the agent picks up from its notebook, a
-// file in its HOME it rewrites every turn. When it works: each turn ends
+// Its memory: every wake opens a new conversation with nothing of the
+// ones before; what it chose to keep is in its notebook, a file in its
+// HOME it reads and rewrites as it sees fit. When it works: each turn ends
 // with a "Next:" line, held between MinMinutes and MaxMinutes, and the
 // house wakes it earlier when a site turn it started ends or something
 // goes wrong on a site.
@@ -660,20 +659,14 @@ func (p *Pilot) Pass() {
 		p.skipLocked(over, next)
 		return
 	}
-	if p.st.Session == "" || (p.st.Window > 0 && pct(p.st.Context, p.st.Window) >= cfg.ContextPercent) {
-		was := p.st.Session
-		name, err := p.opts.NewSession()
-		if err != nil {
-			p.skipLocked("no conversation could be opened: "+err.Error(), now.Add(retrySoon))
-			return
-		}
-		msg := "first session"
-		if was != "" {
-			msg = fmt.Sprintf("its context reached %d%% of the window (%d of %d tokens): a new session from its notebook", pct(p.st.Context, p.st.Window), p.st.Context, p.st.Window)
-		}
-		p.st.Session, p.st.SessionStarted, p.st.Fresh, p.st.Context, p.st.Window = name, now.UTC(), true, 0, 0
-		p.j.add(Entry{At: now.UTC(), Kind: KindSession, Message: msg})
+	// Every wake is a new conversation, as for the crew's agents: what it
+	// needs from before is in its notebook, which it reads when it wants.
+	name, err := p.opts.NewSession()
+	if err != nil {
+		p.skipLocked("no conversation could be opened: "+err.Error(), now.Add(retrySoon))
+		return
 	}
+	p.st.Session, p.st.SessionStarted, p.st.Fresh, p.st.Context, p.st.Window = name, now.UTC(), true, 0, 0
 	prompt := p.promptLocked(cfg, now, reason)
 	session := p.st.Session
 	// Send takes the chat's lock and emits; it never calls back here, so
@@ -909,13 +902,8 @@ func (p *Pilot) promptLocked(cfg settings.Autopilot, now time.Time, reason strin
 		fmt.Fprintf(&b, " on node %s", n)
 	}
 	fmt.Fprintf(&b, ". Why now: %s.\n\n", reason)
-	if p.st.Fresh {
-		b.WriteString("This is a new session. Read your notebook first: it is what you know from the sessions before.\n\n")
-	}
+	b.WriteString("Every wake is a new conversation: nothing of your earlier turns is here. What you chose to remember is in your notebook; read it when this wake needs it.\n\n")
 	b.WriteString("## Where you stand\n")
-	if pc := pct(p.st.Context, p.st.Window); pc >= 0 {
-		fmt.Fprintf(&b, "- Context: this session holds %d of %d tokens (%d%%); the house starts a new one at %d%%, so keep the notebook current.\n", p.st.Context, p.st.Window, pc, cfg.ContextPercent)
-	}
 	if ws := p.quota(cfg.Provider); len(ws) > 0 {
 		var parts []string
 		for _, w := range ws {

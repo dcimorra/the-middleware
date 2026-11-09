@@ -169,8 +169,8 @@ type Autopilot struct {
 	// It is the brake on what it uses: the operator asked for no dollar
 	// caps, only the window it works in.
 	QuotaPercent float64 `json:"quota_percent,omitempty"`
-	// ContextPercent is the share of the model's context window at which
-	// the next wake starts a new session from its notebook.
+	// ContextPercent is read and no longer used: every wake is a new
+	// conversation (the session once went on until this share was full).
 	ContextPercent int `json:"context_percent,omitempty"`
 }
 

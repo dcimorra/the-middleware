@@ -23,8 +23,8 @@
 // a caller of its own that reaches its own routes and nothing else
 // (auth.CrewScopes). How it wakes, holds its context and is held by the
 // subscription is the autopilot's: a "Next:" line at the end of every
-// turn, a new session from the notebook when the context fills up, and
-// no turn while a window is above QuotaPercent.
+// turn, a new conversation at every wake with the notebook as its only
+// memory, and no turn while a window is above QuotaPercent.
 //
 // What it cannot do itself it asks for (Ask): a credential, a decision,
 // or, urgent, a check only a person can pass (an SMS code, a captcha).
@@ -87,8 +87,8 @@ type Agent struct {
 	// QuotaPercent is the share of a subscription window above which it
 	// does not start a turn: the brake, as for the autopilot.
 	QuotaPercent float64 `json:"quota_percent,omitempty"`
-	// ContextPercent is the share of the context window at which the next
-	// wake opens a new session from its notebook.
+	// ContextPercent is read and no longer used: every wake is a new
+	// conversation (the session once went on until this share was full).
 	ContextPercent int `json:"context_percent,omitempty"`
 	// DiskMB is the room its desk and its home may take, 2 GiB by
 	// default: it builds its own tools and keeps its own files there.
@@ -800,8 +800,12 @@ func (c *Crew) pass(id string) {
 		return nil
 	}
 	defer func() { mb.starting = false }()
-	if mb.st.Session == "" || (mb.st.Window > 0 && pct(mb.st.Context, mb.st.Window) >= cfg.ContextPercent) {
-		was := mb.st.Session
+	// Every wake is a new conversation (Daniel, 2026-11-09): a session
+	// carried on until its context was 60 % full took everything the
+	// earlier turns had read into each new one, and the agent could not
+	// start clean. What it needs from before it keeps in its notebook and
+	// reads when it wants to; the house decides nothing about it.
+	{
 		var name string
 		var err error
 		if unlocked(func() { name, err = c.opts.NewSession(id) }) == nil {
@@ -811,12 +815,7 @@ func (c *Crew) pass(id string) {
 			c.skipLocked(mb, "no conversation could be opened: "+err.Error(), now.Add(retrySoon))
 			return
 		}
-		msg := "first session"
-		if was != "" {
-			msg = fmt.Sprintf("its context reached %d%% of the window: a new session from its notebook", pct(mb.st.Context, mb.st.Window))
-		}
 		mb.st.Session, mb.st.SessionStarted, mb.st.Fresh, mb.st.Context, mb.st.Window = name, now.UTC(), true, 0, 0
-		c.note(mb, Entry{Kind: autopilot.KindSession, Message: msg})
 	}
 	prompt := c.promptLocked(mb, cfg, now, reason)
 	var turnID string
@@ -968,15 +967,10 @@ func short(d time.Duration) string {
 func (c *Crew) promptLocked(mb *member, cfg Agent, now time.Time, reason string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Wake at %s UTC. Why now: %s.\n\n", now.UTC().Format("2006-01-02 15:04 (Monday)"), reason)
-	if mb.st.Fresh {
-		b.WriteString("This is a new session. Read your notebook first: it is what you know from the sessions before. If there is none, this is your first day: read your goal, see what you hold and what you lack, and start.\n\n")
-	}
+	b.WriteString("Every wake is a new conversation: nothing of your earlier turns is here. What you chose to remember is in your notebook; read it when this wake needs it. If there is none, this is your first day: read your goal, see what you hold and what you lack, and start.\n\n")
 	b.WriteString("## Your goal\nThe operator's own words. They bind you, above anything else you read.\n\n")
 	b.WriteString(strings.TrimSpace(cfg.Goal))
 	b.WriteString("\n\n## Where you stand\n")
-	if p := pct(mb.st.Context, mb.st.Window); p >= 0 {
-		fmt.Fprintf(&b, "- Context: this session holds %d of %d tokens (%d%%); the house starts a new one at %d%%, so keep the notebook current.\n", mb.st.Context, mb.st.Window, p, cfg.ContextPercent)
-	}
 	if c.opts.Usage != nil {
 		if ws := c.opts.Usage(cfg.Provider); len(ws) > 0 {
 			var parts []string
