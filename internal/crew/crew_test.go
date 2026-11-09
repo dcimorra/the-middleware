@@ -92,7 +92,7 @@ func TestAnAgentWakesTowardItsGoalAndSleepsAsItSays(t *testing.T) {
 		t.Fatalf("turns started: %d", len(fc.prompts))
 	}
 	p := fc.prompts[0]
-	for _, want := range []string{"Write one useful post a day.", "new session", "Your vault is empty", "Next:"} {
+	for _, want := range []string{"Write one useful post a day.", "Every wake is a new conversation", "Your vault is empty", "Next:"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("the prompt does not say %q:\n%s", want, p)
 		}
@@ -113,11 +113,13 @@ func TestAnAgentWakesTowardItsGoalAndSleepsAsItSays(t *testing.T) {
 	}
 	now = now.Add(61 * time.Minute)
 	c.Pass()
-	if len(fc.prompts) != 2 || strings.Contains(fc.prompts[1], "new session") {
-		t.Errorf("not woken at its time, or in a new session: %d", len(fc.prompts))
+	if len(fc.prompts) != 2 {
+		t.Errorf("not woken at its time: %d", len(fc.prompts))
 	}
-	if fc.sessions != 1 {
-		t.Errorf("sessions opened: %d", fc.sessions)
+	// Each wake in a conversation of its own: nothing of the last one
+	// rides along, only what it chose to write in its notebook.
+	if st, _ := c.Get(a.ID); fc.sessions != 2 || !strings.HasSuffix(st.State.Session, "#a00") {
+		t.Errorf("sessions opened: %d, now in %s", fc.sessions, st.State.Session)
 	}
 	// Off: a turn at work ends, and nothing else starts.
 	c.end(t, fc, a.ID, "Summary: x\nNext: 10m, y")

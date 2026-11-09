@@ -197,6 +197,7 @@ func TestTheAutonomousAgentHasWhatItIsToldAndNothingThatHoldsItBack(t *testing.T
 		{"PUT", "/api/v1/sites/a.test/manifest"},
 		{"DELETE", "/api/v1/sites/a.test"},
 		{"PUT", "/api/v1/crew/other/vault/CF_TOKEN"},
+		{"DELETE", "/api/v1/autopilot/sites/new.test"},
 		{"POST", "/api/v1/crew"},
 	} {
 		err := cl.Do(raw.method, raw.path, map[string]any{"text": "x", "enabled": false, "value": "x", "name": "x"}, nil)

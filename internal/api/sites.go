@@ -342,6 +342,13 @@ func (s *Server) sitesDelete(w http.ResponseWriter, r *http.Request) (any, error
 		return nil, err
 	}
 	keep := isTrue(r.URL.Query().Get("archive"))
+	return s.deleteSite(m, domain, keep)
+}
+
+// deleteSite takes a site off the internet and deletes it (or packs it
+// into data/archive): the site's page and the autonomous agent's both
+// delete through here.
+func (s *Server) deleteSite(m *sites.Manager, domain string, keep bool) (map[string]any, error) {
 	// Off the internet first, while the engine still knows its names: a
 	// deleted site whose record and tunnel rule stay behind answers
 	// "nothing here" for as long as nobody notices. A name that cannot
@@ -349,7 +356,7 @@ func (s *Server) sitesDelete(w http.ResponseWriter, r *http.Request) (any, error
 	var unpublished []inbound.Line
 	if s.publisher != nil {
 		if _, ok := s.publisher.Published(domain); ok {
-			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			unpublished = s.publisher.Unpublish(ctx, domain)
 			cancel()
 		}

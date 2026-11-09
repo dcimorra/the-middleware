@@ -277,6 +277,35 @@ func (s *Server) RegisterAutopilot(p *autopilot.Pilot, m *chat.Manager) {
 		p.Published(domain, false)
 		return p.Status(), nil
 	})
+	s.Handle("DELETE", base+"/sites/{domain}", "Delete a site the autonomous agent made (?reason= or body: reason): off the internet and gone, the record kept in its journal and told on its next wake", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if err := operator(r); err != nil {
+			return nil, err
+		}
+		domain, err := domainOf(r)
+		if err != nil {
+			return nil, err
+		}
+		if !p.Mine(domain) {
+			return nil, Errorf(http.StatusNotFound, "%s is not a site the autonomous agent made", domain)
+		}
+		body := struct {
+			Reason string `json:"reason"`
+		}{Reason: r.URL.Query().Get("reason")}
+		if r.ContentLength > 0 {
+			if err := ReadJSON(r, &body); err != nil {
+				return nil, err
+			}
+		}
+		sm, err := s.sitesManager()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := s.deleteSite(sm, domain, false); err != nil {
+			return nil, err
+		}
+		p.Deleted(domain, body.Reason)
+		return p.Status(), nil
+	})
 	if m != nil {
 		// Its conversations, one per session: read in the panel, and
 		// written into by the operator, who can talk to it there.

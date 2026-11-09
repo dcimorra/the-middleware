@@ -190,8 +190,8 @@ caller has its own scopes (no settings, tokens, deletion or publishing of
 what it did not make), a manifest's `"autopilot": false` keeps it out of a
 site, sites it creates are counted and built off the internet until it says
 they are finished, the subscription's windows bound when it works, and every
-wake, turn, command and call is a line of its journal. It rotates its session
-before the model's context fills, from a notebook it keeps in its HOME.
+wake, turn, command and call is a line of its journal. Every wake is a new
+conversation; what it chooses to remember is in a notebook it keeps in its HOME.
 
 ## Resources
 

@@ -1,5 +1,5 @@
 // The network's autonomous agent: its switch and the kill switch, where
-// it stands (the session's context, the subscription's windows, its next
+// it stands (the subscription's windows, its next
 // wake), the sites it made, the guidelines it follows, its limits, its
 // notebook, its journal and its sessions. It acts with nobody watching,
 // so everything it did is readable here, and the brakes are here too.
@@ -10,7 +10,7 @@ import { t } from "../lib/i18n.js";
 import { api, enc } from "../lib/api.js";
 import { onEvent } from "../lib/stream.js";
 import { page, load, notice } from "../components/page.js";
-import { confirm, field } from "../components/dialog.js";
+import { confirm, field, open } from "../components/dialog.js";
 import { toast, toastError } from "../components/toast.js";
 import { cardHead, saveBar, fold } from "./settings-kit.js";
 import { chatTab } from "./site-chat.js";
@@ -75,12 +75,9 @@ export function autopilotScreen({ tab } = {}) {
     lines.push(h("p", null, h("strong", null, line)));
     if (s.skipped && on) lines.push(notice("warn", t("autopilot.heldBack", { why: s.skipped })));
     if (s.last_result) lines.push(h("p", { class: "small" }, t("autopilot.lastTurn"), " ", s.last_result));
-    // The two measures it works by: the session's context and the
-    // subscription's windows, the only brake on what it uses.
+    // The subscription's windows, the only brake on what it uses. Its
+    // context is not one: every wake is a new conversation.
     const meters = [];
-    if (st.context_percent >= 0) {
-      meters.push(h("div", { class: "usage-row" }, h("div", { class: "row" }, h("span", { class: "grow" }, t("autopilot.context")), h("span", { class: "muted small" }, t("autopilot.contextOf", { pct: st.context_percent, used: (s.context || 0).toLocaleString(), window: (s.window || 0).toLocaleString(), at: st.limits.context_percent }))), meter(st.context_percent)));
-    }
     for (const w of st.quota || []) {
       if (w.used < 0) continue;
       meters.push(h("div", { class: "usage-row" }, h("div", { class: "row" }, h("span", { class: "grow" }, t("autopilot.window", { name: w.label || w.name })), h("span", { class: "muted small" }, t("autopilot.windowOf", { pct: Math.round(w.used), stop: st.limits.quota_percent }) + (w.resets_at ? " · " + t("autopilot.resets", { at: fmtTime(w.resets_at) }) : ""))), meter(w.used)));
@@ -162,7 +159,14 @@ export function autopilotScreen({ tab } = {}) {
     const made = (st.state && st.state.created) || [];
     const rows = made.slice().reverse().map((c) => {
       const state = c.published ? t("autopilot.site.published") : c.waiting ? t("autopilot.site.waiting") : t("autopilot.site.building");
+      if (c.deleted) {
+        // Kept so the operator sees what they turned down, and why.
+        return h("li", null, h("span", { class: "muted struck" }, c.domain), h("span", { class: "muted" }, t("autopilot.site.deleted")),
+          c.reason ? h("span", { class: "small" }, c.reason) : null, h("span", { class: "muted", title: fmtTime(c.deleted) }, fmtAgo(c.deleted, t)));
+      }
       const li = h("li", null, h("a", { href: `#/sites/${enc(c.domain)}` }, c.domain), h("span", { class: c.waiting ? "level-warn" : "" }, state), h("span", { class: "muted", title: fmtTime(c.at) }, fmtAgo(c.at, t)));
+      const del = h("button", { type: "button", class: "btn sm ghost danger" }, icon("trash"), t("autopilot.deleteSite"));
+      del.addEventListener("click", () => deleteSite(c.domain));
       if (c.waiting) {
         const pub = h("button", { type: "button", class: "btn sm primary" }, t("autopilot.publish"));
         pub.addEventListener("click", act(`sites/${enc(c.domain)}/publish`, null, t("autopilot.publishedToast", { name: c.domain })));
@@ -170,10 +174,28 @@ export function autopilotScreen({ tab } = {}) {
         no.addEventListener("click", act(`sites/${enc(c.domain)}/decline`, null, null));
         li.append(pub, no);
       }
+      li.append(del);
       return li;
     });
     clear(sitesCard).append(cardHead(t("autopilot.sites"), t("autopilot.sitesHint", { left: st.sites_left, per: st.limits.sites_per_week })),
       rows.length ? h("ul", { class: "set-recent-list" }, ...rows) : h("p", { class: "hint" }, t("autopilot.noSites")));
+  }
+
+  // Deleting one of its sites is the quick no: it goes off the internet
+  // and away, and the agent is told why on its next wake.
+  function deleteSite(domain) {
+    const reason = h("textarea", { rows: 3, placeholder: t("autopilot.deleteWhyPlaceholder") });
+    return open({
+      title: t("autopilot.deleteSiteQ", { name: domain }), initialFocus: reason,
+      body: h("div", null, h("p", null, t("autopilot.deleteSiteBody")), field(t("autopilot.deleteWhy"), reason, t("autopilot.deleteWhyHint"))),
+      buttons: [{ label: t("common.cancel"), value: null }, { label: t("autopilot.deleteSite"), danger: true, submit: true, value: true }],
+      onSubmit: async () => {
+        await api.del(`/autopilot/sites/${enc(domain)}?reason=${encodeURIComponent(reason.value.trim())}`);
+        toast(t("autopilot.siteDeleted", { name: domain }), "ok");
+        refresh();
+        return true;
+      },
+    });
   }
 
   function renderRules(st) {
@@ -218,7 +240,6 @@ export function autopilotScreen({ tab } = {}) {
     const minM = num(l.min_minutes, 1, 10080);
     const maxM = num(l.max_minutes, 1, 10080);
     const quota = num(l.quota_percent, 1, 100);
-    const ctx = num(l.context_percent, 10, 95);
     const save = h("button", { type: "button", class: "btn primary" }, t("common.save"));
     const bar = saveBar(save);
     save.addEventListener("click", async () => {
@@ -230,18 +251,18 @@ export function autopilotScreen({ tab } = {}) {
           sites_per_week: Number(perWeek.value) === 0 ? -1 : Number(perWeek.value),
           zones: zones.value.split(/[\s,]+/).filter(Boolean), publish: publish.value,
           min_minutes: Number(minM.value), max_minutes: Number(maxM.value),
-          quota_percent: Number(quota.value), context_percent: Number(ctx.value),
+          quota_percent: Number(quota.value), context_percent: l.context_percent,
         });
         bar.saved();
       } catch (e) { toastError(e); } finally { save.classList.remove("busy"); }
     });
     const form = h("div", null,
       h("div", { class: "form-row" }, field(t("automation.provider"), prov), field(t("automation.model"), model)),
-      fold(t("autopilot.brakes"), t("autopilot.brakesNote", { per: perWeek.value, quota: quota.value, ctx: ctx.value }), [
+      fold(t("autopilot.brakes"), t("autopilot.brakesNote", { per: perWeek.value, quota: quota.value }), [
         h("div", { class: "form-row" }, field(t("autopilot.perWeek"), perWeek), field(t("autopilot.publishMode"), publish)),
         field(t("autopilot.zones"), zones, t("autopilot.zonesHint")),
         h("div", { class: "form-row" }, field(t("autopilot.minMinutes"), minM), field(t("autopilot.maxMinutes"), maxM)),
-        h("div", { class: "form-row" }, field(t("autopilot.quota"), quota, t("autopilot.quotaHint")), field(t("autopilot.contextAt"), ctx, t("autopilot.contextHint"))),
+        h("div", { class: "form-row" }, field(t("autopilot.quota"), quota, t("autopilot.quotaHint"))),
       ]),
       bar.el);
     bar.watch(form);

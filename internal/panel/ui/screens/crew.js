@@ -144,7 +144,6 @@ function agentScreen(id, tab) {
     if (s.last_result) lines.push(h("p", { class: "small" }, t("crew.lastTurn"), " ", s.last_result));
     if (!on && !s.turns) lines.push(notice("info", t("crew.firstStart")));
     const meters = [];
-    if (st.context_percent >= 0) meters.push(h("div", { class: "usage-row" }, h("div", { class: "row" }, h("span", { class: "grow" }, t("autopilot.context")), h("span", { class: "muted small" }, st.context_percent + "%")), meter(st.context_percent)));
     for (const w of st.quota || []) {
       if (w.used < 0) continue;
       meters.push(h("div", { class: "usage-row" }, h("div", { class: "row" }, h("span", { class: "grow" }, t("autopilot.window", { name: w.label || w.name })), h("span", { class: "muted small" }, t("autopilot.windowOf", { pct: Math.round(w.used), stop: a.quota_percent || 80 }))), meter(w.used)));
@@ -176,7 +175,6 @@ function agentScreen(id, tab) {
     const minM = num(a.min_minutes || 10, 1, 10080);
     const maxM = num(a.max_minutes || 720, 1, 10080);
     const quota = num(a.quota_percent || 80, 1, 100);
-    const ctx = num(a.context_percent || 60, 10, 95);
     const disk = num(a.disk_mb || 2048, 64, 1048576);
     const save = h("button", { type: "button", class: "btn primary" }, t("common.save"));
     const bar = saveBar(save);
@@ -184,7 +182,7 @@ function agentScreen(id, tab) {
       save.classList.add("busy");
       try {
         await api.put(base, { name: name.value, goal: goal.value, provider: prov.value, model: model.value || undefined,
-          min_minutes: Number(minM.value), max_minutes: Number(maxM.value), quota_percent: Number(quota.value), context_percent: Number(ctx.value), disk_mb: Number(disk.value) });
+          min_minutes: Number(minM.value), max_minutes: Number(maxM.value), quota_percent: Number(quota.value), disk_mb: Number(disk.value) });
         bar.saved();
         refresh();
       } catch (e) { toastError(e); } finally { save.classList.remove("busy"); }
@@ -196,10 +194,10 @@ function agentScreen(id, tab) {
     });
     bar.el.append(del);
     const form = h("div", null, field(t("crew.name"), name), field(t("crew.goal"), goal, t("crew.goalHint")),
-      fold(t("crew.how"), t("crew.howNote", { quota: quota.value, ctx: ctx.value }), [
+      fold(t("crew.how"), t("crew.howNote", { quota: quota.value }), [
         h("div", { class: "form-row" }, field(t("automation.provider"), prov), field(t("automation.model"), model)),
         h("div", { class: "form-row" }, field(t("autopilot.minMinutes"), minM), field(t("autopilot.maxMinutes"), maxM)),
-        h("div", { class: "form-row" }, field(t("autopilot.quota"), quota, t("autopilot.quotaHint")), field(t("autopilot.contextAt"), ctx, t("autopilot.contextHint"))),
+        h("div", { class: "form-row" }, field(t("autopilot.quota"), quota, t("autopilot.quotaHint"))),
         h("div", { class: "form-row" }, field(t("crew.roomMB"), disk, t("crew.roomHint"))),
       ]), bar.el);
     bar.watch(form);

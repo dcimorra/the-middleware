@@ -31,7 +31,7 @@ with the rest of the crew:
 
 | File | What it holds |
 |---|---|
-| `agent.json` | name, goal, switch, agent and model, wake bounds, quota and context shares, its room (`disk_mb`) |
+| `agent.json` | name, goal, switch, agent and model, wake bounds, quota share, its room (`disk_mb`) |
 | `state.json` | its session, its running turn, its next wake, why it was held back |
 | `requests.json` | what it asked the operator and what they answered |
 | `vault.json` | credentials and data, each value encrypted with the house's key |
@@ -49,8 +49,10 @@ the operator.
   when the operator answers one of its requests (within a minute).
 - **Brake**: no turn while a subscription window is above its
   `quota_percent` (80 % by default). No dollar caps.
-- **Context**: at `context_percent` (60 %) the next wake opens a new
-  session, and it picks up from its notebook.
+- **Memory**: every wake is a new conversation, with nothing of the ones
+  before. What it needs from them it wrote in its notebook, and it decides
+  what to write there and when to read it. The last 30 conversations are
+  kept for the operator to read; older ones are forgotten.
 - **Jail**: its desk and its HOME. Other agents, its own settings, requests and vault
   on disk, the sites and the house's data are denied (`agent.Jail.Crew`).
 - **Socket**: a caller of its own (`auth.CrewScopes`), held to its own

@@ -429,6 +429,43 @@ func (m *Manager) Purge(domain string) (int, error) {
 	return n, nil
 }
 
+// Keep forgets domain's oldest conversations beyond the last n, by their
+// last turn; one at work is left. An agent opens a conversation at every
+// wake, and nothing else would ever thin them out.
+func (m *Manager) Keep(domain string, n int) int {
+	// By the files, not List, which leaves out one that never got a turn
+	// (a wake whose turn did not start): those go too.
+	dir := filepath.Join(m.opts.Root, "data", "chat", domain)
+	ents, _ := os.ReadDir(dir)
+	type conv struct {
+		name string
+		at   time.Time
+	}
+	var list []conv
+	for _, e := range ents {
+		id, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok || id == "" || !validID(id) {
+			continue
+		}
+		var c Conversation
+		if fsx.ReadJSON(filepath.Join(dir, e.Name()), &c) != nil {
+			continue
+		}
+		list = append(list, conv{Name(domain, id), m.summaryOf(Name(domain, id), c).Updated})
+	}
+	if len(list) <= n {
+		return 0
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].at.After(list[j].at) })
+	gone := 0
+	for _, c := range list[n:] {
+		if m.Delete(c.name) == nil {
+			gone++
+		}
+	}
+	return gone
+}
+
 // Delete forgets a conversation that is not the panel's own.
 func (m *Manager) Delete(name string) error {
 	if _, id := split(name); id == "" {

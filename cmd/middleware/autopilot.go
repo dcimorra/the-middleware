@@ -68,6 +68,7 @@ func buildPilot(a *app.App, w *wireHook) *autopilot.Pilot {
 			return out
 		},
 		NewSession: func() (string, error) {
+			chatManager.Keep(chat.Autopilot, keptSessions)
 			return chatManager.Create(chat.Autopilot, chat.CreateOptions{Origin: chat.OriginAutopilot, Title: "Session of " + time.Now().UTC().Format("2006-01-02 15:04")})
 		},
 		Send: func(name, prompt, provider, model string) (string, error) {
