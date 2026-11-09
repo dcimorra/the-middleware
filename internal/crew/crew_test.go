@@ -290,3 +290,62 @@ func TestTheNetworksAgentIsOneOfTheCrewWithItsOwnEngine(t *testing.T) {
 		t.Error("the answer is told twice")
 	}
 }
+
+// Starting a turn calls back into the crew (the chat asks for the agent's
+// vault and settings), and a wake once waited on itself there for ever:
+// the crew froze with every page that reads it. Here the chat calls back,
+// and the list is read while the turn is being started.
+func TestAWakeDoesNotHoldTheCrewWhileTheChatStartsTheTurn(t *testing.T) {
+	now := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	c, fc, _ := newCrew(t, &now, nil)
+	send := c.opts.Send
+	inSend := make(chan struct{})
+	release := make(chan struct{})
+	c.opts.Send = func(name, prompt, provider, model string) (string, error) {
+		id, _ := chat.CrewID(strings.SplitN(name, "#", 2)[0])
+		c.Env(id)
+		c.Settings(id)
+		close(inSend)
+		<-release
+		return send(name, prompt, provider, model)
+	}
+	newSession := c.opts.NewSession
+	c.opts.NewSession = func(id string) (string, error) {
+		c.Settings(id)
+		return newSession(id)
+	}
+	a, _ := c.Create(Agent{Name: "x", Goal: "g"})
+	if err := c.SetEnabled(a.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { c.Pass(); close(done) }()
+	select {
+	case <-inSend:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the chat's call back into the crew never returned")
+	}
+	listed := make(chan int)
+	go func() { listed <- len(c.List()); c.Pass() }()
+	select {
+	case n := <-listed:
+		if n != 2 {
+			t.Errorf("listed %d", n)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("the list waits on a turn being started")
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the wake never finished")
+	}
+	st, _ := c.Get(a.ID)
+	fc.mu.Lock()
+	n := len(fc.prompts)
+	fc.mu.Unlock()
+	if st.State.Turn == "" || n != 1 {
+		t.Errorf("turn %q, %d prompts: a second pass started another", st.State.Turn, n)
+	}
+}

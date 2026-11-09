@@ -202,6 +202,11 @@ type member struct {
 	st   State
 	reqs []Request
 	j    *autopilot.Journal
+	// starting is a wake between deciding and its turn being recorded:
+	// the chat is called with the crew's lock let go (it calls back into
+	// the crew for the turn's vault and agent), and another pass must
+	// not start a second turn meanwhile.
+	starting bool
 }
 
 // Crew supervises the agents.
@@ -684,7 +689,7 @@ func (c *Crew) pass(id string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	mb := c.get(id)
-	if mb == nil {
+	if mb == nil || mb.starting {
 		return
 	}
 	cfg := mb.a.Limits()
@@ -720,9 +725,30 @@ func (c *Crew) pass(id string) {
 			return
 		}
 	}
+	// The chat is called unlocked: starting a turn asks the crew for the
+	// agent's vault and settings (chat.Options.CrewEnv, CrewSettings),
+	// and with the lock held that waited on itself for ever, freezing the
+	// whole crew and every panel page that reads it (alpha.127, the first
+	// agent switched on). unlocked runs f with the lock let go and hands
+	// back the member, which may have been deleted meanwhile.
+	mb.starting = true
+	unlocked := func(f func()) *member {
+		c.mu.Unlock()
+		f()
+		c.mu.Lock()
+		if m := c.get(id); m == mb {
+			return mb
+		}
+		return nil
+	}
+	defer func() { mb.starting = false }()
 	if mb.st.Session == "" || (mb.st.Window > 0 && pct(mb.st.Context, mb.st.Window) >= cfg.ContextPercent) {
 		was := mb.st.Session
-		name, err := c.opts.NewSession(id)
+		var name string
+		var err error
+		if unlocked(func() { name, err = c.opts.NewSession(id) }) == nil {
+			return
+		}
 		if err != nil {
 			c.skipLocked(mb, "no conversation could be opened: "+err.Error(), now.Add(retrySoon))
 			return
@@ -735,7 +761,15 @@ func (c *Crew) pass(id string) {
 		c.note(mb, Entry{Kind: autopilot.KindSession, Message: msg})
 	}
 	prompt := c.promptLocked(mb, cfg, now, reason)
-	turnID, err := c.opts.Send(mb.st.Session, prompt, cfg.Provider, cfg.Model)
+	var turnID string
+	var err error
+	session := mb.st.Session
+	if unlocked(func() { turnID, err = c.opts.Send(session, prompt, cfg.Provider, cfg.Model) }) == nil {
+		if err == nil && c.opts.Stop != nil {
+			go c.opts.Stop(session)
+		}
+		return
+	}
 	if err != nil {
 		// A session purged from the panel is gone for good: the next try
 		// opens another from the notebook rather than fail on it forever.
