@@ -277,6 +277,15 @@ func (e *Env) printPilot(st autopilot.Status) error {
 		zones = strings.Join(l.Zones, ", ")
 	}
 	fmt.Fprintf(e.Stdout, "new sites: %d more this week (of %d), under %s, publish: %s\n", st.SitesLeft, l.SitesPerWeek, zones, l.Publish)
+	for _, o := range st.State.Orders {
+		if o.Done.IsZero() && o.Cancelled.IsZero() {
+			what := o.Text
+			if what == "" {
+				what = "(of its choosing)"
+			}
+			fmt.Fprintf(e.Stdout, "asked for by the operator %s, not counted in the week: %s\n", o.At.Local().Format("Jan 2 15:04"), what)
+		}
+	}
 	fmt.Fprintf(e.Stdout, "wakes between %s and %s apart\n", time.Duration(l.MinMinutes)*time.Minute, time.Duration(l.MaxMinutes)*time.Minute)
 	for _, d := range st.State.Delegated {
 		fmt.Fprintf(e.Stdout, "at work in %s since %s\n", d.Domain, d.At.Local().Format("15:04"))

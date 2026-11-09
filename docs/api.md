@@ -309,7 +309,9 @@ marked *agent*. Never settings, tokens, modules, users, nodes, deletion, or
 publishing a site it did not make.
 
 Its brakes are the settings', which it cannot reach: `provider` and `model`
-(Claude with Opus by default), `sites_per_week` (2, in any seven days),
+(Claude with Opus by default), `sites_per_week` (2 of its own ideas in any
+seven days; set on the Sites card of its page or under its limits; sites the
+operator orders with `/autopilot/orders` are on top of it),
 `zones` (the names its sites may have; empty is any), `publish` (`auto`, the
 default, or `ask`), `min_minutes`/`max_minutes` (15 and 720: the bounds of
 when it asks to be woken), `quota_percent` (80: above that share of a
@@ -348,6 +350,8 @@ commands it ran), site, call to the house and refusal is a line of
 | POST | `/autopilot/sites/{domain}/publish` | publish one of its finished sites (with `publish: ask`) → the status |
 | POST | `/autopilot/sites/{domain}/decline` | keep one of its sites off the internet; it is told → the status |
 | DELETE | `/autopilot/sites/{domain}` | delete one of its sites (`?reason=` or body `{reason}`): off the internet and gone; the record stays in its state and journal, still counts against the week, and it is told why on its next wake → the status |
+| POST | `/autopilot/orders` | ask it for a new site (body `{text}`, what it should be; empty leaves the idea to it): it looks now, and the site it makes for it is not taken from `sites_per_week` → the order |
+| DELETE | `/autopilot/orders/{id}` | take back an order not made yet; it is told → the status |
 | GET | `/autopilot/proposals` | what it proposed, newest first: `[{id, at, domain, title, text, status, decided, conversation, turn_id, ended, outcome}]`; status is `open`, `sent`, `fixed`, `failed` or `dismissed` |
 | POST | `/autopilot/proposals` | *agent* body: `{domain, title, text}` (no domain: the house) → the proposal: a change it may not make itself, for the operator to decide; an open one with the same title is rewritten; at most 20 open |
 | POST | `/autopilot/proposals/{id}/send` | body: `{note?}` → the proposal: a new conversation of its site (or of the house) starts in the operator's name with the proposal as its message; its end marks it `fixed` or `failed` |
