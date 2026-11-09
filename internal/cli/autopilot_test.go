@@ -108,6 +108,8 @@ func TestTheAutonomousAgentHasWhatItIsToldAndNothingThatHoldsItBack(t *testing.T
 		{"site tasks <domain> [log <task>]", "", []string{"site", "tasks", "a.test"}},
 		{"site add <domain> --template <static|node|go|docker>", "", []string{"site", "add", "new.test", "--template", "static"}},
 		{"autopilot publish <domain>", "", []string{"autopilot", "publish", "new.test"}},
+		{"autopilot propose <domain|house> --title <title> -", "The pool has no limit.", []string{"autopilot", "propose", "a.test", "--title", "Bound the pool", "-"}},
+		{"autopilot proposals [<id>]", "", []string{"autopilot", "proposals"}},
 	}
 	covered := map[string]bool{}
 	for _, tr := range tries {
@@ -148,12 +150,21 @@ func TestTheAutonomousAgentHasWhatItIsToldAndNothingThatHoldsItBack(t *testing.T
 		{"site", "restart", "out.test"},
 		{"site", "stop", "a.test"},
 		{"autopilot", "publish", "a.test"},
+		{"autopilot", "proposals", "send", "x"},
+		{"autopilot", "proposals", "dismiss", "x"},
 	} {
 		out, err := run(t, cl, try...)
 		var apiErr *APIError
 		if !errorsAs(err, &apiErr) || (apiErr.Status != http.StatusForbidden && apiErr.Status != http.StatusConflict) {
 			t.Errorf("%s: not refused to the agent: %v (%s)", strings.Join(try, " "), err, out)
 		}
+	}
+	// Nor may it propose about a site that keeps it out.
+	if out, err := runIn(t, cl, "x", "autopilot", "propose", "out.test", "--title", "t", "-"); err == nil {
+		t.Errorf("a proposal about a site that keeps it out was filed: %s", out)
+	}
+	if ps := p.Proposals(); len(ps) != 1 || ps[0].Domain != "a.test" || ps[0].Status != autopilot.ProposalOpen {
+		t.Errorf("proposals: %+v", ps)
 	}
 	for _, raw := range []struct{ method, path string }{
 		{"PUT", "/api/v1/settings"},
@@ -173,7 +184,7 @@ func TestTheAutonomousAgentHasWhatItIsToldAndNothingThatHoldsItBack(t *testing.T
 	for _, e := range p.Journal(0) {
 		kinds[e.Kind] = true
 	}
-	for _, k := range []string{autopilot.KindAsk, autopilot.KindSite, autopilot.KindCall, autopilot.KindRefused} {
+	for _, k := range []string{autopilot.KindAsk, autopilot.KindSite, autopilot.KindCall, autopilot.KindRefused, autopilot.KindPropose} {
 		if !kinds[k] {
 			t.Errorf("no %q line in the journal: %v", k, p.Journal(0))
 		}

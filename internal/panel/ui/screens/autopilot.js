@@ -29,15 +29,18 @@ export function autopilotScreen({ tab } = {}) {
   // leftover height empty under them.
   if (active === "sessions") return sessionsTab(p);
   const stateCard = h("div", { class: "card set-card" });
+  const proposalsCard = h("div", { class: "card set-card" });
   const sitesCard = h("div", { class: "card set-card" });
   const rulesCard = h("div", { class: "card set-card" });
   const limitsCard = h("div", { class: "card set-card" });
   const bookCard = h("div", { class: "card set-card" });
   const journalCard = h("div", { class: "card set-card" });
-  p.body.append(stateCard, sitesCard, rulesCard, limitsCard, bookCard, journalCard);
+  p.body.append(stateCard, proposalsCard, sitesCard, rulesCard, limitsCard, bookCard, journalCard);
 
   const act = (path, body, msg) => async (e) => {
-    const btn = e.currentTarget;
+    // currentTarget is gone once the event is over, and a confirm dialog
+    // awaited before this runs outlives it: "Stop now" threw here.
+    const btn = e.currentTarget || (e.target && e.target.closest && e.target.closest("button")) || document.createElement("button");
     btn.classList.add("busy");
     try { await api.post("/autopilot/" + path, body); if (msg) toast(msg, "ok"); refresh(); } catch (err) { toastError(err); } finally { btn.classList.remove("busy"); }
   };
@@ -100,6 +103,54 @@ export function autopilotScreen({ tab } = {}) {
       ...lines, ...meters,
       delegated.length ? h("div", { class: "set-recent" }, h("h3", null, t("autopilot.atWork")), h("ul", { class: "set-recent-list" }, ...delegated)) : null,
       move].filter(Boolean));
+  }
+
+  // What it found and may not change itself: each a card with the two
+  // decisions the operator has, so a finding never waits unread in its
+  // notebook again.
+  function renderProposals(st) {
+    const all = (st.state && st.state.proposals) || [];
+    const open = all.filter((x) => x.status === "open" || x.status === "failed");
+    const rest = all.filter((x) => !(x.status === "open" || x.status === "failed")).slice(0, 10);
+    const convLink = (x) => {
+      const [domain, id] = (x.conversation || "").split("#");
+      const href = domain === "middleware" ? "#/house" : `#/sites/${enc(domain)}/chat?c=${enc(id || "")}`;
+      return h("a", { href }, t("autopilot.proposal.openChat"));
+    };
+    const item = (x) => {
+      const where = x.domain ? h("a", { href: `#/sites/${enc(x.domain)}` }, x.domain) : h("span", null, t("autopilot.proposal.house"));
+      const cls = { open: "", sent: "level-warn", fixed: "level-ok", failed: "level-error", dismissed: "muted" }[x.status] || "";
+      const li = h("li", { class: "proposal" },
+        h("div", { class: "proposal-head" },
+          h("span", { class: "badge " + cls }, t("autopilot.proposal.status." + x.status)),
+          where,
+          h("span", { class: "muted", title: fmtTime(x.at) }, fmtAgo(x.at, t))),
+        h("strong", { class: "proposal-title" }, x.title),
+        h("details", { open: x.status === "open" }, h("summary", { class: "small muted" }, t("autopilot.proposal.read")),
+          h("pre", { class: "mono small pre-wrap" }, x.text)));
+      if (x.outcome) li.append(h("p", { class: "small" }, x.status === "dismissed" ? t("autopilot.proposal.why") : t("autopilot.proposal.outcome"), " ", x.outcome));
+      if (x.conversation && x.status !== "dismissed") li.append(h("p", { class: "small" }, convLink(x)));
+      if (x.status === "open" || x.status === "failed") {
+        const send = h("button", { type: "button", class: "btn sm primary" }, icon("play"), t(x.status === "failed" ? "autopilot.proposal.retry" : "autopilot.proposal.send"));
+        send.addEventListener("click", async (e) => {
+          const note = h("textarea", { rows: 3, placeholder: t("autopilot.proposal.notePlaceholder") });
+          if (!(await confirm({ title: t("autopilot.proposal.sendQ"), body: t("autopilot.proposal.sendBody", { where: x.domain || t("autopilot.proposal.house") }), confirmLabel: t("autopilot.proposal.send"), extra: field(t("autopilot.proposal.note"), note) }))) return;
+          act(`proposals/${enc(x.id)}/send`, { note: note.value }, t("autopilot.proposal.sent"))(e);
+        });
+        const drop = h("button", { type: "button", class: "btn sm ghost" }, t("autopilot.proposal.dismiss"));
+        drop.addEventListener("click", async (e) => {
+          const note = h("textarea", { rows: 2, placeholder: t("autopilot.proposal.whyPlaceholder") });
+          if (!(await confirm({ title: t("autopilot.proposal.dismissQ"), body: t("autopilot.proposal.dismissBody"), confirmLabel: t("autopilot.proposal.dismiss"), extra: field(t("autopilot.proposal.why"), note) }))) return;
+          act(`proposals/${enc(x.id)}/dismiss`, { note: note.value }, null)(e);
+        });
+        li.append(h("div", { class: "form-row" }, send, drop));
+      }
+      return li;
+    };
+    const parts = [cardHead(t("autopilot.proposals"), t("autopilot.proposalsHint"))];
+    parts.push(open.length ? h("ul", { class: "set-recent-list proposals" }, ...open.map(item)) : h("p", { class: "hint" }, t("autopilot.proposal.none")));
+    if (rest.length) parts.push(fold(t("autopilot.proposal.decided", { n: rest.length }), null, [h("ul", { class: "set-recent-list proposals" }, ...rest.map(item))]));
+    clear(proposalsCard).append(...parts);
   }
 
   function renderSites(st) {
@@ -218,6 +269,7 @@ export function autopilotScreen({ tab } = {}) {
   async function refresh() {
     const st = await api.get("/autopilot");
     renderState(st);
+    renderProposals(st);
     renderSites(st);
     renderBook(st);
     return st;

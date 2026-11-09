@@ -80,6 +80,20 @@ func buildPilot(a *app.App, w *wireHook) *autopilot.Pilot {
 			id, err := chatManager.SendWith(name, prompt, chat.SendOptions{Provider: provider, Model: model})
 			return name, id, err
 		},
+		Fix: func(domain, title, prompt string) (string, string, error) {
+			// The operator's own conversation, as if they had opened it
+			// and written the proposal themselves: it runs with the
+			// site's (or the house's) agent and rights, not the agent's.
+			if domain == "" {
+				domain = chat.Middleware
+			}
+			name, err := chatManager.Create(domain, chat.CreateOptions{Origin: chat.OriginPanel, Title: title})
+			if err != nil {
+				return "", "", err
+			}
+			id, err := chatManager.SendWith(name, prompt, chat.SendOptions{})
+			return name, id, err
+		},
 		Stop:    chatManager.Stop,
 		Running: chatManager.Running,
 		Commands: func(name, turnID string) []string {

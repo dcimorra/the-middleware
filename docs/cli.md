@@ -84,6 +84,8 @@ in the API ([api.md](api.md)) and the panel.
 | `autopilot status` / `journal [--limit n]` / `sites` | the network's autonomous agent ([api.md](api.md#the-autonomous-agent)): on or off and on which node, the session's context, the subscription's windows, its next wake; what it did; the sites it made and whether each is published |
 | `autopilot on` / `off` / `stop` / `wake` / `move <node>` | the switch; `stop` is the kill switch (its turn and every site turn it started cut, and off after a restart); look now; hand it to another node of the network |
 | `autopilot ask <domain> -` / `autopilot publish <domain>` | the agent's own: hand work to a site's conversation (the message on stdin), say one of its sites is finished |
+| `autopilot propose <domain\|house> --title T -` | the agent's own: propose a change it may not make (the text on stdin); the operator sends it to be fixed or dismisses it |
+| `autopilot proposals [<id>]` / `autopilot proposals send\|dismiss <id> [--note N]` | its proposals and what was decided (an id prints its text); the operator sends one to be fixed in their name, or dismisses it |
 | `agents [--json]` | the providers, whether each can run, and the capacity: how many turns run of the cap, per provider, and which conversations hold them (`GET /agents`) |
 | `chat [--model m] <domain> <text…>` / `chat middleware <text…>` | a turn with the site's agent; progress is printed from the event stream |
 | `skill install [dir]` | write the skill the conversations run with (embedded in the binary, installed into every conversation's HOME before each turn) to `<root>/.claude/skills/middleware/`, or to `dir`, so Claude Code run by hand on the server loads it too. Needs no running process |

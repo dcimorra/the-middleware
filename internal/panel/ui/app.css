@@ -2524,4 +2524,17 @@ details.site-env[open] > summary { margin-bottom: 10px; }
    journal are text to read whole, wrapped, never a line off the screen. */
 pre.pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; margin: .5rem 0 0; }
 .set-card textarea.mono { width: 100%; box-sizing: border-box; }
+/* Its proposals: one finding each, read whole before deciding, and the
+   two decisions under it, never pushed to the far edge like a list row's
+   last item. */
+.set-recent-list.proposals { gap: 14px; }
+.set-recent-list.proposals > li { display: block; padding-top: 12px; border-top: 1px solid var(--border); }
+.set-recent-list.proposals > li:first-child { border-top: 0; padding-top: 0; }
+.set-recent-list.proposals > li > :last-child { margin-left: 0; }
+.proposal-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.proposal-head > :last-child { margin-left: auto; }
+.proposal-title { display: block; margin: 6px 0 4px; font-size: 14px; overflow-wrap: anywhere; }
+.proposal .form-row { margin-top: 8px; gap: 8px; }
+.proposal p.small { margin: 6px 0 0; }
+.proposal pre.pre-wrap { font-family: inherit; font-size: 13px; line-height: 1.5; }
 .canary-num { width: 5.5em; display: inline-block; }

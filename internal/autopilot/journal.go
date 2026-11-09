@@ -41,6 +41,8 @@ const (
 	KindCall    = "call"    // it called the house's API
 	KindRefused = "refused" // the house refused it something
 	KindPublish = "publish" // one of its sites went public
+	KindPropose = "propose" // it proposed a fix to the operator
+	KindDecide  = "decide"  // the operator sent a proposal to be fixed, or dismissed it
 )
 
 type journal struct {

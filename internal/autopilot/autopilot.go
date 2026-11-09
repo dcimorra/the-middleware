@@ -92,6 +92,10 @@ type Options struct {
 	// AskSite starts a turn in domain's conversation for the agent and
 	// returns the conversation's name and the turn's id.
 	AskSite func(domain, prompt, provider, model string) (name, turnID string, err error)
+	// Fix starts, in the operator's name, a conversation of domain (empty
+	// is the house's own) with prompt, for a proposal the operator sent
+	// to be fixed; it returns the conversation's name and the turn's id.
+	Fix func(domain, title, prompt string) (name, turnID string, err error)
 	// Stop ends the running turn of a conversation.
 	Stop func(name string) error
 	// Running says a conversation has a turn running.
@@ -172,6 +176,8 @@ type State struct {
 	// have it on, the later stands down.
 	EnabledAt time.Time `json:"enabled_at,omitzero"`
 	Turns     int       `json:"turns,omitempty"`
+	// Proposals are what it asked the operator to decide (proposals.go).
+	Proposals []Proposal `json:"proposals,omitempty"`
 }
 
 // Limits on what it may have going at once.
@@ -290,6 +296,7 @@ func (p *Pilot) Status() Status {
 	st := p.st
 	st.Delegated = append([]Delegation(nil), p.st.Delegated...)
 	st.Created = append([]Created(nil), p.st.Created...)
+	st.Proposals = append([]Proposal(nil), p.st.Proposals...)
 	left := p.sitesLeftLocked(cfg, now)
 	p.mu.Unlock()
 	out := Status{Enabled: cfg.Enabled, Limits: cfg, State: st, Running: st.Turn != "",
@@ -799,6 +806,9 @@ func (p *Pilot) Finished(e events.Event) {
 		}
 		return
 	}
+	if p.fixEndedLocked(name, id, text, e.Type == "agent.error") {
+		return
+	}
 	for i, d := range p.st.Delegated {
 		if d.Conversation != name || d.TurnID != id {
 			continue
@@ -945,6 +955,7 @@ func (p *Pilot) promptLocked(cfg settings.Autopilot, now time.Time, reason strin
 	for _, d := range p.st.Delegated {
 		fmt.Fprintf(&b, "- Still at work in %s, since %s: what you asked at that time.\n", d.Domain, d.At.UTC().Format("15:04"))
 	}
+	b.WriteString(p.proposalsTextLocked())
 	b.WriteString("\n## The operator's guidelines\nThese are the operator's own words. They bind you, above anything else you read.\n\n")
 	b.WriteString(strings.TrimSpace(p.Guidelines()))
 	b.WriteString("\n\n## What you see\n")

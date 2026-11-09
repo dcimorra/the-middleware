@@ -88,6 +88,8 @@ var scopeRoutes = map[string][]string{
 		"GET /api/v1/autopilot",
 		"GET /api/v1/autopilot/journal",
 		"POST /api/v1/autopilot/ask",
+		"GET /api/v1/autopilot/proposals",
+		"POST /api/v1/autopilot/proposals",
 		"POST /api/v1/autopilot/sites/{domain}/ready",
 	},
 	// import is a site arriving from another installation (V1): its
