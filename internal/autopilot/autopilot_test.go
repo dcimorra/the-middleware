@@ -26,6 +26,7 @@ type rig struct {
 	sent    []string // prompts
 	names   []string // the conversation each went to
 	asked   []string
+	fixes   []string // the conversation a proposal was sent to, then its prompt
 	stopped []string
 	running map[string]bool
 	windows []agent.Window
@@ -72,6 +73,15 @@ func (r *rig) build() *Pilot {
 			defer r.mu.Unlock()
 			r.asked = append(r.asked, domain)
 			return domain + "#bb", "site" + string(rune('0'+len(r.asked))), nil
+		},
+		Fix: func(domain, title, prompt string) (string, string, error) {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			if domain == "" {
+				domain = "middleware"
+			}
+			r.fixes = append(r.fixes, domain+"#fx", prompt)
+			return domain + "#fx", "fix1", nil
 		},
 		Stop: func(name string) error {
 			r.mu.Lock()

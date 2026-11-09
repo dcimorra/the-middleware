@@ -63,6 +63,10 @@ func For(e events.Event) (Message, bool) {
 	case "autopilot.ready":
 		// A site it finished waits for the operator (publish: ask).
 		return Message{Kind: KindTurn, Title: "A site is ready to publish", Body: site + ": the autonomous agent finished it and asks you to publish it", URL: "/#/autopilot", Tag: "autopilot-" + site}, true
+	case "autopilot.proposal":
+		// Something it found and may not change itself: the operator
+		// decides, and only knows to if told.
+		return Message{Kind: KindTurn, Title: "The autonomous agent proposes a fix", Body: orHouse(site) + ": " + e.Message, URL: "/#/autopilot", Tag: "autopilot-proposal"}, true
 	case "autopilot.stood_down":
 		return Message{Kind: KindCritical, Title: "The autonomous agent stood down here", Body: e.Message, URL: "/#/autopilot", Tag: "autopilot-down"}, true
 	case "agent.done", "agent.error":

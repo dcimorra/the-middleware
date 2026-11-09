@@ -25,6 +25,11 @@ const autopilotUsage = `usage: middleware autopilot <command>
   move <node>         hand it to another node of the network (one runs per network)
   ask <domain> -      (the agent) hand work to a site's conversation, the text on stdin
   publish <domain>    (the agent) one of its sites is finished: publish it
+  propose <domain|house> --title T -
+                      (the agent) propose a change it may not make, the text on stdin
+  proposals [<id>]    what it proposed and what was decided; one id prints its text
+  proposals send <id> [--note N]     send a proposal to be fixed, in your name
+  proposals dismiss <id> [--note N]  dismiss it (the note says why; it reads it)
 `
 
 // autopilot is `middleware autopilot`: the operator's switch and the
@@ -40,6 +45,8 @@ func (e *Env) autopilot(args []string) error {
 	var c common
 	c.bind(fs)
 	limit := fs.Int("limit", 50, "journal: how many lines")
+	title := fs.String("title", "", "propose: the proposal's title")
+	note := fs.String("note", "", "proposals send|dismiss: a note")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -137,6 +144,76 @@ func (e *Env) autopilot(args []string) error {
 			return err
 		}
 		fmt.Fprintf(e.Stdout, "handed to %s (turn %s): its answer reaches you on your next wake, and you are woken when it ends\n", pos[0], out.TurnID)
+		return nil
+	case "propose":
+		if len(pos) != 2 || pos[1] != "-" || strings.TrimSpace(*title) == "" {
+			return fmt.Errorf("usage: middleware autopilot propose <domain|house> --title <title> - (the text on stdin: what is wrong, why, what to change)")
+		}
+		text, err := io.ReadAll(e.Stdin)
+		if err != nil {
+			return err
+		}
+		domain := strings.ToLower(pos[0])
+		if domain == "house" || domain == "middleware" {
+			domain = ""
+		}
+		var out autopilot.Proposal
+		if err := cl.Do("POST", base+"/proposals", map[string]string{"domain": domain, "title": *title, "text": string(text)}, &out); err != nil {
+			return err
+		}
+		fmt.Fprintf(e.Stdout, "proposal %s filed: the operator sees it with a button to send it to be fixed or dismiss it; what they decide reaches your next wakes\n", out.ID)
+		return nil
+	case "proposals":
+		if len(pos) == 2 && (pos[0] == "send" || pos[0] == "dismiss") {
+			done := map[string]string{"send": "sent to be fixed: a conversation of its site started in your name", "dismiss": "dismissed"}[pos[0]]
+			return e.simple(c, cl, "POST", base+"/proposals/"+url.PathEscape(pos[1])+"/"+pos[0], map[string]string{"note": *note}, done)
+		}
+		if len(pos) > 1 {
+			return fmt.Errorf("usage: middleware autopilot proposals [<id> | send <id> | dismiss <id>]")
+		}
+		var raw []byte
+		if err := cl.Do("GET", base+"/proposals", nil, &raw); err != nil {
+			return err
+		}
+		if c.json {
+			e.printJSON(raw)
+			return nil
+		}
+		var list []autopilot.Proposal
+		if err := json.Unmarshal(raw, &list); err != nil {
+			return err
+		}
+		where := func(x autopilot.Proposal) string {
+			if x.Domain == "" {
+				return "the house"
+			}
+			return x.Domain
+		}
+		if len(pos) == 1 {
+			for _, x := range list {
+				if x.ID != pos[0] {
+					continue
+				}
+				fmt.Fprintf(e.Stdout, "%s · %s · %s · %s\n# %s\n\n%s\n", x.ID, where(x), x.Status, x.At.Local().Format("2006-01-02 15:04"), x.Title, x.Text)
+				if x.Conversation != "" {
+					fmt.Fprintf(e.Stdout, "\nsent to %s (turn %s)\n", x.Conversation, x.TurnID)
+				}
+				if x.Outcome != "" {
+					fmt.Fprintf(e.Stdout, "outcome: %s\n", x.Outcome)
+				}
+				return nil
+			}
+			return fmt.Errorf("no proposal %s", pos[0])
+		}
+		if len(list) == 0 {
+			fmt.Fprintln(e.Stdout, "no proposals")
+			return nil
+		}
+		rows := [][]string{}
+		for _, x := range list {
+			rows = append(rows, []string{x.ID, x.Status, where(x), x.At.Local().Format("01-02 15:04"), x.Title})
+		}
+		Table(e.Stdout, []string{"ID", "STATE", "ABOUT", "AT", "TITLE"}, rows)
 		return nil
 	case "publish", "ready":
 		if len(pos) != 1 {

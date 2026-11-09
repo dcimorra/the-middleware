@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -175,6 +176,54 @@ func (s *Server) RegisterAutopilot(p *autopilot.Pilot, m *chat.Manager) {
 		}
 		return map[string]string{"turn_id": id}, nil
 	})
+	s.Handle("GET", base+"/proposals", "What the autonomous agent proposes and the operator decides, newest first: open, sent (to be fixed), fixed, failed or dismissed", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		return p.Proposals(), nil
+	})
+	s.Handle("POST", base+"/proposals", "From the autonomous agent: propose a change it may not make itself, to a site (body: domain, title, text) or to the house (no domain); one open with the same title is rewritten", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		var body struct {
+			Domain string `json:"domain"`
+			Title  string `json:"title"`
+			Text   string `json:"text"`
+		}
+		if err := ReadJSON(r, &body); err != nil {
+			return nil, err
+		}
+		x, err := p.Propose(strings.ToLower(strings.TrimSpace(body.Domain)), body.Title, body.Text)
+		if err != nil {
+			p.Note(autopilot.Entry{Kind: autopilot.KindRefused, Domain: body.Domain, Message: "proposal not filed: " + err.Error()})
+			return nil, Errorf(http.StatusConflict, "%v", err)
+		}
+		return x, nil
+	})
+	for _, d := range []struct {
+		path, what string
+		do         func(id, note string) (autopilot.Proposal, error)
+	}{
+		{"/send", "Send a proposal of the autonomous agent to be fixed (body: note, optional): a new conversation of its site, or of the house, starts in the operator's name with the proposal as its message", p.Send},
+		{"/dismiss", "Dismiss a proposal of the autonomous agent (body: note, optional: why, which it reads)", p.Dismiss},
+	} {
+		s.Handle("POST", base+"/proposals/{id}"+d.path, d.what, func(w http.ResponseWriter, r *http.Request) (any, error) {
+			if err := operator(r); err != nil {
+				return nil, err
+			}
+			var body struct {
+				Note string `json:"note"`
+			}
+			if r.ContentLength != 0 {
+				if err := ReadJSON(r, &body); err != nil {
+					return nil, err
+				}
+			}
+			x, err := d.do(r.PathValue("id"), body.Note)
+			if errors.Is(err, autopilot.ErrNoProposal) {
+				return nil, Errorf(http.StatusNotFound, "%v", err)
+			}
+			if err != nil {
+				return nil, Errorf(http.StatusConflict, "%v", err)
+			}
+			return x, nil
+		})
+	}
 	publishNow := func(domain string) func() error {
 		return func() error {
 			if s.publisher == nil {

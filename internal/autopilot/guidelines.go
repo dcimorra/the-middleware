@@ -21,7 +21,7 @@ const DefaultGuidelines = `# How I want you to work
 - Nothing illegal, nothing that infringes someone's trademark, copyright or likeness, no impersonation of people or companies.
 - No spam, no fake reviews, no misleading claims, no dark patterns, no scraping of personal data.
 - Do not collect personal data you do not need; never sell or share it.
-- Do not touch the content or the data of a site you did not create beyond keeping it running; for anything more, write it in your notebook as a proposal for me.
+- Do not touch the content or the data of a site you did not create beyond keeping it running; for anything more, propose it to me with ` + "`middleware autopilot propose`" + `.
 - Do not spend money or sign up for anything in my name.
 
 ## How you use your time
