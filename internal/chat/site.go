@@ -326,18 +326,22 @@ func (m *Manager) List(domain string) []Summary {
 		if !ok || !validID(id) {
 			continue
 		}
-		var c Conversation
-		if fsx.ReadJSON(filepath.Join(m.opts.Root, "data", "chat", domain, e.Name()), &c) != nil {
+		m.askMu.Lock()
+		a, found := m.askLocked(filepath.Join(m.opts.Root, "data", "chat", domain, e.Name()))
+		m.askMu.Unlock()
+		if !found || !a.ok {
 			continue
 		}
 		name := Name(domain, id)
 		// A panel conversation that never got a message is not one yet:
 		// the panel opens it when the first message goes, and the empty
 		// ones older panels left behind are not listed as if they were.
-		if c.Origin != OriginSite && len(c.Turns) == 0 && !m.Running(name) {
+		if a.sum.Origin != OriginSite && a.sum.Turns == 0 && !m.Running(name) {
 			continue
 		}
-		out = append(out, m.summaryOf(name, c))
+		sm := a.sum
+		sm.Name, sm.ID, sm.Running = name, id, m.Running(name)
+		out = append(out, sm)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out
@@ -632,6 +636,7 @@ type WaitingChat struct {
 
 type askState struct {
 	mod    time.Time
+	size   int64
 	asking bool
 	title  string
 	// What the bar's recent list needs, read with the rest: the origin
@@ -640,6 +645,12 @@ type askState struct {
 	origin  string
 	turns   int
 	updated time.Time
+	// sum is the whole summary, without its name and whether a turn is
+	// at work: List reads it from here instead of every conversation's
+	// file, which for a site door with hundreds of visitors' chats was
+	// megabytes of JSON parsed on each look at the site's chat tab.
+	sum Summary
+	ok  bool
 }
 
 // scan reads every conversation's file, again only when it changed, and
@@ -655,27 +666,11 @@ func (m *Manager) scan() map[string]askState {
 	files = append(append(files, top...), nested...)
 	m.askMu.Lock()
 	defer m.askMu.Unlock()
-	if m.asks == nil {
-		m.asks = map[string]askState{}
-	}
 	seen := map[string]bool{}
 	for _, f := range files {
-		st, err := os.Stat(f)
-		if err != nil {
-			continue
+		if _, ok := m.askLocked(f); ok {
+			seen[f] = true
 		}
-		seen[f] = true
-		if a, ok := m.asks[f]; ok && a.mod.Equal(st.ModTime()) {
-			continue
-		}
-		var c Conversation
-		a := askState{mod: st.ModTime(), origin: OriginSite}
-		if fsx.ReadJSON(f, &c) == nil {
-			sm := summarize("", c)
-			a.title, a.origin, a.turns, a.updated = sm.Title, sm.Origin, sm.Turns, sm.Updated
-			a.asking = c.Origin != OriginSite && len(c.Turns) > 0 && len(c.Turns[len(c.Turns)-1].Questions) > 0
-		}
-		m.asks[f] = a
 	}
 	out := map[string]askState{}
 	for f, a := range m.asks {
@@ -688,6 +683,33 @@ func (m *Manager) scan() map[string]askState {
 		out[Name(domain, id)] = a
 	}
 	return out
+}
+
+// askLocked is the state of one conversation's file, read again only
+// when the file changed; false when it is gone. m.askMu is held.
+func (m *Manager) askLocked(f string) (askState, bool) {
+	if m.asks == nil {
+		m.asks = map[string]askState{}
+	}
+	st, err := os.Stat(f)
+	if err != nil {
+		return askState{}, false
+	}
+	// The size too: two saves inside one tick of a coarse clock leave the
+	// time as it was.
+	if a, ok := m.asks[f]; ok && a.mod.Equal(st.ModTime()) && a.size == st.Size() {
+		return a, true
+	}
+	var c Conversation
+	a := askState{mod: st.ModTime(), size: st.Size(), origin: OriginSite}
+	if fsx.ReadJSON(f, &c) == nil {
+		sm := summarize("", c)
+		a.title, a.origin, a.turns, a.updated = sm.Title, sm.Origin, sm.Turns, sm.Updated
+		a.asking = c.Origin != OriginSite && len(c.Turns) > 0 && len(c.Turns[len(c.Turns)-1].Questions) > 0
+		a.sum, a.ok = sm, true
+	}
+	m.asks[f] = a
+	return a, true
 }
 
 // Waiting is every conversation's state as the last scan read it. A
