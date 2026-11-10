@@ -80,8 +80,15 @@ func TestSiteTasksCommandsRoundTripThroughTheSocket(t *testing.T) {
 	if out, err = run(t, cl, "site", "tasks", "a.test", "log", "mine", "--lines", "1"); err != nil || out != "two\n" {
 		t.Fatalf("log --lines 1: %q %v", out, err)
 	}
-	if out, err = run(t, cl, "site", "tasks", "a.test", "list"); err != nil || !strings.Contains(out, " ok (") {
-		t.Fatalf("list after the run:\n%s%v", out, err)
+	// The run's record is written before the scheduler lets go of the
+	// task, so for a moment the list still says "running" (seen on CI).
+	for wait := time.Now().Add(10 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		if out, err = run(t, cl, "site", "tasks", "a.test", "list"); err == nil && strings.Contains(out, " ok (") {
+			break
+		}
+		if time.Now().After(wait) {
+			t.Fatalf("list after the run:\n%s%v", out, err)
+		}
 	}
 	if _, err = run(t, cl, "site", "tasks", "a.test", "stop", "mine"); err == nil {
 		t.Fatal("stop with nothing running succeeded")

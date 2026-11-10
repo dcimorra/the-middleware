@@ -94,6 +94,8 @@ func (e *Env) Run(name string, args []string) error {
 		return e.autopilot(args)
 	case "crew":
 		return e.crew(args)
+	case "chat":
+		return e.chat(args)
 	}
 	return fmt.Errorf("unknown command %q", name)
 }

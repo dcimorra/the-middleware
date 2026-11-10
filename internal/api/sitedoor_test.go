@@ -3,6 +3,7 @@ package api
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -53,7 +54,14 @@ func (p *answeringProvider) Start(ctx context.Context, req agent.Request) (agent
 	p.mu.Lock()
 	p.reqs = append(p.reqs, req)
 	p.mu.Unlock()
-	ch := make(chan agent.Event, 2)
+	ch := make(chan agent.Event, 64)
+	if req.Partial {
+		// As Claude Code with --include-partial-messages: the pieces
+		// first, then the whole message.
+		for _, w := range strings.SplitAfter(p.answer, " ") {
+			ch <- agent.Event{Kind: agent.KindDelta, Text: w, SessionID: "s1"}
+		}
+	}
 	ch <- agent.Event{Kind: agent.KindText, Text: p.answer, SessionID: "s1"}
 	cost := 0.25
 	if p.cost < 0 {
@@ -304,16 +312,36 @@ func TestTheStreamSendsAConversationsMessagesAndItsEnd(t *testing.T) {
 	}()
 	<-lines // ": connected"
 	f.asSite(keys, "s.test", "POST", "/api/site/claude/chats/"+id+"/messages", map[string]any{"prompt": "hi", "wait": "0"})
+	// The answer comes as it is written (event: delta), its pieces all
+	// before the whole message, and adds up to it.
 	var seen []string
+	var draft strings.Builder
+	last := ""
 	deadline := time.After(5 * time.Second)
 	for {
 		select {
 		case l := <-lines:
-			if strings.HasPrefix(l, "event: ") {
-				seen = append(seen, strings.TrimPrefix(l, "event: "))
+			if ev, ok := strings.CutPrefix(l, "event: "); ok {
+				last = ev
+				if ev != "delta" || len(seen) == 0 || seen[len(seen)-1] != "delta" {
+					seen = append(seen, ev)
+				}
+			}
+			if data, ok := strings.CutPrefix(l, "data: "); ok && last == "delta" {
+				var d struct{ TurnID, Text string }
+				if json.Unmarshal([]byte(data), &d) != nil || d.Text == "" {
+					t.Fatalf("delta: %s", data)
+				}
+				draft.WriteString(d.Text)
+			}
+			if data, ok := strings.CutPrefix(l, "data: "); ok && last == "message" && strings.Contains(data, `"role":"assistant"`) {
+				var msg struct{ Text string }
+				if json.Unmarshal([]byte(data), &msg) != nil || msg.Text != draft.String() {
+					t.Fatalf("the pieces %q are not the message %s", draft.String(), data)
+				}
 			}
 			if l == "event: session" {
-				if strings.Join(seen, ",") != "message,message,session" {
+				if strings.Join(seen, ",") != "delta,message,message,session" {
 					t.Fatalf("events %v", seen)
 				}
 				return

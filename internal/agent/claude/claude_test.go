@@ -409,3 +409,36 @@ func TestTheResultSaysHowMuchOfTheContextTheSessionHolds(t *testing.T) {
 		t.Fatalf("context %d of %d, want 41210 of 200000", evs[1].Context, evs[1].Window)
 	}
 }
+
+// With --include-partial-messages the CLI writes the API's own deltas
+// between the whole messages. The main agent's text pieces are the answer
+// as it is written; a subagent's, what the model thinks and a tool's
+// input are not.
+func TestPartialMessagesBecomeDeltasOfTheMainAgentsTextOnly(t *testing.T) {
+	p := New(Config{})
+	if args := strings.Join(p.Args(agent.Request{Prompt: "x", Partial: true}, ""), " "); !strings.Contains(args, "--include-partial-messages") {
+		t.Fatalf("partial not asked for: %s", args)
+	}
+	if args := strings.Join(p.Args(agent.Request{Prompt: "x"}, ""), " "); strings.Contains(args, "--include-partial-messages") {
+		t.Fatalf("partial asked for without Partial: %s", args)
+	}
+	pr := &parser{}
+	evs, _ := pr.Line(`{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Había una "}},"session_id":"s1","parent_tool_use_id":null}`)
+	if len(evs) != 1 || evs[0].Kind != agent.KindDelta || evs[0].Text != "Había una " || evs[0].SessionID != "s1" {
+		t.Fatalf("text delta: %+v", evs)
+	}
+	for _, l := range []string{
+		`{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"sub"}},"parent_tool_use_id":"tA"}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hmm"}}}`,
+		`{"type":"stream_event","event":{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"a\""}}}`,
+		`{"type":"stream_event","event":{"type":"message_start","message":{}}}`,
+	} {
+		if evs, _ := pr.Line(l); len(evs) != 0 {
+			t.Fatalf("%s gave %+v", l, evs)
+		}
+	}
+	evs, _ = pr.Line(`{"type":"assistant","message":{"content":[{"type":"text","text":"Había una vez"}]},"session_id":"s1"}`)
+	if len(evs) != 1 || evs[0].Kind != agent.KindText || evs[0].Text != "Había una vez" {
+		t.Fatalf("the whole message still comes: %+v", evs)
+	}
+}

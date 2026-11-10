@@ -32,6 +32,11 @@ const (
 	// KindLimits is the subscription's usage as the turn's stream told
 	// it (Limits); it is not part of the conversation.
 	KindLimits = "limits"
+	// KindDelta is a piece of the main agent's text while it is being
+	// written, asked for with Request.Partial. The whole text still comes
+	// as a KindText when the message ends; a delta is not part of the
+	// conversation and a consumer that does not show it loses nothing.
+	KindDelta = "delta"
 )
 
 // Event is one thing the agent did or said.
@@ -88,6 +93,10 @@ type Request struct {
 	// Name is the conversation's name, for files that must be one per
 	// conversation and not one per site.
 	Name string
+	// Partial asks the provider for the text as it is written
+	// (KindDelta), where its CLI can give it. One that cannot gives the
+	// whole message only, as without it.
+	Partial bool
 	// Stream is the file the CLI's output goes to; it outlives this
 	// process so a restarted supervisor can adopt the turn.
 	Stream string

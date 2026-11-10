@@ -977,7 +977,14 @@ curl -s "$MIDDLEWARE_API/api/site/claude/ask" -H "Authorization: Bearer $MIDDLEW
 The answer is `{chat, state, text, model, turns, cost_usd, json, question}`;
 `files: ["path/in/the/site"]` sends files of the site's folder with the
 message, `wait: "0"` answers 202 at once and the conversation is followed at
-`/api/site/claude/chats/{chat}` or its `/stream`. A conversation (`POST
+`/api/site/claude/chats/{chat}` or its `/stream`. The stream is
+server-sent events: `event: delta` (`{turn_id, text}`) is the answer as it
+is written, a few words at a time; `event: message` is each whole message
+when it ends, which replaces the deltas received since the previous one;
+`event: session` comes after the turn. For text that appears as it is
+written, open the stream before sending with `wait: "0"`, and relay it to
+the browser from the site's backend (the token never leaves the server).
+A conversation (`POST
 /api/site/claude/chats`, then `/messages`) keeps its context between calls;
 each message may name its own `model`. A 429 says the daily cap was
 reached: the code shows something sensible, it does not retry. In a docker

@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/dcimorra/the-middleware/internal/agent"
@@ -43,7 +41,7 @@ func init() {
 		hookBuilder{Name: "tasks", Order: orderTasks, Build: newTasksHook},
 	)
 	subcommands["tasks"] = tasksCmd
-	subcommands["chat"] = chatCmd
+	subcommands["chat"] = cli.Command("chat")
 	subcommands["skill"] = skillCmd
 	subcommands["agents"] = agentsCmd
 	extraUsage += `  agents       the agent providers and how many turns run of how many
@@ -301,59 +299,4 @@ func tasksCmd(args []string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown tasks command %q (list, run <name>)", rest[0])
-}
-
-// chatCmd runs one turn through the same manager the panel uses, so the
-// conversation file, the cost ledger and the jail audit are the same ones,
-// and prints what the agent says as it says it.
-func chatCmd(args []string) error {
-	fs := flag.NewFlagSet("chat", flag.ContinueOnError)
-	root := rootFlag(fs)
-	model := fs.String("model", "", "model name or alias (default: the site's)")
-	rest, err := parseInterleaved(fs, args)
-	if err != nil {
-		return err
-	}
-	if len(rest) < 2 {
-		return errors.New("usage: middleware chat <domain> <text>")
-	}
-	domain, text := rest[0], strings.Join(rest[1:], " ")
-	r := settings.Root(*root)
-	bus := events.New(filepath.Join(r, "data", "events"))
-	st, _ := settings.Load(r)
-	m := chat.New(chat.Options{Root: r, Bus: bus, Registry: providers(), Limits: st.Agents, Usage: usageBook(r)})
-	ch, unsub := bus.Subscribe()
-	defer unsub()
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	turnID, err := m.Send(domain, text, *model)
-	if err != nil {
-		return err
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			_ = m.Stop(domain)
-			return errors.New("interrupted")
-		case ev := <-ch:
-			if ev.Subject != domain || ev.Data["turn_id"] != turnID {
-				continue
-			}
-			switch ev.Type {
-			case "agent.text":
-				fmt.Println(ev.Data["text"])
-			case "agent.tool":
-				fmt.Fprintf(os.Stderr, "[%s]\n", ev.Data["tool"])
-			case "agent.jail_violation":
-				fmt.Fprintf(os.Stderr, "jail violation: %v\n", ev.Data["paths"])
-			case "agent.done":
-				if c, ok := ev.Data["cost"].(float64); ok && c > 0 {
-					fmt.Fprintf(os.Stderr, "cost: $%.4f\n", c)
-				}
-				return nil
-			case "agent.error":
-				return errors.New(ev.Message)
-			}
-		}
-	}
 }
