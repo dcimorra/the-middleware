@@ -66,7 +66,7 @@ func New(cfg Config) *Provider {
 		cfg.Key = "claude"
 	}
 	if len(cfg.Models) == 0 {
-		cfg.Models = []string{"sonnet", "opus", "haiku"}
+		cfg.Models = append([]string(nil), DefaultModels...)
 	}
 	if cfg.PermissionMode == "" {
 		// A turn has nobody to approve a prompt: under acceptEdits every
@@ -93,6 +93,12 @@ func (p *Provider) Available() (bool, string) {
 // Models implements agent.Provider.
 func (p *Provider) Models() []string { return append([]string(nil), p.cfg.Models...) }
 
+// DefaultModels are the aliases offered when the module names none: every
+// family the CLI has an alias for. Fable was missing until alpha.135 and
+// could not be picked anywhere (module model, user limits, a site's door),
+// although the CLI ran it; a new family goes here and in Aliases.
+var DefaultModels = []string{"sonnet", "opus", "haiku", "fable"}
+
 // Aliases are the model each of Claude Code's aliases runs today: the CLI
 // resolves them to the newest of each family, which is why they are what
 // is offered, but "sonnet" on a screen does not say which Sonnet. Kept
@@ -101,7 +107,8 @@ func (p *Provider) Models() []string { return append([]string(nil), p.cfg.Models
 var Aliases = map[string]string{
 	"opus":   "claude-opus-5-5",
 	"sonnet": "claude-sonnet-5-5",
-	"haiku":  "claude-haiku-4-5",
+	"haiku":  "claude-haiku-5-5",
+	"fable":  "claude-fable-5-2",
 }
 
 // ModelLabels implements agent.Labeler: the model behind each alias, for
