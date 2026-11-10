@@ -271,7 +271,9 @@ export function wafScreen() {
 
   load(policyCard, refresh);
   traffic();
-  timer = setInterval(traffic, 2000);
+  // Not while the tab is hidden: a panel left open in a background tab
+  // asked for the traffic every two seconds for as long as it stayed open.
+  timer = setInterval(() => { if (!document.hidden) traffic(); }, 2000);
   subs.push(onEvent("waf.", () => refresh().catch(() => {})));
   return { el: p.el, destroy() { clearInterval(timer); subs.forEach((u) => u()); } };
 }

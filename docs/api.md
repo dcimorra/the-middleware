@@ -3,7 +3,8 @@
 Everything the panel and the CLI do goes through `/api/v1`. JSON in, JSON out.
 Errors are `{"error": "message"}` with a 4xx/5xx status. The API answers on
 the panel domain and on the loopback listener; it is never served on a site's
-domain.
+domain. A JSON answer of 1 KiB or more goes gzipped to a client that sends
+`Accept-Encoding: gzip` (`curl --compressed`); without it, plain.
 
 ## Authentication
 

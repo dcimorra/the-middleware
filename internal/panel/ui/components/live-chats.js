@@ -180,6 +180,10 @@ export function liveChats({ onCount } = {}) {
   onEvent("agent.", (ev) => { if (/^agent\.(done|error|question|started)$/.test(ev.type)) soon(); });
   onEvent("chat.", (ev) => { if (/^chat\.(purged|reset)$/.test(ev.type)) soon(); });
   store.subscribe("nodes", soon);
-  setInterval(load, 20000);
+  // The bar asks every node; a panel forgotten in a background tab did so
+  // every 20 seconds for days. Hidden, it waits, and catches up the
+  // moment the tab is shown again.
+  setInterval(() => { if (!document.hidden) load(); }, 20000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) soon(); });
   return { el, load };
 }

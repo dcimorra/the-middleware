@@ -6,6 +6,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,6 +22,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/auth"
 	"github.com/dcimorra/the-middleware/internal/autopilot"
 	"github.com/dcimorra/the-middleware/internal/chat"
+	"github.com/dcimorra/the-middleware/internal/compress"
 	"github.com/dcimorra/the-middleware/internal/crew"
 	"github.com/dcimorra/the-middleware/internal/engine"
 	"github.com/dcimorra/the-middleware/internal/events"
@@ -249,7 +252,7 @@ func (s *Server) Handle(method, pattern, summary string, h HandlerFunc) {
 		if v == Handled {
 			return
 		}
-		WriteJSON(w, http.StatusOK, v)
+		writeOK(w, r, v)
 	})
 }
 
@@ -493,6 +496,36 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(v)
+}
+
+// writeOK is WriteJSON for a route's answer, gzipped for a client that
+// takes it. The answers are indented JSON, which gzip shrinks to a tenth:
+// the sites list of a house with a hundred sites was 36 KB on every
+// dashboard refresh, through doors (80/443, the VPN, the mesh) that
+// compress nothing on the way.
+func writeOK(w http.ResponseWriter, r *http.Request, v any) {
+	if !compress.Accepts(r) {
+		WriteJSON(w, http.StatusOK, v)
+		return
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "application/json; charset=utf-8")
+	h.Add("Vary", "Accept-Encoding")
+	data := buf.Bytes()
+	if len(data) >= compress.MinSize {
+		data = compress.Bytes(data)
+		h.Set("Content-Encoding", "gzip")
+	}
+	h.Set("Content-Length", strconv.Itoa(len(data)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
 
 // ReadJSON decodes the request body into v, refusing unknown fields and

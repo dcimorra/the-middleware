@@ -75,7 +75,7 @@ export function movesCard(domain, opts = {}) {
   const reload = debounce(load, 300);
   const off = onEvent("relocate.", (ev) => { if (!domain || ev.subject === domain) reload(); });
   // A running step's clock moves without events.
-  const timer = setInterval(() => { if (list.querySelector(".badge.info")) load(); }, 5000);
+  const timer = setInterval(() => { if (!document.hidden && list.querySelector(".badge.info")) load(); }, 5000);
   load();
   return { el, reload: load, destroy() { off(); clearInterval(timer); } };
 }
@@ -227,6 +227,6 @@ export function movesPill() {
   }
   const reload = debounce(load, 300);
   onEvent("relocate.", reload);
-  setInterval(() => { if ([...shown.values()].some((j) => !j.done)) load(); }, 10000);
+  setInterval(() => { if (!document.hidden && [...shown.values()].some((j) => !j.done)) load(); }, 10000);
   return { el, load };
 }
