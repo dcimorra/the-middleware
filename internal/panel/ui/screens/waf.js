@@ -271,7 +271,7 @@ export function wafScreen() {
 
   load(policyCard, refresh);
   traffic();
-  timer = setInterval(traffic, 2000);
+  timer = setInterval(() => { if (!document.hidden) traffic(); }, 2000);
   subs.push(onEvent("waf.", () => refresh().catch(() => {})));
   return { el: p.el, destroy() { clearInterval(timer); subs.forEach((u) => u()); } };
 }

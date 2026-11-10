@@ -55,6 +55,6 @@ export function vitalsCard() {
     }
   }
   load();
-  const timer = setInterval(load, 5000);
+  const timer = setInterval(() => { if (!document.hidden) load(); }, 5000);
   return { el, destroy() { clearInterval(timer); } };
 }

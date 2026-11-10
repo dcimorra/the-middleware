@@ -69,7 +69,7 @@ export function canaryCard(domain, m) {
   // While one runs its numbers move; the page is left, the timer goes.
   const timer = setInterval(() => {
     if (!el.isConnected) { clearInterval(timer); offs.forEach((f) => f()); return; }
-    if (live.firstChild) load();
+    if (live.firstChild && !document.hidden) load();
   }, 5000);
   return el;
 }

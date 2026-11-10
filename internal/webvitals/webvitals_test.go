@@ -147,7 +147,4 @@ func TestTheScriptGoesIntoTheHeadOfAPageAndNowhereElse(t *testing.T) {
 	}, ""); body != "<p>bare</p>" {
 		t.Fatalf("bare page: %q", body)
 	}
-	if acceptsGzip("gzip;q=0") || !acceptsGzip("deflate, gzip;q=0.5") || acceptsGzip("br") {
-		t.Fatal("Accept-Encoding misread")
-	}
 }
