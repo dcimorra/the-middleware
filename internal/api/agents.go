@@ -349,6 +349,16 @@ func (s *Server) registerChat(m *chat.Manager, p string, name func(*http.Request
 		}
 		return OK, nil
 	})
+	s.Handle("POST", p+"/send-now", "Cut the running turn so the queued messages go now (what it said is kept)", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		domain, err := name(r)
+		if err != nil {
+			return nil, err
+		}
+		if err := m.SendNow(domain); err != nil {
+			return nil, Errorf(http.StatusConflict, "%v", err)
+		}
+		return OK, nil
+	})
 	s.Handle("DELETE", p, "Forget the conversation; the next message starts a new one", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		domain, err := name(r)
 		if err != nil {

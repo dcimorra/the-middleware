@@ -74,6 +74,10 @@ func TestAgentsAreListedAndTheConversationsAnswer(t *testing.T) {
 	if resp.StatusCode != 409 {
 		t.Fatalf("stop with nothing running: %d", resp.StatusCode)
 	}
+	resp, _ = f.call("POST", "/api/v1/sites/x.test/chat/send-now", nil)
+	if resp.StatusCode != 409 {
+		t.Fatalf("send now with nothing running: %d", resp.StatusCode)
+	}
 	// The export is the same conversation, as a file to save.
 	req, _ := http.NewRequest("GET", f.http.URL+"/api/v1/sites/x.test/chat/export", nil)
 	req.Header.Set("Authorization", "Bearer "+f.token)

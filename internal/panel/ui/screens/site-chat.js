@@ -512,8 +512,24 @@ export function chatTab(domain) {
   function queuedEl(msg, at) {
     const tu = turnEl("user", msg, undefined, at);
     tu.el.classList.add("is-queued");
-    tu.who.append(h("span", { class: "queued" }, t("chat.queued")));
+    tu.who.append(...queuedMark());
     return tu.el;
+  }
+
+  // queuedMark says a message waits, with «Enviar ahora»: the agents read
+  // their prompt only when a turn starts, so sending now cuts the running
+  // turn (what it said stays) and the queue goes as the next one.
+  function queuedMark() {
+    const b = h("button", { type: "button", class: "chat-copy labelled chat-send-now", title: t("chat.sendNowHint") }, icon("send", { size: 15 }), h("span", null, t("chat.sendNow")));
+    b.addEventListener("click", async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      b.disabled = true;
+      try {
+        await api.post(`${cur.path}/send-now`);
+        status.textContent = t("chat.sendingNow");
+      } catch (err) { b.disabled = false; toastError(err); }
+    });
+    return [h("span", { class: "queued" }, t("chat.queued")), b];
   }
 
   // copyButton copies what text() gives when it is pressed, and says so
@@ -623,6 +639,7 @@ export function chatTab(domain) {
         const tu = turnEl(role, hasSteps ? "" : tn.text, tn.cost, tn.at, role === "user" ? tn.text : stripQuestions(tn.text || ""));
         if (hasSteps) tu.textEl.replaceWith(stepsEl(tn.steps, tn.threads));
         if (tn.role === "error" && hasSteps) tu.el.insertBefore(h("div", { class: "level-error" }, tn.text.split("\n\n").pop()), tu.who);
+        if (tn.interrupted) tu.who.append(h("span", { class: "queued" }, t("chat.interrupted")));
         // The last turn's subagents get their tabs at once; older ones open
         // from their row.
         if (role !== "user" && i >= list.length - 2) for (const th of tn.threads || []) if (th.run) agentView(th);
@@ -864,7 +881,7 @@ export function chatTab(domain) {
       if (r && r.queued) {
         // Kept for when the running turn ends; it goes out with any other
         // queued message as the next one.
-        mine.querySelector(".turn-actions").append(h("span", { class: "queued" }, t("chat.queued")));
+        mine.querySelector(".turn-actions").append(...queuedMark());
       } else if (!running && !whileRunning) begin();
     } catch (err) {
       if (err.status === 429) {

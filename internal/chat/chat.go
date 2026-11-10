@@ -60,6 +60,10 @@ type Turn struct {
 	// and each tool it used, with its answer. Text above is the words
 	// alone, for whoever only wants the reply.
 	Steps []Step `json:"steps,omitempty"`
+	// Interrupted is a turn the operator cut to have the messages queued
+	// behind it read now («Enviar ahora»): what it said is kept, and it is
+	// not an error.
+	Interrupted bool `json:"interrupted,omitempty"`
 }
 
 // Thread is one subagent's part of a turn.
@@ -282,6 +286,9 @@ type running struct {
 	queued         []Queued
 	queuedModel    string
 	queuedProvider string
+	// interrupt is set by SendNow: the turn is being cut so the queued
+	// messages go now, and its end is neither an error nor retried.
+	interrupt bool
 	// live is what the turn showed so far, so a panel that reloads (or
 	// opens later, on another device) sees the turn where it is and not
 	// an empty bubble until it ends.
@@ -711,6 +718,42 @@ func (m *Manager) Stop(domain string) error {
 	return nil
 }
 
+// ErrNothingQueued is SendNow with no message waiting.
+var ErrNothingQueued = errors.New("no message is queued")
+
+// InterruptNote goes before the queued messages SendNow delivers, in the
+// prompt only: the agent learns why its work stopped halfway and that it
+// may pick it up again, instead of taking the message as a fresh start.
+const InterruptNote = "(The operator interrupted your previous turn so that this message reaches you now. What you had done stays done; continue from there if it still applies.)\n\n"
+
+// SendNow cuts the running turn so the messages queued behind it go now
+// instead of when it ends. The CLIs take their prompt when they start and
+// read nothing more (their output goes to a file, never a pipe, so a turn
+// survives the supervisor), so there is no feeding a message into a turn
+// already running: the turn is stopped, what it said is kept as its
+// answer, and the queue is sent as the next turn in the same session, as
+// it would have been at its end.
+func (m *Manager) SendNow(name string) error {
+	m.mu.Lock()
+	r, ok := m.running[name]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("%s: no turn is running", name)
+	}
+	if len(r.queued) == 0 {
+		m.mu.Unlock()
+		return ErrNothingQueued
+	}
+	r.interrupt = true
+	run, cancel := r.run, r.cancel
+	m.mu.Unlock()
+	if run != nil {
+		run.Stop()
+	}
+	cancel()
+	return nil
+}
+
 // Send starts a turn and returns at once with its id; progress arrives on
 // the bus. At most one turn runs per conversation: two agents editing the
 // same folder at the same time would each undo the other.
@@ -729,6 +772,9 @@ type SendOptions struct {
 	// when the turn ends, instead of refusing it: the operator who thinks
 	// of something mid-turn should not have to wait and retype it.
 	Queue bool
+	// Note goes before the text in the prompt and is not kept in the
+	// conversation: what the house tells the agent, not what was written.
+	Note string
 	// Allow, when set, has the last word on the agent and model a turn
 	// runs with: a delegate's limits (auth.PickAgentModel). It is asked
 	// after the defaults are settled, so a default the user may not use
@@ -884,7 +930,7 @@ func (m *Manager) SendWith(name, text string, o SendOptions) (string, error) {
 		return fail(fmt.Errorf("skill not installed: %w", err))
 	}
 	var system string
-	prompt, lend := m.attach(name, turnID, catchUp+text)
+	prompt, lend := m.attach(name, turnID, catchUp+o.Note+text)
 	req := agent.Request{
 		Workdir:   s.Workdir,
 		Prompt:    prompt,
@@ -1229,7 +1275,10 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 				}
 			}
 		}
-		if ended && errText == "" && again != nil && !retried && text.Len() == 0 && len(steps) == 0 && len(threads) == 0 {
+		m.mu.Lock()
+		cut := m.running[name] != nil && m.running[name].interrupt
+		m.mu.Unlock()
+		if ended && errText == "" && again != nil && !retried && !cut && text.Len() == 0 && len(steps) == 0 && len(threads) == 0 {
 			retried = true
 			total += cost
 			m.keepEmpty(name, turnID)
@@ -1257,8 +1306,18 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 		break
 	}
 	cost += total
+	interrupted := false
+	m.mu.Lock()
+	if r := m.running[name]; r != nil {
+		interrupted = r.interrupt
+	}
+	m.mu.Unlock()
 	if !ended && errText == "" {
 		errText = "the agent ended without a result"
+	}
+	if interrupted {
+		// Cut on purpose: whatever the agent said of dying is not news.
+		errText = ""
 	}
 	if !deadline.IsZero() && !time.Now().Before(deadline) {
 		errText = fmt.Sprintf("the turn ran for %s and was cut off; what it left running is listed under its processes", TurnLimit)
@@ -1308,7 +1367,7 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 		}
 		c.Sessions[s.Provider] = sessionID
 	}
-	turn := Turn{ID: turnID, Role: "assistant", Text: text.String(), Cost: cost, At: time.Now(), SessionID: sessionID, Provider: s.Provider, Tools: tools, Questions: questions, Threads: threads, Steps: steps}
+	turn := Turn{ID: turnID, Role: "assistant", Text: text.String(), Cost: cost, At: time.Now(), SessionID: sessionID, Provider: s.Provider, Tools: tools, Questions: questions, Threads: threads, Steps: steps, Interrupted: interrupted}
 	if errText != "" {
 		turn.Role = "error"
 		if turn.Text == "" {
@@ -1329,11 +1388,14 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 	_ = os.Remove(m.streamPath(name, turnID))
 	_ = os.Remove(m.streamPath(name, turnID) + ".err")
 	var queued []Queued
-	queuedModel, queuedProvider := "", ""
+	queuedModel, queuedProvider, note := "", "", ""
 	m.mu.Lock()
 	if r := m.running[name]; r != nil {
 		close(r.done)
 		queued, queuedModel, queuedProvider = r.queued, r.queuedModel, r.queuedProvider
+		if r.interrupt {
+			note = InterruptNote
+		}
 	}
 	delete(m.running, name)
 	_ = os.Remove(m.queuePath(name))
@@ -1341,7 +1403,7 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 	if len(queued) > 0 {
 		// After this turn's final event, so whoever follows the stream sees
 		// one turn end and the next begin.
-		defer m.sendQueued(name, queueFile{Messages: queued, Model: queuedModel, Provider: queuedProvider})
+		defer m.sendQueued(name, queueFile{Messages: queued, Model: queuedModel, Provider: queuedProvider}, note)
 	}
 	if errText != "" {
 		m.emit("agent.error", name, "error", errText, map[string]any{"turn_id": turnID, "cost": cost, "origin": c.Origin})
@@ -1602,12 +1664,12 @@ func (m *Manager) queuePath(name string) string {
 
 // sendQueued sends what waited as one message, each piece in the order it
 // was written.
-func (m *Manager) sendQueued(name string, q queueFile) {
+func (m *Manager) sendQueued(name string, q queueFile, note string) {
 	texts := make([]string, 0, len(q.Messages))
 	for _, x := range q.Messages {
 		texts = append(texts, x.Text)
 	}
-	if _, err := m.SendWith(name, strings.Join(texts, "\n\n"), SendOptions{Model: q.Model, Provider: q.Provider}); err != nil {
+	if _, err := m.SendWith(name, strings.Join(texts, "\n\n"), SendOptions{Model: q.Model, Provider: q.Provider, Note: note}); err != nil {
 		m.emit("agent.error", name, "error", "the queued message was not sent: "+err.Error(), nil)
 	}
 }
@@ -1670,7 +1732,7 @@ func (m *Manager) Recover(ctx context.Context) {
 		err := fsx.ReadJSON(path, &q)
 		_ = os.Remove(path)
 		if err == nil && len(q.Messages) > 0 {
-			m.sendQueued(name, q)
+			m.sendQueued(name, q, "")
 		}
 	}
 }
