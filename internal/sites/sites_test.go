@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/ports"
 	"github.com/dcimorra/the-middleware/internal/runtime"
+	"github.com/dcimorra/the-middleware/internal/tasks"
 	"os/exec"
 )
 
@@ -328,19 +330,136 @@ func TestArchivingStopsTheInstanceFirstAndKeepsTheManifestAsItWas(t *testing.T) 
 	}
 }
 
-func TestDeleteRemovesTheFolderAndItsLogs(t *testing.T) {
+// every puts something of domain's in each place the house keeps things
+// by a site's name, and a task that runs in it; it returns the paths,
+// relative to the root, with %s where the name goes.
+func everything(t *testing.T, root, domain string) []string {
+	t.Helper()
+	places := []string{
+		"data/homes/%s/mark", "data/history/%s/1.json", "data/chat/%s.json", "data/chat/%s/ab12.json",
+		"data/chat/queued/%s.json", "data/chat/queued/%s#ab12.json", "data/deploys/%s.json",
+		"data/resources/%s.json", "data/resources/%s/db.json", "data/status/%s.json", "data/seen/%s.json",
+		"data/visits/%s/2026-11.json", "data/webvitals/%s/2026-11.json", "data/canary/%s.json",
+		"data/audit/%s.json", "data/agents/cost/%s.json", "data/agents/config/%s/settings.json",
+		"data/shots/%s.png", "data/logs/%s/site.log", "data/logs/%s/access.log",
+		"data/logs/%s/access.log.2026-W44.gz", "data/backups/%s/db-1.sql.gz",
+	}
+	for _, p := range places {
+		file := filepath.Join(root, filepath.FromSlash(fmt.Sprintf(p, domain)))
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, site := range map[string]string{"mine": domain, "another": "other.test", "house": ""} {
+		if err := tasks.Save(root, name, &tasks.Task{Version: 2, Schedule: "@daily", Site: site, Command: []string{"true"}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return places
+}
+
+// A deleted site takes with it what the house kept by its name and the
+// tasks that ran in it, which went on failing at every run. Its access
+// logs stay (kept by law: they went with the folder before) and so do the
+// copies of its database.
+func TestADeletedSiteLeavesOnlyItsAccessLogsAndItsBackups(t *testing.T) {
 	f := newFixture(t, false)
 	f.m.Create("a.test", nil, "static")
-	os.MkdirAll(filepath.Join(f.root, "data", "logs", "a.test"), 0o755)
-	os.WriteFile(filepath.Join(f.root, "data", "logs", "a.test", "site.log"), []byte("x\n"), 0o644)
+	var released []string
+	f.m.Release = func(d string) { released = append(released, d) }
+	places := everything(t, f.root, "a.test")
 	if _, err := f.m.Delete(context.Background(), "a.test", false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(f.m.Dir("a.test")); !os.IsNotExist(err) {
 		t.Fatal("folder still there")
 	}
-	if _, err := os.Stat(filepath.Join(f.root, "data", "logs", "a.test")); !os.IsNotExist(err) {
-		t.Fatal("logs still there")
+	for _, p := range places {
+		_, err := os.Stat(filepath.Join(f.root, filepath.FromSlash(fmt.Sprintf(p, "a.test"))))
+		kept := strings.Contains(p, "access.log") || strings.Contains(p, "backups")
+		if kept && err != nil {
+			t.Errorf("%s went with the site: %v", p, err)
+		}
+		if !kept && !os.IsNotExist(err) {
+			t.Errorf("%s was left behind", p)
+		}
+	}
+	if names := tasks.Names(f.root); !slices.Equal(names, []string{"another", "house"}) {
+		t.Fatalf("tasks left: %v", names)
+	}
+	if !slices.Equal(released, []string{"a.test"}) {
+		t.Fatalf("released %v", released)
+	}
+	// With no access log, nothing is left of its logs at all.
+	f.m.Create("b.test", nil, "static")
+	os.MkdirAll(filepath.Join(f.root, "data", "logs", "b.test"), 0o755)
+	os.WriteFile(filepath.Join(f.root, "data", "logs", "b.test", "site.log"), []byte("x\n"), 0o644)
+	if _, err := f.m.Delete(context.Background(), "b.test", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(f.root, "data", "logs", "b.test")); !os.IsNotExist(err) {
+		t.Fatal("an empty logs folder was left")
+	}
+}
+
+// Archived, a site is expected back: everything stays where it was, its
+// access logs included, which archiving used to remove.
+func TestAnArchivedSiteKeepsWhatTheHouseKnowsOfIt(t *testing.T) {
+	f := newFixture(t, false)
+	f.m.Create("a.test", nil, "static")
+	places := everything(t, f.root, "a.test")
+	if _, err := f.m.Delete(context.Background(), "a.test", true); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range places {
+		_, err := os.Stat(filepath.Join(f.root, filepath.FromSlash(fmt.Sprintf(p, "a.test"))))
+		// What its processes wrote went into the archive's past; the
+		// access logs are the house's and stay.
+		if strings.HasSuffix(p, "site.log") {
+			if !os.IsNotExist(err) {
+				t.Errorf("%s was left behind", p)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: %v", p, err)
+		}
+	}
+	if names := tasks.Names(f.root); len(names) != 3 {
+		t.Fatalf("tasks left: %v", names)
+	}
+}
+
+// Renamed, all of it comes along and its tasks run in the folder it has
+// now: they kept the old name and failed, and the site started under the
+// new one with no visits, no availability and no copies of its database.
+func TestARenamedSiteBringsEverythingAndItsTasks(t *testing.T) {
+	f := newFixture(t, false)
+	f.m.Create("old.test", nil, "static")
+	var released []string
+	f.m.Release = func(d string) { released = append(released, d) }
+	places := everything(t, f.root, "old.test")
+	if _, err := f.m.Rename(context.Background(), "old.test", "new.test"); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range places {
+		if _, err := os.Stat(filepath.Join(f.root, filepath.FromSlash(fmt.Sprintf(p, "new.test")))); err != nil {
+			t.Errorf("did not come along: %v", err)
+		}
+		if _, err := os.Stat(filepath.Join(f.root, filepath.FromSlash(fmt.Sprintf(p, "old.test")))); !os.IsNotExist(err) {
+			t.Errorf("%s still under the old name", p)
+		}
+	}
+	for name, site := range map[string]string{"mine": "new.test", "another": "other.test", "house": ""} {
+		if task, err := tasks.Load(f.root, name); err != nil || task.Site != site {
+			t.Errorf("task %s runs in %q (%v), want %q", name, task.Site, err, site)
+		}
+	}
+	if !slices.Contains(released, "old.test") {
+		t.Fatalf("released %v", released)
 	}
 }
 

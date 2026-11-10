@@ -1,7 +1,9 @@
 package panel
 
 import (
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -363,5 +365,128 @@ func TestRandomSiteNamesFitInOneLabel(t *testing.T) {
 	}
 	if n := most*longest + most - 1; n > 63 {
 		t.Errorf("%d words of %d letters make a %d-character label; DNS allows 63", most, longest, n)
+	}
+}
+
+// The whole panel, as a browser that takes gzip downloads it, against as
+// it is written: every text file smaller, each with a tag of its own, the
+// same bytes once unpacked, and the pictures left alone.
+func TestThePanelsTextGoesOutCompressed(t *testing.T) {
+	h := Handler()
+	plain, packed := 0, 0
+	err := fs.WalkDir(FS, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || p == "index.html" {
+			return err
+		}
+		url := AssetPrefix + p
+		raw := get(t, h, url)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("Accept-Encoding", "gzip, br")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != 200 || raw.Code != 200 {
+			t.Fatalf("%s: %d and %d", p, raw.Code, rec.Code)
+		}
+		plain += raw.Body.Len()
+		packed += rec.Body.Len()
+		if raw.Header().Get("Content-Encoding") != "" {
+			t.Errorf("%s: compressed for a client that did not ask", p)
+		}
+		if rec.Header().Get("Content-Length") != strconv.Itoa(rec.Body.Len()) {
+			t.Errorf("%s: Content-Length %s for %d bytes", p, rec.Header().Get("Content-Length"), rec.Body.Len())
+		}
+		if rec.Header().Get("Content-Encoding") != "gzip" {
+			if strings.HasSuffix(p, ".js") && raw.Body.Len() > 2048 {
+				t.Errorf("%s: %d bytes of script not compressed", p, raw.Body.Len())
+			}
+			return nil
+		}
+		if strings.HasSuffix(p, ".png") {
+			t.Errorf("%s: a picture was compressed", p)
+		}
+		if rec.Header().Get("ETag") == raw.Header().Get("ETag") || rec.Header().Get("Vary") != "Accept-Encoding" {
+			t.Errorf("%s: one tag for two bodies, or no Vary: %v", p, rec.Header())
+		}
+		zr, err := gzip.NewReader(rec.Body)
+		if err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		if out, _ := io.ReadAll(zr); string(out) != raw.Body.String() {
+			t.Errorf("%s: not the same file once unpacked", p)
+		}
+		// And its own tag saves the download, as the plain one's does.
+		again := httptest.NewRequest(http.MethodGet, url, nil)
+		again.Header.Set("Accept-Encoding", "gzip")
+		again.Header.Set("If-None-Match", rec.Header().Get("ETag"))
+		rec = httptest.NewRecorder()
+		h.ServeHTTP(rec, again)
+		if rec.Code != http.StatusNotModified || rec.Body.Len() != 0 {
+			t.Errorf("%s: %d with its own tag", p, rec.Code)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if packed > plain/2 {
+		t.Errorf("the panel is %d bytes compressed of %d", packed, plain)
+	}
+	t.Logf("the panel: %d bytes as written, %d compressed", plain, packed)
+}
+
+// The shell points at this build's own prefix, where a file is kept for
+// good; the same file by its plain address, or under another build's
+// prefix, is revalidated; and every module the shell announces is there.
+func TestThisBuildsFilesAreKeptForGoodUnderItsOwnPrefix(t *testing.T) {
+	h := Handler()
+	shell := get(t, h, "/sites/example.com")
+	prefix := AssetPrefix + "~" + Version() + "/"
+	body := shell.Body.String()
+	if shell.Header().Get("Cache-Control") != "no-cache" {
+		t.Errorf("the shell: Cache-Control %q", shell.Header().Get("Cache-Control"))
+	}
+	for _, want := range []string{`<script type="module" src="` + prefix + `app.js">`, `<link rel="stylesheet" href="` + prefix + `app.css">`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the shell lacks %s", want)
+		}
+	}
+	links := regexp.MustCompile(`<link rel="modulepreload" href="([^"]+)">`).FindAllStringSubmatch(body, -1)
+	if len(links) < 50 {
+		t.Fatalf("%d modules announced", len(links))
+	}
+	for _, l := range links {
+		rec := get(t, h, l[1])
+		if rec.Code != 200 || !strings.HasPrefix(l[1], prefix) || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/javascript") {
+			t.Errorf("%s: %d %s", l[1], rec.Code, rec.Header().Get("Content-Type"))
+		}
+		if cc := rec.Header().Get("Cache-Control"); cc != "public, max-age=31536000, immutable" {
+			t.Errorf("%s: Cache-Control %q", l[1], cc)
+		}
+	}
+	// Every module a file imports is announced: one that is not would be
+	// found a round trip later, which is what the list is there to save.
+	announced := map[string]bool{prefix + "app.js": true}
+	for _, l := range links {
+		announced[l[1]] = true
+	}
+	_ = fs.WalkDir(FS, ".", func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".js") && p != "sw.js" && !announced[prefix+p] {
+			t.Errorf("%s is not announced", p)
+		}
+		return err
+	})
+	plain := get(t, h, "/assets/app.js")
+	other := get(t, h, "/assets/~000000000000/app.js")
+	mine := get(t, h, prefix+"app.js")
+	if plain.Body.String() != mine.Body.String() || other.Body.String() != mine.Body.String() {
+		t.Error("one file, three bodies")
+	}
+	if plain.Header().Get("Cache-Control") != "no-cache" || other.Header().Get("Cache-Control") != "no-cache" {
+		t.Errorf("kept for good outside this build's prefix: %q, %q", plain.Header().Get("Cache-Control"), other.Header().Get("Cache-Control"))
+	}
+	for _, p := range []string{prefix + "index.html", prefix, AssetPrefix + "~" + Version(), prefix + "missing.js"} {
+		if rec := get(t, h, p); rec.Code != 404 {
+			t.Errorf("%s: %d", p, rec.Code)
+		}
 	}
 }

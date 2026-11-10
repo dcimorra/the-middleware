@@ -20,6 +20,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/app"
 	"github.com/dcimorra/the-middleware/internal/auth"
 	"github.com/dcimorra/the-middleware/internal/manifest"
+	"github.com/dcimorra/the-middleware/internal/panel"
 	"github.com/dcimorra/the-middleware/internal/settings"
 	"github.com/dcimorra/the-middleware/internal/tasks"
 	"github.com/dcimorra/the-middleware/internal/webvitals"
@@ -194,7 +195,7 @@ func TestServeAnswersEverySectionOfTheAPI(t *testing.T) {
 	}
 	page, _ := io.ReadAll(shell.Body)
 	shell.Body.Close()
-	if !strings.Contains(string(page), `src="/assets/app.js"`) {
+	if !strings.Contains(string(page), `src="/assets/~`+panel.Version()+`/app.js"`) {
 		t.Errorf("the panel's shell is not served:\n%.200s", page)
 	}
 	resp.Body.Close()

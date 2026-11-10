@@ -2,6 +2,8 @@ package seen
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -45,5 +47,25 @@ func TestRawAgentsAreBounded(t *testing.T) {
 	}
 	if n := len(b.Table("a.example").Agents); n > agentsKept {
 		t.Fatalf("%d kept", n)
+	}
+}
+
+// A renamed site's tally follows its file: released, nothing in memory
+// writes the old name again a minute later, and the new one reads what
+// was counted.
+func TestAReleasedTallyIsWrittenAndNotBroughtBack(t *testing.T) {
+	dir := t.TempDir()
+	b := New(dir)
+	b.Note("old.example", "es", "weird-fetcher/1.0")
+	b.Release("old.example")
+	if err := os.Rename(filepath.Join(dir, "old.example.json"), filepath.Join(dir, "new.example.json")); err != nil {
+		t.Fatalf("released without writing: %v", err)
+	}
+	b.Flush()
+	if _, err := os.Stat(filepath.Join(dir, "old.example.json")); !os.IsNotExist(err) {
+		t.Fatal("the old name was written again")
+	}
+	if tb := b.Table("new.example"); tb.Total != 1 {
+		t.Fatalf("the new name does not have what was counted: %+v", tb)
 	}
 }

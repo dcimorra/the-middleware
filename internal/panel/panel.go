@@ -12,12 +12,16 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"fmt"
 	"io/fs"
 	"mime"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/dcimorra/the-middleware/internal/gz"
 )
 
 //go:embed ui
@@ -52,13 +56,29 @@ func init() {
 // an ETag derived from their content, so a browser revalidates for free
 // and never keeps a stale app.js across an upgrade. There is no build step
 // that could put a hash in the file name, so the hash goes in the ETag.
+//
+// Text goes out compressed to whoever takes it. The panel is ninety files
+// and a megabyte and a half with no build step to shrink them, and through
+// the 80/443 door or the VPN nobody else compresses: a first load on a
+// phone was all of it, as written.
 func Handler() http.Handler {
-	return &handler{etags: map[string]string{}}
+	return &handler{files: map[string]*file{}}
 }
 
 type handler struct {
 	mu    sync.Mutex
-	etags map[string]string
+	files map[string]*file
+}
+
+// file is one embedded file ready to send. The files are part of the
+// binary and never change while it runs, so each is read, hashed and
+// compressed once, the first time it is asked for.
+type file struct {
+	data []byte
+	// packed is data gzipped, nil when that saves nothing (the icons).
+	packed []byte
+	tag    string
+	ctype  string
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -78,81 +98,177 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/sw.js":
 		w.Header().Set("Service-Worker-Allowed", "/")
-		h.serve(w, r, "sw.js")
+		h.serve(w, r, "sw.js", false)
 		return
 	case "/manifest.webmanifest":
-		h.serve(w, r, "manifest.webmanifest")
+		h.serve(w, r, "manifest.webmanifest", false)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, AssetPrefix) {
 		name := strings.TrimPrefix(path.Clean("/"+strings.TrimPrefix(r.URL.Path, AssetPrefix)), "/")
+		// Under this build's own prefix a file never changes: kept for
+		// good. Under another build's (a tab left open across an upgrade)
+		// it is this build's file, and revalidated like any other.
+		forever := false
+		if strings.HasPrefix(name, versionMark) {
+			var ver string
+			ver, name, _ = strings.Cut(name, "/")
+			forever = ver == versionMark+Version()
+		}
 		// index.html is the shell, not an asset: a module request that got
 		// HTML back shows a syntax error with no clue in the console.
 		if name == "" || name == "." || name == "index.html" {
 			http.NotFound(w, r)
 			return
 		}
-		h.serve(w, r, name)
+		h.serve(w, r, name, forever)
 		return
 	}
-	h.serve(w, r, "index.html")
+	h.serve(w, r, "index.html", false)
 }
 
-func (h *handler) serve(w http.ResponseWriter, r *http.Request, name string) {
-	data, err := fs.ReadFile(FS, name)
+// versionMark opens the path segment that names a build: no file of the
+// panel starts with it.
+const versionMark = "~"
+
+// Version names this build's files: a hash of all of them, so it changes
+// when any does and only then.
+//
+// The panel has no build step to put a hash in each file's name, and with
+// ETags alone every load of the panel asked again for each of its ninety
+// files, to be told ninety times that nothing changed: through the tunnel
+// from a phone, that was the wait before every screen. The shell now
+// points at /assets/~<version>/app.js, the modules import each other by
+// relative paths and so stay under that prefix, and what is under it is
+// immutable: a second load asks for the shell and nothing else. An upgrade
+// changes the version, and with it every address.
+var Version = sync.OnceValue(func() string {
+	sum := sha256.New()
+	_ = fs.WalkDir(FS, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		data, err := fs.ReadFile(FS, p)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(sum, "%s %d\n", p, len(data))
+		sum.Write(data)
+		return nil
+	})
+	return hex.EncodeToString(sum.Sum(nil)[:6])
+})
+
+// shell is index.html pointing at this build's files, with every module
+// announced: the browser otherwise learns of them as it parses the ones
+// before, four rounds deep, and a first load after an upgrade took a
+// round trip for each.
+var shell = sync.OnceValue(func() []byte {
+	data, err := fs.ReadFile(FS, "index.html")
 	if err != nil {
+		panic(err) // part of the binary
+	}
+	prefix := AssetPrefix + versionMark + Version() + "/"
+	out := string(data)
+	for _, name := range []string{"app.css", "app.js"} {
+		out = strings.Replace(out, `"`+AssetPrefix+name+`"`, `"`+prefix+name+`"`, 1)
+	}
+	var preload strings.Builder
+	_ = fs.WalkDir(FS, ".", func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".js") && p != "sw.js" && p != "app.js" {
+			preload.WriteString(`  <link rel="modulepreload" href="` + prefix + p + "\">\n")
+		}
+		return err
+	})
+	return []byte(strings.Replace(out, "</head>", preload.String()+"</head>", 1))
+})
+
+func (h *handler) serve(w http.ResponseWriter, r *http.Request, name string, forever bool) {
+	f := h.file(name)
+	if f == nil {
 		http.NotFound(w, r)
 		return
 	}
-	tag := h.etag(name, data)
+	hd := w.Header()
+	body, tag := f.data, f.tag
+	if f.packed != nil {
+		hd.Add("Vary", "Accept-Encoding")
+		if gz.Accepts(r) {
+			// Another body, another tag: a cache between the browser and
+			// here must not answer one for the other.
+			body, tag = f.packed, strings.TrimSuffix(f.tag, `"`)+`-gz"`
+			hd.Set("Content-Encoding", "gzip")
+		}
+	}
+	hd.Set("ETag", tag)
+	if forever {
+		hd.Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		hd.Set("Cache-Control", "no-cache")
+	}
 	if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, tag) {
-		w.Header().Set("ETag", tag)
+		hd.Del("Content-Encoding")
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	// Go's table knows these, but a stripped container may ship a bare
-	// /etc/mime.types, and a module script served as text/plain is refused
-	// by the browser. The common ones are pinned; the rest ask the table.
-	var ct string
-	switch path.Ext(name) {
-	case ".js", ".mjs":
-		ct = "text/javascript; charset=utf-8"
-	case ".css":
-		ct = "text/css; charset=utf-8"
-	case ".json":
-		ct = "application/json"
-	case ".html":
-		ct = "text/html; charset=utf-8"
-	case ".svg":
-		ct = "image/svg+xml"
-	case ".webmanifest":
-		ct = "application/manifest+json"
-	case ".png":
-		ct = "image/png"
-	default:
-		ct = mime.TypeByExtension(path.Ext(name))
-		if ct == "" {
-			ct = http.DetectContentType(data)
-		}
-	}
-	w.Header().Set("Content-Type", ct)
-	w.Header().Set("ETag", tag)
-	w.Header().Set("Cache-Control", "no-cache")
+	hd.Set("Content-Type", f.ctype)
+	hd.Set("Content-Length", strconv.Itoa(len(body)))
 	if r.Method == http.MethodHead {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	_, _ = w.Write(data)
+	_, _ = w.Write(body)
 }
 
-func (h *handler) etag(name string, data []byte) string {
+func (h *handler) file(name string) *file {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if tag, ok := h.etags[name]; ok {
-		return tag
+	if f, ok := h.files[name]; ok {
+		return f
+	}
+	var data []byte
+	var err error
+	if name == "index.html" {
+		data = shell()
+	} else {
+		data, err = fs.ReadFile(FS, name)
+	}
+	if err != nil {
+		// Not kept: the names that are not there are whatever a scanner
+		// asks for, without end.
+		return nil
 	}
 	sum := sha256.Sum256(data)
-	tag := `"` + hex.EncodeToString(sum[:8]) + `"`
-	h.etags[name] = tag
-	return tag
+	f := &file{data: data, tag: `"` + hex.EncodeToString(sum[:8]) + `"`, ctype: contentType(name, data)}
+	if gz.Compressible(f.ctype) {
+		f.packed = gz.Smaller(data)
+	}
+	h.files[name] = f
+	return f
+}
+
+// contentType pins the common types. Go's table knows them, but a
+// stripped container may ship a bare /etc/mime.types, and a module script
+// served as text/plain is refused by the browser. The rest ask the table.
+func contentType(name string, data []byte) string {
+	switch path.Ext(name) {
+	case ".js", ".mjs":
+		return "text/javascript; charset=utf-8"
+	case ".css":
+		return "text/css; charset=utf-8"
+	case ".json":
+		return "application/json"
+	case ".html":
+		return "text/html; charset=utf-8"
+	case ".svg":
+		return "image/svg+xml"
+	case ".webmanifest":
+		return "application/manifest+json"
+	case ".png":
+		return "image/png"
+	}
+	if ct := mime.TypeByExtension(path.Ext(name)); ct != "" {
+		return ct
+	}
+	return http.DetectContentType(data)
 }

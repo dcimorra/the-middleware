@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/dcimorra/the-middleware/internal/fsx"
 	"github.com/dcimorra/the-middleware/internal/manifest"
@@ -276,44 +277,65 @@ func SetLocal(root string, open bool, httpAddr, dnsAddr string) (State, error) {
 // without a signal, a tick, or a restart. Size is compared along with
 // mtime because two writes inside one timestamp tick are possible on a
 // filesystem with coarse mtimes.
+//
+// What every request reads is one pointer, and the stat is made with no
+// lock held: every request of every site asks this, and with the syscall
+// under one mutex the whole request path took turns at it, on however
+// many cores. The mutex is for the readers that found the file changed.
 type stateFile struct {
-	path  string
-	mu    sync.Mutex
+	path string
+	mu   sync.Mutex
+	cur  atomic.Pointer[stateRead]
+}
+
+// stateRead is the file as last read: never changed once stored.
+type stateRead struct {
 	mtime int64
 	size  int64
 	state State
-	ok    bool
 }
 
 func (f *stateFile) get() State {
+	st, err := os.Stat(f.path)
+	cur := f.cur.Load()
+	if err == nil && cur != nil && st.ModTime().UnixNano() == cur.mtime && st.Size() == cur.size {
+		return cur.state
+	}
+	if err != nil && os.IsNotExist(err) && cur != nil && cur.mtime == 0 && cur.size == 0 {
+		// No file, and the defaults already stand for it.
+		return cur.state
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	st, err := os.Stat(f.path)
+	// Again under the lock: of the requests that found the file changed
+	// at the same moment, one reads it and the rest take what it read.
+	st, err = os.Stat(f.path)
+	cur = f.cur.Load()
 	if err != nil {
-		if f.ok && os.IsNotExist(err) {
-			// The file was removed: defaults again, as a fresh install.
-			f.state, f.mtime, f.size = DefaultState(), 0, 0
+		if cur == nil || (os.IsNotExist(err) && (cur.mtime != 0 || cur.size != 0)) {
+			// No file yet, or the file was removed: defaults, as a fresh
+			// install.
+			cur = &stateRead{state: DefaultState()}
+			f.cur.Store(cur)
 		}
-		if !f.ok {
-			f.state, f.ok = DefaultState(), true
-		}
-		return f.state
+		return cur.state
 	}
-	if f.ok && st.ModTime().UnixNano() == f.mtime && st.Size() == f.size {
-		return f.state
+	if cur != nil && st.ModTime().UnixNano() == cur.mtime && st.Size() == cur.size {
+		return cur.state
 	}
 	root := filepath.Dir(filepath.Dir(f.path))
 	s, err := LoadState(root)
 	if err != nil {
 		// A half-typed edit must not close every door: keep the last good
 		// state until the file parses again.
-		if !f.ok {
-			f.state, f.ok = DefaultState(), true
+		if cur == nil {
+			cur = &stateRead{state: DefaultState()}
+			f.cur.Store(cur)
 		}
-		return f.state
+		return cur.state
 	}
-	f.state, f.mtime, f.size, f.ok = s, st.ModTime().UnixNano(), st.Size(), true
-	return f.state
+	f.cur.Store(&stateRead{mtime: st.ModTime().UnixNano(), size: st.Size(), state: s})
+	return s
 }
 
 // set writes a new state and primes the cache so the writer's own next
@@ -325,10 +347,11 @@ func (f *stateFile) set(s State) error {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.state, f.ok = s, true
+	next := &stateRead{state: s}
 	if st, err := os.Stat(f.path); err == nil {
-		f.mtime, f.size = st.ModTime().UnixNano(), st.Size()
+		next.mtime, next.size = st.ModTime().UnixNano(), st.Size()
 	}
+	f.cur.Store(next)
 	return nil
 }
 

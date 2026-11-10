@@ -6,6 +6,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +25,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/crew"
 	"github.com/dcimorra/the-middleware/internal/engine"
 	"github.com/dcimorra/the-middleware/internal/events"
+	"github.com/dcimorra/the-middleware/internal/gz"
 	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/nodes"
 	"github.com/dcimorra/the-middleware/internal/publish"
@@ -456,7 +459,42 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if gz.Accepts(r) {
+		w = &gzipOK{ResponseWriter: w}
+	}
+	if changesSite(r) {
+		// What was asked is most often a line of a manifest; the engine
+		// reads it now, not at its next tick.
+		defer s.opts.Engine.Kick()
+	}
 	s.mux.ServeHTTP(w, r)
+}
+
+// changesSite is a request that may have written a site's manifest or its
+// folder: anything but a read under /sites. Conversations are not: a
+// turn's messages come by the dozen and change no manifest.
+func changesSite(r *http.Request) bool {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+		return false
+	}
+	rest, ok := strings.CutPrefix(r.URL.Path, Prefix+"/sites")
+	return ok && (rest == "" || rest[0] == '/') && !strings.Contains(rest, "/chat")
+}
+
+// gzipOK marks an answer whose caller takes gzip, for WriteJSON, which
+// sees the writer and not the request. The API's lists are indented JSON
+// (the sites of a house, a day of events: hundreds of kilobytes) that the
+// panel asks for again every few seconds, and through the 80/443 door
+// and the VPN they crossed as written. Streams and files are not JSON
+// written at once and go out as before, through Flush and Unwrap.
+type gzipOK struct{ http.ResponseWriter }
+
+func (g *gzipOK) Unwrap() http.ResponseWriter { return g.ResponseWriter }
+
+func (g *gzipOK) Flush() {
+	if f, ok := g.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // turnReadsOwnEvents lets a site's turn list the events about its own
@@ -489,6 +527,25 @@ func segmentIn(pattern, path, wildcard string) string {
 // WriteJSON encodes v with the status.
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if _, ok := w.(*gzipOK); ok {
+		var buf bytes.Buffer
+		enc := json.NewEncoder(&buf)
+		enc.SetIndent("", "  ")
+		if enc.Encode(v) == nil {
+			w.Header().Add("Vary", "Accept-Encoding")
+			body := buf.Bytes()
+			if packed := gz.Smaller(body); packed != nil {
+				body = packed
+				w.Header().Set("Content-Encoding", "gzip")
+			}
+			w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+			w.WriteHeader(status)
+			_, _ = w.Write(body)
+			return
+		}
+		// What cannot be encoded is answered as it always was: the
+		// status, and as much as the encoder wrote.
+	}
 	w.WriteHeader(status)
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

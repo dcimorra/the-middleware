@@ -180,6 +180,10 @@ export function liveChats({ onCount } = {}) {
   onEvent("agent.", (ev) => { if (/^agent\.(done|error|question|started)$/.test(ev.type)) soon(); });
   onEvent("chat.", (ev) => { if (/^chat\.(purged|reset)$/.test(ev.type)) soon(); });
   store.subscribe("nodes", soon);
-  setInterval(load, 20000);
+  // Not from a tab nobody is looking at: a panel left open in the
+  // background asked every node for its conversations three times a
+  // minute, all day. Back in front, it asks at once.
+  setInterval(() => { if (!document.hidden) load(); }, 20000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
   return { el, load };
 }

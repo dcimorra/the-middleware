@@ -115,6 +115,19 @@ func (b *Book) Forget(domain string) {
 	}
 }
 
+// Release writes domain's tally and lets go of it: its file is about to
+// be moved or removed, and the next request for that name reads whatever
+// is on disk then.
+func (b *Book) Release(domain string) {
+	b.mu.Lock()
+	r := b.sites[domain]
+	delete(b.sites, domain)
+	b.mu.Unlock()
+	if r != nil {
+		r.flush()
+	}
+}
+
 // Flush writes every tally that changed. Called every minute and when the
 // process stops, never per request: losing a minute of counting in a hard
 // crash is not worth a disk write per visit.
@@ -247,11 +260,20 @@ func classify(ua string) class {
 	return c
 }
 
-func browserName(key string) string {
+// browserNames is the catalogue by key, made once: browserName is asked
+// for every request, and building the whole catalogue to find one name in
+// it was most of what counting a request allocated.
+var browserNames = sync.OnceValue(func() map[string]string {
+	m := map[string]string{}
 	for _, o := range security.Browsers() {
-		if o.Key == key {
-			return o.Name
-		}
+		m[o.Key] = o.Name
+	}
+	return m
+})
+
+func browserName(key string) string {
+	if n, ok := browserNames()[key]; ok {
+		return n
 	}
 	return key
 }

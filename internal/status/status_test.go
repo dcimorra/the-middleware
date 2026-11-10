@@ -2,6 +2,8 @@ package status
 
 import (
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -93,5 +95,24 @@ func TestAMinuteDownIsNeverShownAsAHundredPercent(t *testing.T) {
 	}
 	if percent(1) != "100%" || percent(-1) != "—" {
 		t.Fatal("ends")
+	}
+}
+
+// A renamed site's record follows its file: released, the old name is not
+// written again and the new one has the minutes counted.
+func TestAReleasedRecordIsWrittenAndNotBroughtBack(t *testing.T) {
+	dir := t.TempDir()
+	b := New(dir)
+	b.Observe("old.test", Up, "")
+	b.Release("old.test")
+	if err := os.Rename(filepath.Join(dir, "old.test.json"), filepath.Join(dir, "new.test.json")); err != nil {
+		t.Fatalf("released without writing: %v", err)
+	}
+	b.Flush()
+	if _, err := os.Stat(filepath.Join(dir, "old.test.json")); !os.IsNotExist(err) {
+		t.Fatal("the old name was written again")
+	}
+	if rep := b.Report("new.test"); rep.Uptime["1"] != 1 {
+		t.Fatalf("the new name does not have what was counted: %+v", rep.Uptime)
 	}
 }

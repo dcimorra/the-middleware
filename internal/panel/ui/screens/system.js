@@ -200,7 +200,7 @@ export function systemScreen() {
 
   const all = () => { load(info, render); load(procs, renderProcs); load(portsCard, renderPorts); load(updateCard, () => renderUpdate(true)); };
   all();
-  timer = setInterval(() => { render().catch(() => {}); renderProcs().catch(() => {}); }, 10000);
+  timer = setInterval(() => { if (document.hidden) return; render().catch(() => {}); renderProcs().catch(() => {}); }, 10000);
   subs.push(onEvent("middleware.", all));
   subs.push(onEvent("update.", () => renderUpdate(false).catch(() => {})));
   subs.push(onEvent("instance.", () => { renderProcs().catch(() => {}); renderPorts().catch(() => {}); }));

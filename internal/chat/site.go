@@ -315,32 +315,86 @@ func (m *Manager) RepairConversation(domain string) (string, error) {
 }
 
 // List is every conversation of domain but the panel's own.
+//
+// Each file is read once and again only when it changed. A site whose
+// code opens a conversation per visitor has hundreds of them, megabytes
+// of turns, and all of it was parsed for every look at the site's chat
+// tab and for every conversation its door opened (Create counts them
+// through here).
 func (m *Manager) List(domain string) []Summary {
-	ents, err := os.ReadDir(filepath.Join(m.opts.Root, "data", "chat", domain))
+	dir := filepath.Join(m.opts.Root, "data", "chat", domain)
+	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return nil
 	}
 	var out []Summary
+	seen := map[string]bool{}
 	for _, e := range ents {
 		id, ok := strings.CutSuffix(e.Name(), ".json")
 		if !ok || !validID(id) {
 			continue
 		}
-		var c Conversation
-		if fsx.ReadJSON(filepath.Join(m.opts.Root, "data", "chat", domain, e.Name()), &c) != nil {
+		name := Name(domain, id)
+		sm, ok := m.listed(filepath.Join(dir, e.Name()), name)
+		seen[name] = true
+		if !ok {
 			continue
 		}
-		name := Name(domain, id)
+		sm.Running = m.Running(name)
 		// A panel conversation that never got a message is not one yet:
 		// the panel opens it when the first message goes, and the empty
 		// ones older panels left behind are not listed as if they were.
-		if c.Origin != OriginSite && len(c.Turns) == 0 && !m.Running(name) {
+		if sm.Origin != OriginSite && sm.Turns == 0 && !sm.Running {
 			continue
 		}
-		out = append(out, m.summaryOf(name, c))
+		out = append(out, sm)
 	}
+	m.listMu.Lock()
+	for name := range m.lists {
+		if d, _ := split(name); d == domain && !seen[name] {
+			delete(m.lists, name)
+		}
+	}
+	m.listMu.Unlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out
+}
+
+// listEntry is one conversation's summary as its file last said it.
+type listEntry struct {
+	mod  time.Time
+	size int64
+	sum  Summary
+	ok   bool
+}
+
+// listed is the summary of the conversation in file, read again only
+// when the file's time or size moved: saves are whole files renamed into
+// place, so either moves with every one. False for a file that cannot be
+// read as a conversation.
+func (m *Manager) listed(file, name string) (Summary, bool) {
+	st, err := os.Stat(file)
+	if err != nil {
+		return Summary{}, false
+	}
+	m.listMu.Lock()
+	e, ok := m.lists[name]
+	m.listMu.Unlock()
+	if ok && e.mod.Equal(st.ModTime()) && e.size == st.Size() {
+		return e.sum, e.ok
+	}
+	e = listEntry{mod: st.ModTime(), size: st.Size()}
+	var c Conversation
+	if fsx.ReadJSON(file, &c) == nil {
+		e.sum, e.ok = summarize(name, c), true
+	}
+	m.listMu.Lock()
+	if m.lists == nil {
+		m.lists = map[string]listEntry{}
+	}
+	m.lists[name] = e
+	m.listMu.Unlock()
+	return e.sum, e.ok
 }
 
 // Main is the panel's first conversation of domain, as a list shows it,

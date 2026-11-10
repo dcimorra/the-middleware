@@ -66,11 +66,13 @@ running instance. When they differ, it performs a **handover**:
 4. keep the old instance draining for `drain` (default 8s), then SIGTERM, then
    SIGKILL.
 
-There is exactly one instance receiving traffic at any moment. There is no
-cluster mode and there will not be one: a WebSocket or an in-memory session
-needs one process, and a deployment that wants zero dropped requests gets it
-from the handover, not from replicas. This is the **non-cluster contract**,
-and `TestHandoverDropsNoRequests` is what keeps it honest.
+On a machine there is exactly one instance of a site receiving traffic at
+any moment: a WebSocket or an in-memory session needs one process, and a
+deployment that wants zero dropped requests gets it from the handover, not
+from replicas. `TestHandoverDropsNoRequests` is what keeps it honest. A site
+that asks for it in its manifest (`cluster`) also has copies on other nodes
+of the network, each of them one process there, which take what the primary
+cannot ([Cluster](#cluster) below); a site that says nothing never has one.
 
 ### Re-adoption
 

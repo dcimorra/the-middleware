@@ -47,6 +47,12 @@ type Manager struct {
 	// Deploys is the one deployment runner of the installation: the
 	// panel's Deploy button and GitHub's pushes share its lock per site.
 	Deploys *deploy.Runner
+	// Release is told a site's name is about to stop naming its data (it
+	// was deleted, or renamed): whoever counts for it in memory writes
+	// what it holds and forgets the name. Without it a tally written
+	// every minute brought back, under the old name, the file that had
+	// just been moved or removed. nil when nothing counts (the CLI).
+	Release func(domain string)
 }
 
 // ErrDeploying says a deployment is already running for the site.
@@ -661,7 +667,7 @@ func (m *Manager) deleteWith(ctx context.Context, domain string, keep bool, befo
 		if err := os.RemoveAll(dir); err != nil {
 			return "", err
 		}
-		_ = os.RemoveAll(m.logsDir(domain))
+		m.forget(domain)
 		m.emit("site.deleted", domain, "", "folder deleted", nil)
 		return "", nil
 	}
@@ -726,7 +732,7 @@ func (m *Manager) pack(ctx context.Context, domain, packing string, original, st
 	if err := os.RemoveAll(packing); err != nil {
 		return dest, err
 	}
-	_ = os.RemoveAll(m.logsDir(domain))
+	m.dropLogs(domain)
 	m.emit("site.archived", domain, "", "packed to "+dest, map[string]any{"path": dest, "files": rep.Files, "bytes": rep.Bytes, "skipped": rep.Skipped})
 	return dest, nil
 }
@@ -853,19 +859,7 @@ func (m *Manager) rename(ctx context.Context, from, to string, edit func([]byte)
 	if err := os.Rename(dir, m.Dir(to)); err != nil {
 		return Site{}, err
 	}
-	data := filepath.Join(m.Root, "data")
-	for _, pair := range [][2]string{
-		{filepath.Join(data, "homes", from), filepath.Join(data, "homes", to)},
-		{m.logsDir(from), m.logsDir(to)},
-		{filepath.Join(data, "chat", from+".json"), filepath.Join(data, "chat", to+".json")},
-		{filepath.Join(data, "chat", from), filepath.Join(data, "chat", to)},
-		{filepath.Join(data, "agents", "cost", from+".json"), filepath.Join(data, "agents", "cost", to+".json")},
-		{filepath.Join(data, "history", from), filepath.Join(data, "history", to)},
-	} {
-		if fsx.Exists(pair[0]) && !fsx.Exists(pair[1]) {
-			_ = os.Rename(pair[0], pair[1])
-		}
-	}
+	m.carry(from, to)
 	if final != nil {
 		_ = fsx.WriteAtomic(filepath.Join(m.Dir(to), manifest.FileName), final, 0o644)
 	}

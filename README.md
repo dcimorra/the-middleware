@@ -33,8 +33,10 @@ single panel.
   machinery for many projects. Here they are one panel.
 
 It is **not** a cluster scheduler. Each site runs as one process (or one
-container), on purpose: handovers between versions are what keep it online,
-not replicas.
+container) per machine, on purpose: handovers between versions are what
+keep it online. A site that outgrows its machine can ask for copies on the
+other nodes of your network, one line in its manifest
+([docs/cluster.md](docs/cluster.md)); nothing is replicated unless asked.
 
 ## What you can do with it
 

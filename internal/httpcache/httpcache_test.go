@@ -315,3 +315,98 @@ func TestTwoStreamsOnOneAddressBothFlow(t *testing.T) {
 		})
 	}
 }
+
+// A browser that already has the page kept gets a 304 and no body: the
+// site would have answered so, and the cache sent the whole page again
+// on every visit instead.
+func TestAHitTheBrowserAlreadyHasIsNotSentAgain(t *testing.T) {
+	o := &origin{header: map[string]string{"ETag": `"v1"`, "Last-Modified": "Mon, 02 Nov 2026 10:00:00 GMT", "Content-Type": "text/html"}}
+	_, h, _ := setup([]Rule{{Path: "/", Mode: ModeForce, TTL: 60}}, o)
+	first := get(h, "/page")
+	for name, headers := range map[string][]string{
+		"its tag":           {`If-None-Match: "v1"`},
+		"its tag, weak":     {`If-None-Match: W/"v1"`},
+		"among others":      {`If-None-Match: "v0", "v1"`},
+		"its date":          {"If-Modified-Since: Mon, 02 Nov 2026 10:00:00 GMT"},
+		"a later date":      {"If-Modified-Since: Tue, 03 Nov 2026 10:00:00 GMT"},
+		"tag over the date": {`If-None-Match: "v1"`, "If-Modified-Since: Sun, 01 Nov 2026 10:00:00 GMT"},
+	} {
+		rec := get(h, "/page", headers...)
+		if rec.Code != http.StatusNotModified || rec.Body.Len() != 0 || rec.Header().Get("ETag") != `"v1"` || rec.Header().Get("X-Middleware-Cache") != "hit" {
+			t.Errorf("%s: %d, %d bytes, %v", name, rec.Code, rec.Body.Len(), rec.Header())
+		}
+	}
+	for name, headers := range map[string][]string{
+		"another tag":            {`If-None-Match: "v0"`},
+		"an earlier date":        {"If-Modified-Since: Sun, 01 Nov 2026 10:00:00 GMT"},
+		"another tag, same date": {`If-None-Match: "v0"`, "If-Modified-Since: Mon, 02 Nov 2026 10:00:00 GMT"},
+		"nothing":                nil,
+	} {
+		rec := get(h, "/page", headers...)
+		if rec.Code != 200 || rec.Body.String() != first.Body.String() {
+			t.Errorf("%s: %d %q", name, rec.Code, rec.Body.String())
+		}
+	}
+	if o.calls.Load() != 1 {
+		t.Errorf("the site was asked %d times", o.calls.Load())
+	}
+	// An answer with no validator is always sent whole.
+	bare := &origin{}
+	_, h2, _ := setup([]Rule{{Path: "/", Mode: ModeForce, TTL: 60}}, bare)
+	get(h2, "/x")
+	if rec := get(h2, "/x", `If-None-Match: "v1"`, "If-Modified-Since: Tue, 03 Nov 2026 10:00:00 GMT"); rec.Code != 200 {
+		t.Errorf("no validator kept: %d", rec.Code)
+	}
+}
+
+// marking is a writer outside the cache that changes the answer's headers
+// as it passes, the way the Web Vitals hook marks a page it compresses.
+type marking struct {
+	http.ResponseWriter
+	done bool
+}
+
+func (m *marking) WriteHeader(code int) {
+	if !m.done {
+		m.done = true
+		m.Header().Set("Content-Encoding", "gzip")
+		m.Header().Del("Content-Length")
+		m.Header().Set("ETag", `W/"changed"`)
+	}
+	m.ResponseWriter.WriteHeader(code)
+}
+
+func (m *marking) Write(p []byte) (int, error) {
+	if !m.done {
+		m.WriteHeader(http.StatusOK)
+	}
+	return m.ResponseWriter.Write(p)
+}
+
+// What is kept is what the site sent. The hooks outside the cache share
+// the header map and change it on the way out; read after the handler
+// returned, their marks were kept with the site's body, and a page kept
+// while Web Vitals compressed it was answered ever after as gzip, plain.
+func TestWhatAnOuterHookDoesToTheAnswerIsNotKeptWithIt(t *testing.T) {
+	o := &origin{header: map[string]string{"Content-Type": "text/html", "ETag": `"v1"`}}
+	_, h, _ := setup([]Rule{{Path: "/", Mode: ModeForce, TTL: 60}}, o)
+	outer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { h.ServeHTTP(&marking{ResponseWriter: w}, r) })
+	first := get(outer, "/page")
+	if first.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatal("the outer hook did not mark the first answer")
+	}
+	// Asked again past the outer hook: the cache's own answer.
+	hit := get(h, "/page")
+	if hit.Header().Get("X-Middleware-Cache") != "hit" || o.calls.Load() != 1 {
+		t.Fatalf("not a hit: %v, %d calls", hit.Header(), o.calls.Load())
+	}
+	if ce := hit.Header().Get("Content-Encoding"); ce != "" {
+		t.Errorf("the hit says Content-Encoding %q over a plain body", ce)
+	}
+	if et := hit.Header().Get("ETag"); et != `"v1"` {
+		t.Errorf("the hit's ETag is %q, not the site's", et)
+	}
+	if hit.Body.String() != first.Body.String() {
+		t.Errorf("the hit's body: %q", hit.Body.String())
+	}
+}

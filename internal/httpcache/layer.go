@@ -92,11 +92,16 @@ func (c *Cache) Wrap(next http.Handler, lookup func(r *http.Request) (Site, bool
 		if r.Method != http.MethodGet || rec.tooBig || rec.unkept {
 			return
 		}
-		ttl := ttlFor(rule, w.Header(), rec.status)
+		if rec.header == nil {
+			// Nothing was written: an empty 200 from a handler that
+			// just returned. Its headers are as it left them.
+			rec.header = w.Header().Clone()
+		}
+		ttl := ttlFor(rule, rec.header, rec.status)
 		if ttl <= 0 {
 			return
 		}
-		c.keep(site, k, r, w.Header(), rec.status, rec.buf.Bytes(), ttl)
+		c.keep(site, k, r, rec.header, rec.status, rec.buf.Bytes(), ttl)
 	})
 }
 
@@ -190,6 +195,16 @@ func (c *Cache) serveHit(w http.ResponseWriter, r *http.Request, site Site, k st
 	}
 	w.Header().Set("X-Middleware-Cache", "hit")
 	w.Header().Set("Age", strconv.Itoa(int(now.Sub(hit.stored).Seconds())))
+	if hit.status == http.StatusOK && notModified(r, hit.header) {
+		// The browser already has this very answer: the site would have
+		// said 304 to it, and the cache sent the whole page again on
+		// every visit instead.
+		w.Header().Del("Content-Length")
+		w.Header().Del("Content-Type")
+		w.Header().Del("Content-Encoding")
+		w.WriteHeader(http.StatusNotModified)
+		return true
+	}
 	w.WriteHeader(hit.status)
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(hit.body)
@@ -250,4 +265,33 @@ func sameVary(a, b map[string]string) bool {
 		}
 	}
 	return true
+}
+
+// notModified says the client's copy is the answer kept, by the
+// validators the site sent with it: its ETag first and, only with no
+// If-None-Match in the request, its Last-Modified (RFC 9110, 13.1.3).
+func notModified(r *http.Request, kept http.Header) bool {
+	if inm := r.Header.Values("If-None-Match"); len(inm) > 0 {
+		tag := strings.TrimPrefix(kept.Get("ETag"), "W/")
+		if tag == "" {
+			return false
+		}
+		for _, v := range inm {
+			for v != "" {
+				var one string
+				one, v, _ = strings.Cut(v, ",")
+				if one = strings.TrimSpace(one); one == "*" || strings.TrimPrefix(one, "W/") == tag {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	ims, lm := r.Header.Get("If-Modified-Since"), kept.Get("Last-Modified")
+	if ims == "" || lm == "" {
+		return false
+	}
+	since, err1 := http.ParseTime(ims)
+	modified, err2 := http.ParseTime(lm)
+	return err1 == nil && err2 == nil && !modified.After(since)
 }

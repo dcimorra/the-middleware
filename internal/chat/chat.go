@@ -254,6 +254,9 @@ type Manager struct {
 	// asks caches, per conversation file, whether it ends asking (Waiting).
 	askMu sync.Mutex
 	asks  map[string]askState
+	// lists caches each conversation's summary by its name (List).
+	listMu sync.Mutex
+	lists  map[string]listEntry
 
 	// repairMu keeps two repairs from opening two conversations.
 	repairMu sync.Mutex

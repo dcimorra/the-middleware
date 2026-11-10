@@ -56,7 +56,7 @@ in the API ([api.md](api.md)) and the panel.
 | `site logs <domain> [-f] [--lines 200] [--worker name \| --service name [--build]]` | the instance's output, a worker's, a service's, or a service's image build |
 | `site deploy <domain>` | run `deploy.github.build` and write the pointer, [deploy.md](deploy.md); through the github module's runner when it is enabled |
 | `site validate <domain> [--file site.json\|-]` | check a manifest without writing or deploying it: what the house would refuse, the names it would answer and whether another site has them, Dockerfiles, build contexts and folders that are not there. Exits 1 when it would not work. A site's own conversation may run it for its site |
-| `site rm <domain> [--archive]` | remove, or move to `data/archive/` |
+| `site rm <domain> [--archive]` | remove (with its tasks and what the house kept by its name; its access logs and database copies stay), or move to `data/archive/` |
 | `site tasks <domain>` (or `… list`) | the site's own tasks (the ones whose `site` is that domain) with their schedule, next and last run; `--json` prints the API's rows |
 | `site tasks <domain> save <name> <file.json\|->` | write a task from a file or stdin; with no `site` it is this one's. Refused when the name is another site's or the root's |
 | `site tasks <domain> rm <name>` / `run <name>` / `stop <name>` / `log <name> [--lines n]` | delete it (history and log stay), start a run now without waiting, stop a run, its output. Through `/sites/{domain}/tasks` ([api.md](api.md#tasks)), so it is what a site's agent turn and a `tasks:<domain>` token may do; `middleware tasks` is the house's, over every file |

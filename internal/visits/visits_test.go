@@ -232,3 +232,23 @@ func rowsMap(rows []Row) map[string]int64 {
 	}
 	return m
 }
+
+// A renamed site's visits follow its folder: released, the old name is
+// not written again and the new one has what was counted.
+func TestReleasedVisitsAreWrittenAndNotBroughtBack(t *testing.T) {
+	dir := t.TempDir()
+	c := &clock{at("2026-11-03 10:00")}
+	b := newBook(dir, c.now)
+	b.Note(page(chromeLinux, "203.0.113.9"))
+	b.Release("shop.example")
+	if err := os.Rename(filepath.Join(dir, "shop.example"), filepath.Join(dir, "new.example")); err != nil {
+		t.Fatalf("released without writing: %v", err)
+	}
+	b.Flush()
+	if _, err := os.Stat(filepath.Join(dir, "shop.example")); !os.IsNotExist(err) {
+		t.Fatal("the old name was written again")
+	}
+	if rep := b.Report("new.example", c.t, c.t); rep.Pageviews != 1 {
+		t.Fatalf("the new name does not have what was counted: %+v", rep)
+	}
+}

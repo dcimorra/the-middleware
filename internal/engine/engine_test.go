@@ -576,3 +576,39 @@ func TestASiteMissingASharedLibrarySaysWhatInstallsIt(t *testing.T) {
 		t.Fatalf("error does not say what installs libatomic: %s", sn.Error)
 	}
 }
+
+// A manifest written is read at the kick, not at the next tick: with a
+// tick a minute long, a static site appears and is held within the
+// moment, where it used to take up to the whole tick.
+func TestAKickReconcilesWithoutWaitingForTheTick(t *testing.T) {
+	root := t.TempDir()
+	sites, data := filepath.Join(root, "sites"), filepath.Join(root, "data")
+	os.MkdirAll(filepath.Join(sites, "kick.test"), 0o755)
+	e := New(Options{SitesDir: sites, DataDir: data, Ports: ports.New(41000, 41100), Bus: events.New(""), Tick: time.Minute})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { defer close(done); e.Run(ctx) }()
+	defer func() { cancel(); <-done }()
+	within := func(what string, cond func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !cond() {
+			if time.Now().After(deadline) {
+				t.Fatalf("%s: not within five seconds of the kick, with a tick of a minute", what)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	// The first pass ran at start, before the manifest was there.
+	time.Sleep(50 * time.Millisecond)
+	os.WriteFile(filepath.Join(sites, "kick.test", "site.json"), []byte(`{"version":2}`), 0o644)
+	e.Kick()
+	within("a new site", func() bool { _, ok := e.Lookup("kick.test"); return ok })
+	os.WriteFile(filepath.Join(sites, "kick.test", "site.json"), []byte(`{"version":2,"hold":{"enabled":true}}`), 0o644)
+	for i := 0; i < 100; i++ { // many kicks are no more than a pass or two
+		e.Kick()
+	}
+	within("a hold", func() bool { sn, _ := e.Lookup("kick.test"); return sn.Mode == manifest.ModeHold })
+	var none *Engine
+	none.Kick() // an API server with no engine kicks nothing
+}
