@@ -528,6 +528,15 @@ func trim(m map[string]int64, keep int) {
 	}
 }
 
+// Release writes what changed and lets go of domain: its folder is about
+// to be moved or removed.
+func (b *Book) Release(domain string) {
+	b.Flush()
+	b.mu.Lock()
+	delete(b.sites, domain)
+	b.mu.Unlock()
+}
+
 // Flush writes every site whose month changed. Called every minute and
 // when the process stops, never per request.
 func (b *Book) Flush() {

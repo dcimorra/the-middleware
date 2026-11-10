@@ -279,6 +279,24 @@ func buildWire(a *app.App) app.Hook {
 	if theStatus != nil {
 		srv.RegisterStatus(theStatus)
 	}
+	// Deleted or renamed, a site's counts leave memory before its files
+	// are touched; each book writes again from disk at the next request.
+	if mgr := srv.Sites(); mgr != nil {
+		mgr.Release = func(domain string) {
+			if theSeen != nil {
+				theSeen.Release(domain)
+			}
+			if theVisits != nil {
+				theVisits.Release(domain)
+			}
+			if theWebVitals != nil {
+				theWebVitals.Release(domain)
+			}
+			if theStatus != nil {
+				theStatus.Release(domain)
+			}
+		}
+	}
 	// An automatic update waits while a site moves between nodes: the
 	// restart that ends it would cut the move.
 	w.updater = buildUpdater(a, srv.MovesRunning)

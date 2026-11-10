@@ -283,6 +283,45 @@ func TestATaskForAMissingSiteFailsVisibly(t *testing.T) {
 	waitUntil(t, "task.failed", func() bool { return len(get("task.failed")) == 1 })
 }
 
+// The schedule of a task whose site is not there (archived, moved to
+// another node) says so once and runs nothing: it failed at every run
+// before, an error in the journal each minute. The folder back, it runs.
+func TestAScheduledTaskWaitsForItsSitesFolderInsteadOfFailingEveryRun(t *testing.T) {
+	root := newRoot(t)
+	writeTask(t, root, "orphan", `{"version":2,"schedule":"* * * * *","site":"away.test","command":["/bin/sh","-c","echo ran > out.txt"]}`)
+	c := &clock{t: time.Date(2026, 10, 19, 3, 29, 30, 0, time.Local)}
+	bus := events.New("")
+	get, stop := collect(bus)
+	defer stop()
+	s := NewScheduler(Options{Root: root, Bus: bus, Now: c.now})
+	s.tick()
+	for range 3 {
+		c.advance(time.Minute)
+		s.tick()
+	}
+	s.Wait()
+	waitUntil(t, "one task.invalid", func() bool { return len(get("task.invalid")) == 1 })
+	if n := len(LoadRecord(root, "orphan").Runs); n != 0 {
+		t.Fatalf("%d runs recorded for a site that is not there", n)
+	}
+	if failed := get("task.failed"); len(failed) != 0 {
+		t.Fatalf("failed %d times", len(failed))
+	}
+	if st := s.List(); len(st) != 1 || !strings.Contains(st[0].Error, "no such folder") {
+		t.Fatalf("the list does not say why it is not running: %+v", st)
+	}
+	if err := os.Rename(filepath.Join(root, "sites", "a.test"), filepath.Join(root, "sites", "away.test")); err != nil {
+		t.Fatal(err)
+	}
+	c.advance(time.Minute)
+	s.tick()
+	waitUntil(t, "a run once the folder is back", func() bool {
+		_, err := os.Stat(filepath.Join(root, "sites", "away.test", "out.txt"))
+		return err == nil
+	})
+	waitUntil(t, "task.valid", func() bool { return len(get("task.valid")) == 1 })
+}
+
 // A run that outlives its supervisor is adopted by the next one and
 // recorded when it ends, instead of running unrecorded and leaving its
 // task looking stuck.

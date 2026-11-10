@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -146,5 +148,28 @@ func TestTheScriptGoesIntoTheHeadOfAPageAndNowhereElse(t *testing.T) {
 		io.WriteString(w, "<p>bare</p>")
 	}, ""); body != "<p>bare</p>" {
 		t.Fatalf("bare page: %q", body)
+	}
+}
+
+// A renamed site's measures follow its folder: released, the old name is
+// not written again and the new one has what was measured.
+func TestReleasedMeasuresAreWrittenAndNotBroughtBack(t *testing.T) {
+	dir := t.TempDir()
+	b := New(dir)
+	day := time.Date(2026, 11, 8, 12, 0, 0, 0, time.Local)
+	b.now = func() time.Time { return day }
+	if err := b.Note("old.test", Sample{Path: "/", Values: map[string]int{"lcp": 1000}}); err != nil {
+		t.Fatal(err)
+	}
+	b.Release("old.test")
+	if err := os.Rename(filepath.Join(dir, "old.test"), filepath.Join(dir, "new.test")); err != nil {
+		t.Fatalf("released without writing: %v", err)
+	}
+	b.Flush()
+	if _, err := os.Stat(filepath.Join(dir, "old.test")); !os.IsNotExist(err) {
+		t.Fatal("the old name was written again")
+	}
+	if rep := b.Report("new.test", day, day); len(rep.Metrics) == 0 || rep.Metrics[0].N != 1 {
+		t.Fatalf("the new name does not have what was measured: %+v", rep.Metrics)
 	}
 }

@@ -149,7 +149,11 @@ func (s *Scheduler) List() []Status {
 		} else {
 			st.Schedule, st.Site, st.Disabled = t.Schedule, t.Site, t.Disabled
 			st.Title, st.Timezone = t.Title, t.Timezone
-			if sched, err := cron.Parse(t.Schedule); err == nil && !t.Disabled {
+			if t.Site != "" && !fsx.IsDir(filepath.Join(s.opts.Root, "sites", t.Site)) {
+				// No next run to promise: tick runs nothing until the
+				// folder is back.
+				st.Error = fmt.Sprintf("site %s: no such folder", t.Site)
+			} else if sched, err := cron.Parse(t.Schedule); err == nil && !t.Disabled {
 				st.Next = sched.Next(now.In(t.Location()))
 			}
 		}
@@ -193,6 +197,15 @@ func (s *Scheduler) tick() {
 		t, err := Load(s.opts.Root, name)
 		if err != nil {
 			s.invalid(name, err)
+			continue
+		}
+		if t.Site != "" && !t.Disabled && !fsx.IsDir(filepath.Join(s.opts.Root, "sites", t.Site)) {
+			// Said once, not at every run: the task of a site that was
+			// archived or moved away failed every minute of its schedule,
+			// each one an error in the journal and a run in its record,
+			// until someone went looking for it. It starts again by
+			// itself the minute the folder is back.
+			s.invalid(name, fmt.Errorf("site %s: no such folder", t.Site))
 			continue
 		}
 		s.valid(name)

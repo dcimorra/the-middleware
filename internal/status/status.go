@@ -208,6 +208,15 @@ func (b *Book) Flush() {
 	}
 }
 
+// Release writes what changed and lets go of domain: its file is about
+// to be moved or removed.
+func (b *Book) Release(domain string) {
+	b.Flush()
+	b.mu.Lock()
+	delete(b.sites, domain)
+	b.mu.Unlock()
+}
+
 // Forget drops a site that is gone.
 func (b *Book) Forget(domain string) {
 	b.mu.Lock()

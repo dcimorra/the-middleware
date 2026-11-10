@@ -115,6 +115,19 @@ func (b *Book) Forget(domain string) {
 	}
 }
 
+// Release writes domain's tally and lets go of it: its file is about to
+// be moved or removed, and the next request for that name reads whatever
+// is on disk then.
+func (b *Book) Release(domain string) {
+	b.mu.Lock()
+	r := b.sites[domain]
+	delete(b.sites, domain)
+	b.mu.Unlock()
+	if r != nil {
+		r.flush()
+	}
+}
+
 // Flush writes every tally that changed. Called every minute and when the
 // process stops, never per request: losing a minute of counting in a hard
 // crash is not worth a disk write per visit.

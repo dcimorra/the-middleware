@@ -302,6 +302,19 @@ func cleanPath(p string) string {
 	return p
 }
 
+// Release writes what changed and lets go of domain: its folder is about
+// to be moved or removed.
+func (b *Book) Release(domain string) {
+	b.Flush()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for key := range b.months {
+		if strings.HasPrefix(key, domain+"/") {
+			delete(b.months, key)
+		}
+	}
+}
+
 // Flush writes every month that changed, and forgets the ones of months
 // gone by: only the current one is still written to.
 func (b *Book) Flush() {

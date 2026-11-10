@@ -100,6 +100,12 @@ func IsFile(path string) bool {
 	return err == nil && !st.IsDir()
 }
 
+// IsDir reports whether path is a folder, following links.
+func IsDir(path string) bool {
+	st, err := os.Stat(path)
+	return err == nil && st.IsDir()
+}
+
 // IsNotExist is errors.Is(err, os.ErrNotExist), named for readability at call
 // sites that branch on it.
 func IsNotExist(err error) bool { return errors.Is(err, os.ErrNotExist) }
