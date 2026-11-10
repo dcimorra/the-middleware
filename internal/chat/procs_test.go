@@ -69,7 +69,6 @@ func TestATurnIsCutAtItsLimit(t *testing.T) {
 	defer func(d time.Duration) { TurnLimit = d }(TurnLimit)
 	TurnLimit = 300 * time.Millisecond
 	hold := make(chan struct{})
-	defer close(hold)
 	p := &fakeProvider{key: "fake", script: []agent.Event{{Kind: agent.KindText, Text: "working"}, {Kind: agent.KindResult}}, hold: hold}
 	m, _, bus := newManager(t, p)
 	ch, unsub := bus.Subscribe()
@@ -152,6 +151,53 @@ func TestAMessageDuringATurnIsSentWhenItEnds(t *testing.T) {
 	if c, _ := m.History("a.test"); len(c.Queued) != 0 {
 		t.Fatalf("still queued: %+v", c.Queued)
 	}
+	waitFor(t, ch, "agent.done")
+}
+
+// «Enviar ahora»: the running turn is cut, what it said stays as its
+// answer (not an error), and the queue goes at once, told why.
+func TestSendNowCutsTheTurnAndSendsTheQueue(t *testing.T) {
+	hold := make(chan struct{})
+	p := &fakeProvider{key: "fake", script: []agent.Event{{Kind: agent.KindText, Text: "working"}, {Kind: agent.KindResult}}, hold: hold}
+	m, _, bus := newManager(t, p)
+	ch, unsub := bus.Subscribe()
+	defer unsub()
+	if err := m.SendNow("a.test"); err == nil {
+		t.Fatal("SendNow with no turn running did not fail")
+	}
+	if _, err := m.Send("a.test", "first", ""); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, ch, "agent.text")
+	if err := m.SendNow("a.test"); err != ErrNothingQueued {
+		t.Fatalf("SendNow with nothing queued: %v", err)
+	}
+	if _, err := m.SendWith("a.test", "now please", SendOptions{Queue: true}); err != ErrQueued {
+		t.Fatalf("queue: %v", err)
+	}
+	if err := m.SendNow("a.test"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, ch, "agent.done")
+	waitFor(t, ch, "agent.started")
+	if got := p.last().Prompt; got != InterruptNote+"now please" {
+		t.Fatalf("next prompt %q", got)
+	}
+	c, _ := m.History("a.test")
+	if len(c.Turns) < 3 {
+		t.Fatalf("turns: %+v", c.Turns)
+	}
+	cut := c.Turns[1]
+	if cut.Role != "assistant" || !cut.Interrupted || !strings.Contains(cut.Text, "working") {
+		t.Fatalf("the cut turn: %+v", cut)
+	}
+	if c.Turns[2].Role != "user" || c.Turns[2].Text != "now please" {
+		t.Fatalf("the queued turn is stored with the note: %+v", c.Turns[2])
+	}
+	if _, err := os.Stat(m.queuePath("a.test")); !os.IsNotExist(err) {
+		t.Fatalf("the queue file outlived its turn: %v", err)
+	}
+	close(hold)
 	waitFor(t, ch, "agent.done")
 }
 

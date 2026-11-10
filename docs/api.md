@@ -363,6 +363,7 @@ commands it ran), site, call to the house and refusal is a line of
 | POST | `/autopilot/chats/{id}` | as above |
 | DELETE | `/autopilot/chats/{id}` | as above |
 | POST | `/autopilot/chats/{id}/stop` | as above |
+| POST | `/autopilot/chats/{id}/send-now` | as above |
 | POST | `/autopilot/chats/{id}/reap` | as above |
 | GET | `/autopilot/chats/{id}/export` | as above |
 | GET | `/autopilot/chats/{id}/processes` | as above |
@@ -400,6 +401,7 @@ Autonomous agents the operator creates (`internal/crew`, [crew.md](crew.md)), ea
 | POST | `/crew/{agent}/chats/{id}` | as above |
 | DELETE | `/crew/{agent}/chats/{id}` | as above |
 | POST | `/crew/{agent}/chats/{id}/stop` | as above |
+| POST | `/crew/{agent}/chats/{id}/send-now` | as above |
 | POST | `/crew/{agent}/chats/{id}/reap` | as above |
 | GET | `/crew/{agent}/chats/{id}/export` | as above |
 | GET | `/crew/{agent}/chats/{id}/processes` | as above |
@@ -651,6 +653,7 @@ through the manifest; these routes are what the panel reads beside them.
 | GET | `/sites/{domain}/chat` | → `{domain, provider, model, session_id, running, live, turns: [{id, role, text, cost, at, tools, questions: [{question, options, recommended}]}]}`; while a turn runs, `live: [{seq, type, data}]` is what it showed so far, the same events the stream sent (whose `data.seq` matches), so a client that opens it late draws it where it is. A turn does not depend on any client and has no time limit; it ends on its own or with `/stop` |
 | POST | `/sites/{domain}/chat` | `{text, model?, provider?}` → `{turn_id}`; `provider` runs this message with that agent instead of the manifest's (each agent keeps its own session in the conversation, and the one that comes in is told what was said while it was away); progress on `/events/stream` as `agent.*`; 409 while a turn runs in this conversation; 429 when the house, or the provider, has no free slot (the message says how many of how many; `agent.capacity` is emitted with the numbers) |
 | POST | `/sites/{domain}/chat/stop` | → `{ok}`; 409 when nothing runs |
+| POST | `/sites/{domain}/chat/send-now` | cut the running turn so the queued messages go now; its words stay as its answer → `{ok}`; 409 when nothing runs or nothing is queued |
 | DELETE | `/sites/{domain}/chat` | → `{ok}` (new conversation) |
 | POST | `/sites/{domain}/chat/reap` | → `{killed}`; stops the turn and kills everything the conversation left running (setsid escapes included) |
 | GET | `/sites/{domain}/chat/export` | → a JSON file to download (`Content-Disposition: attachment`): `{exported, version, conversation}`, the conversation with every turn, its steps and its subagents' |
@@ -666,6 +669,7 @@ through the manifest; these routes are what the panel reads beside them.
 | POST | `/sites/{domain}/chats/{id}` | as `/sites/{domain}/chat`; 409 for a conversation the site's code opened (read and stop it, do not write into it) |
 | DELETE | `/sites/{domain}/chats/{id}` | → `{ok}` |
 | POST | `/sites/{domain}/chats/{id}/stop` | as above |
+| POST | `/sites/{domain}/chats/{id}/send-now` | as above |
 | POST | `/sites/{domain}/chats/{id}/reap` | as above |
 | GET | `/sites/{domain}/chats/{id}/export` | as above |
 | GET | `/sites/{domain}/chats/{id}/processes` | as above |
@@ -680,6 +684,7 @@ through the manifest; these routes are what the panel reads beside them.
 | POST | `/chat/middleware/chats/{id}` | as for a site, for the house's conversations |
 | DELETE | `/chat/middleware/chats/{id}` | as for a site, for the house's conversations |
 | POST | `/chat/middleware/chats/{id}/stop` | as for a site, for the house's conversations |
+| POST | `/chat/middleware/chats/{id}/send-now` | as above |
 | POST | `/chat/middleware/chats/{id}/reap` | as for a site, for the house's conversations |
 | GET | `/chat/middleware/chats/{id}/export` | as for a site, for the house's conversations |
 | GET | `/chat/middleware/chats/{id}/processes` | as for a site, for the house's conversations |
@@ -691,6 +696,7 @@ through the manifest; these routes are what the panel reads beside them.
 | POST | `/chat/middleware` | as above |
 | DELETE | `/chat/middleware` | as above |
 | POST | `/chat/middleware/stop` | as above |
+| POST | `/chat/middleware/send-now` | as above |
 | POST | `/chat/middleware/reap` | as above |
 | GET | `/chat/middleware/export` | as above |
 | GET | `/chat/middleware/processes` | as above |
