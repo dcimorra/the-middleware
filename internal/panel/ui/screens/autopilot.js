@@ -207,10 +207,17 @@ export function autopilotScreen({ tab } = {}) {
         refresh();
       } catch (e) { toastError(e); } finally { setWeek.classList.remove("busy"); }
     });
-    clear(sitesCard).append(cardHead(t("autopilot.sites"), t("autopilot.sitesHint", { left: st.sites_left, per: st.limits.sites_per_week }), ask),
-      h("div", { class: "form-row" }, field(t("autopilot.perWeek"), perWeek, t("autopilot.perWeekHint")), setWeek),
+    // The number and its button on one line, the button its own size: in
+    // a form-row grid the button took a column and the field's height.
+    // Element.append writes a null as the text "null", so what may be
+    // missing is filtered out, never passed.
+    clear(sitesCard).append(...[
+      cardHead(t("autopilot.sites"), t("autopilot.sitesHint", { left: st.sites_left, per: st.limits.sites_per_week }), ask),
+      h("div", { class: "week-row" }, field(t("autopilot.perWeek"), perWeek), setWeek),
+      h("p", { class: "hint week-hint" }, t("autopilot.perWeekHint")),
       asked.length ? h("ul", { class: "set-recent-list" }, ...asked) : null,
-      rows.length ? h("ul", { class: "set-recent-list" }, ...rows) : h("p", { class: "hint" }, t("autopilot.noSites")));
+      rows.length ? h("ul", { class: "set-recent-list" }, ...rows) : h("p", { class: "hint" }, t("autopilot.noSites")),
+    ].filter(Boolean));
   }
 
   // What the operator asks for is theirs to word, or to leave to it.
