@@ -72,6 +72,7 @@ manifest and take the code out.
 | HSTS, `X-Frame-Options`, CORS, any header on every answer | `headers` | § 8 |
 | cache pages or assets | `cache` | § 8 |
 | gzip the CSS, JS, HTML, JSON and SVG | already done for the files the house serves (a static site, `static`): compressed once per change, `Vary: Accept-Encoding`; a site with `run`/`upstream` compresses in its own server | nothing to write for static files |
+| long browser cache for the built JS/CSS | already done for a static site's hashed files (`index-4f2a9c1e.js`): `immutable` for a year; keep the bundler's hashed names | nothing to write; `cache.static_max_age` to override |
 | a maintenance page, a site gone (410) | `hold` | § 3 |
 | the page a visitor sees while the site starts or is down | `notice.theme` | docs/manifest.md |
 | another name, its `www.` | `aliases`, `www` (operator only) | § 3 |

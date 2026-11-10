@@ -122,7 +122,10 @@ Exactly one of these decides, checked in this order:
    (HTML, CSS, JavaScript, JSON, SVG, XML; 1 KiB to 8 MiB) go gzipped to a
    browser that takes it, compressed once per change and kept in memory
    (64 MiB for every site), with `Vary: Accept-Encoding`; a request for a
-   range gets the file as it is.
+   range gets the file as it is. A file whose name carries a bundler's
+   content hash (`index-4f2a9c1e.js`, `main.8f3c2a1b.css`; never a page)
+   goes with `Cache-Control: public, max-age=31536000, immutable`, unless
+   `cache.static_max_age` or `headers` say otherwise.
 
 A folder with no `site.json` is **not served** and the panel lists it as
 "unmanaged", because a folder that serves silently and a folder that is

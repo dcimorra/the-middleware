@@ -358,6 +358,12 @@ func (h *Handler) static(w http.ResponseWriter, r *http.Request, sn engine.Snaps
 func serveFile(w http.ResponseWriter, r *http.Request, name string, f *os.File, st os.FileInfo, sn engine.Snapshot) {
 	if sn.Manifest != nil && sn.Manifest.Cache != nil && sn.Manifest.Cache.StaticMaxAge > 0 {
 		w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(int(time.Duration(sn.Manifest.Cache.StaticMaxAge).Seconds())))
+	} else if w.Header().Get("Cache-Control") == "" && path.Base(r.URL.Path) == name && Fingerprinted(name) {
+		// A bundler's output names each file by its content
+		// (index-4f2a9c1e.js): the name changes when the file does, so
+		// the browser and the edge may keep it for good. Without this a
+		// returning visitor asked again for every script of the page.
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	}
 	// What http.ServeFile did besides serving: one address per page, so
 	// /docs/index.html and /docs/ are not two pages to a cache.
@@ -384,6 +390,43 @@ func serveFile(w http.ResponseWriter, r *http.Request, name string, f *os.File, 
 		}
 	}
 	http.ServeContent(w, r, name, st.ModTime(), f)
+}
+
+// Fingerprinted says whether a file name carries a content hash, the way
+// bundlers write their output: main.8f3c2a1b.js (webpack),
+// index.Bx2Yz9Qa.css (Astro), chunk-ABCD1234.js (esbuild, Vite),
+// framework-2d2a8c1e4f3b5a6c.js (Next). The hash is the part before the
+// extension, after the last dot or dash, eight characters or more, with
+// a digit and a letter in it: logo-2024.png, jquery-3.7.1.min.js and
+// app.bundle.js are not. Pages are never, whatever their name: a page
+// kept for a year cannot be corrected.
+func Fingerprinted(name string) bool {
+	ext := path.Ext(name)
+	if ext == "" || ext == ".html" || ext == ".htm" {
+		return false
+	}
+	stem := strings.TrimSuffix(name, ext)
+	i := strings.LastIndexAny(stem, ".-")
+	if i <= 0 {
+		return false
+	}
+	hash := stem[i+1:]
+	if len(hash) < 8 || len(hash) > 64 {
+		return false
+	}
+	digit, letter := false, false
+	for _, c := range hash {
+		switch {
+		case c >= '0' && c <= '9':
+			digit = true
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z':
+			letter = true
+		case c == '_':
+		default:
+			return false
+		}
+	}
+	return digit && letter
 }
 
 // staticGzip keeps the compressed static files of every site, 64 MiB
