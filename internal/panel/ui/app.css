@@ -2536,6 +2536,9 @@ pre.pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px
 .proposal-head > :last-child { margin-left: auto; }
 .proposal-title { display: block; margin: 6px 0 4px; font-size: 14px; overflow-wrap: anywhere; }
 .proposal .form-row { margin-top: 8px; gap: 8px; }
+.week-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.week-row .field { margin-bottom: 0; flex: 0 1 220px; }
+.week-hint { margin: 6px 0 12px; }
 .proposal p.small { margin: 6px 0 0; }
 .proposal pre.pre-wrap { font-family: inherit; font-size: 13px; line-height: 1.5; }
 .canary-num { width: 5.5em; display: inline-block; }
