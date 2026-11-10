@@ -127,6 +127,11 @@ func (p *Provider) Args(req agent.Request, settingsFile string) []string {
 	if req.SessionID != "" {
 		args = append(args, "--resume", req.SessionID)
 	}
+	if req.Partial {
+		// stream_event lines with the API's own deltas, besides the whole
+		// messages, which still come (the parser keeps both).
+		args = append(args, "--include-partial-messages")
+	}
 	if req.System != "" {
 		args = append(args, "--append-system-prompt", req.System)
 	}
@@ -356,6 +361,15 @@ type line struct {
 	ModelUsage map[string]struct {
 		ContextWindow int `json:"contextWindow"`
 	} `json:"modelUsage"`
+	// Event is a stream_event's: the API's streaming event as it came
+	// (--include-partial-messages).
+	Event struct {
+		Type  string `json:"type"`
+		Delta struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"delta"`
+	} `json:"event"`
 }
 
 // usage is one model call's tokens. What the call read (fresh, written to
@@ -484,6 +498,14 @@ func (p *parser) Line(raw string) ([]agent.Event, bool) {
 		// it too; the chat keeps only the ones that name a subagent.
 		if l.Subtype == "task_notification" && l.ToolUseID != "" && l.Status != "" {
 			return []agent.Event{{Kind: agent.KindAgentStatus, ToolID: l.ToolUseID, Status: l.Status, SessionID: p.sessionID}}, false
+		}
+		return nil, false
+	case "stream_event":
+		// Only the main agent's text: a subagent's is its own, and what
+		// the model thinks or the input of a tool it calls is not the
+		// answer being written.
+		if l.ParentToolUseID == "" && l.Event.Type == "content_block_delta" && l.Event.Delta.Type == "text_delta" && l.Event.Delta.Text != "" {
+			return []agent.Event{{Kind: agent.KindDelta, Text: l.Event.Delta.Text, SessionID: p.sessionID}}, false
 		}
 		return nil, false
 	case "rate_limit_event":

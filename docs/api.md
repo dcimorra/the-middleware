@@ -970,7 +970,7 @@ site written for V1 moves without a line changed.
 | POST | `/site/claude/chats` | `{title?, system?, model?, format?, schema?, prompt?, files?}` → `{chat: {…}}`, or the answer when a prompt was sent |
 | GET | `/site/claude/chats/{id}` | → `{chat, state, text, messages: [{seq, at, role: user\|assistant\|tool\|result, text, tool: {id, name, input, result, error, done, run, background}, agent, cost_usd, error}], more}`; `?limit=150` (the last ones) |
 | POST | `/site/claude/chats/{id}/messages` | `{prompt, model?, format?, schema?, wait?, files?}` → as ask (409 `{error, chat}` while a turn runs) |
-| GET | `/site/claude/chats/{id}/stream` | server-sent events: `event: message` with each message as it happens, `event: session` with the conversation after each turn |
+| GET | `/site/claude/chats/{id}/stream` | server-sent events: `event: delta` `{turn_id, text}` with the answer as it is written, `event: message` with each message as it happens (it replaces the deltas since the previous one), `event: session` with the conversation after each turn |
 | POST | `/site/claude/chats/{id}/files` | a file for the next message: multipart (field `file`) or the raw body with `?name=`; 25 MB → `{ok, file: {name, size, kind, at}}` |
 | DELETE | `/site/claude/chats/{id}/files/{name}` | drop it before it is sent → `{ok}` |
 | POST | `/site/claude/chats/{id}/stop` | stop the turn → `{ok}` |

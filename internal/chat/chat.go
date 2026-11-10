@@ -257,7 +257,9 @@ type Manager struct {
 	opts    Options
 	mu      sync.Mutex
 	running map[string]*running
-	limits  settings.Agents
+	// watchers follow one conversation each: the site door's stream.
+	watchers watchers
+	limits   settings.Agents
 	// computed is limits.MaxConcurrent having come from the machine.
 	computed bool
 }
@@ -897,6 +899,10 @@ func (m *Manager) SendWith(name, text string, o SendOptions) (string, error) {
 	}
 	if c.Origin == OriginSite {
 		system = SiteSystem(c)
+		// The site's code shows the answer as it is written (the door's
+		// stream sends the pieces); the panel's conversations show
+		// whole messages and do not ask for them.
+		req.Partial = true
 		level := Level(c.Tools)
 		req.Tools = level.Tools
 		req.Disallowed = level.Disallowed
@@ -1101,6 +1107,11 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 	retried := false
 	for {
 		for ev := range run.Events() {
+			if ev.Kind == agent.KindDelta {
+				// Not a step: the whole text comes as KindText.
+				m.watchers.send(name, Watched{Delta: &Delta{TurnID: turnID, Text: ev.Text}})
+				continue
+			}
 			all = append(all, ev)
 			if ev.SessionID != "" {
 				sessionID = ev.SessionID
@@ -1340,7 +1351,9 @@ func (m *Manager) follow(name, turnID string, s Settings, run agent.Run, cancel 
 }
 
 func (m *Manager) emit(typ, domain, level, msg string, data map[string]any) {
-	m.opts.Bus.Emit(events.Event{Type: typ, Subject: domain, Actor: "agent", Level: level, Message: msg, Data: data})
+	e := events.Event{Type: typ, Subject: domain, Actor: "agent", Level: level, Message: msg, Data: data}
+	m.opts.Bus.Emit(e)
+	m.watchers.event(e)
 }
 
 // ProviderInfo says whether a provider can run now and which models it

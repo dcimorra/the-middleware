@@ -1004,23 +1004,29 @@ func attachmentOf(u chat.Upload) map[string]any {
 }
 
 // stream is the conversation as it happens: an "event: message" per
-// message, as GET returns them, and an "event: session" with the
-// conversation after each turn ends, which is when a client puts its
-// button back.
+// message, as GET returns them, an "event: delta" per piece of the answer
+// while it is written ({turn_id, text}: the pieces since the last message
+// are the start of the next one, which replaces them when it comes), and
+// an "event: session" with the conversation after each turn ends, which
+// is when a client puts its button back.
 func (o SiteDoorOptions) stream(w http.ResponseWriter, r *http.Request, name string) {
 	flusher, ok := w.(http.Flusher)
-	if !ok || o.Bus == nil {
+	if !ok || o.Chat == nil {
 		WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "streaming is not available"})
 		return
 	}
+	// The conversation's own watch, not the bus: the pieces of the answer
+	// come on it too, in the order the turn made them. Watched before the
+	// headers go, so a client that sends once the stream is open misses
+	// nothing of the turn.
+	ch, unwatch := o.Chat.Watch(name)
+	defer unwatch()
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, ": connected\n\n")
 	flusher.Flush()
-	ch, stop := o.Bus.Subscribe()
-	defer stop()
 	tick := time.NewTicker(20 * time.Second)
 	defer tick.Stop()
 	var seq int64
@@ -1044,14 +1050,17 @@ func (o SiteDoorOptions) stream(w http.ResponseWriter, r *http.Request, name str
 				return
 			}
 			flusher.Flush()
-		case e, ok := <-ch:
-			if !ok {
-				return
-			}
-			if e.Subject != name {
+		case it := <-ch:
+			if it.Delta != nil {
+				if !send("delta", it.Delta) {
+					return
+				}
 				continue
 			}
-			m, end := liveMessage(e)
+			if it.Event == nil {
+				continue
+			}
+			m, end := liveMessage(*it.Event)
 			if m == nil {
 				continue
 			}

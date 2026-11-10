@@ -103,9 +103,13 @@ func TestChatSendsTheTurnThroughTheSupervisorWithItsLogin(t *testing.T) {
 	}
 	p.mu.Lock()
 	n := len(p.reqs)
+	partial := n > 0 && p.reqs[0].Partial
 	p.mu.Unlock()
 	if n != 1 {
 		t.Fatalf("the server's provider started %d turns, want 1", n)
+	}
+	if partial {
+		t.Fatal("a panel conversation asked for the pieces; only the site door's stream shows them")
 	}
 	// The conversation is the panel's one: the panel sees both sides.
 	c, err := m.Conversation("book.test")
