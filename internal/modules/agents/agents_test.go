@@ -131,7 +131,7 @@ func TestAnAgentsDefaultModelIsAListOfItsModels(t *testing.T) {
 				t.Fatalf("%s: the model is a box to type into", info.Key)
 			case n.Key != "model" && len(n.Options) > 0:
 				t.Fatalf("%s: %s got options", info.Key, n.Key)
-			case info.Key == ClaudeKey && n.Key == "model" && (strings.Join(n.Options, ",") != "sonnet,opus,haiku" || n.Labels["opus"] == ""):
+			case info.Key == ClaudeKey && n.Key == "model" && (strings.Join(n.Options, ",") != "sonnet,opus,haiku,fable" || n.Labels["opus"] == "" || n.Labels["fable"] != "claude-fable-5-2"):
 				t.Fatalf("claude's models: %v %v", n.Options, n.Labels)
 			}
 		}

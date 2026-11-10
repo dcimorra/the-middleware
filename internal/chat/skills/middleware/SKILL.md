@@ -961,6 +961,7 @@ that does the job well, a stronger one only where it shows.
 | classify, extract fields, tag, short JSON, moderate | `haiku` |
 | write and rewrite, summarise, answer a visitor, most work | `sonnet` |
 | long reasoning, hard code, plans, what failed on `sonnet` | `opus` |
+| the hardest and longest work, only where `opus` falls short (dearest) | `fable` |
 
 A failed or poor answer from a cheap model can be retried once on the next
 one up; never loop. `GET $MIDDLEWARE_API/api/site` says what the code has:

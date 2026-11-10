@@ -296,7 +296,7 @@ func TestARateLimitEventBecomesTheWindowItNames(t *testing.T) {
 
 func TestClaudesAliasesSayWhatTheyRunAndAVendorsDoNot(t *testing.T) {
 	l := New(Config{}).ModelLabels()
-	if l["sonnet"] != "claude-sonnet-5-5" || l["opus"] != "claude-opus-5-5" || l["haiku"] == "" {
+	if l["sonnet"] != "claude-sonnet-5-5" || l["opus"] != "claude-opus-5-5" || l["haiku"] == "" || l["fable"] != "claude-fable-5-2" {
 		t.Fatalf("labels %v", l)
 	}
 	// DeepSeek through Claude Code: its names are its own, and "sonnet"

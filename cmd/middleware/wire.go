@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/dcimorra/the-middleware/internal/acme"
+	"github.com/dcimorra/the-middleware/internal/agent/claude"
 	"github.com/dcimorra/the-middleware/internal/api"
 	"github.com/dcimorra/the-middleware/internal/app"
 	"github.com/dcimorra/the-middleware/internal/audit"
@@ -1235,7 +1236,7 @@ func (g githubRepos) Inspect(ctx context.Context, ref string) (sites.Repo, error
 func doorModels(provider string, models []string) []string {
 	out := append([]string(nil), models...)
 	if provider == "claude" {
-		for _, a := range []string{"opus", "sonnet", "haiku"} {
+		for _, a := range claude.DefaultModels {
 			if !slices.Contains(out, a) {
 				out = append(out, a)
 			}
