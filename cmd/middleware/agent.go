@@ -300,4 +300,3 @@ func tasksCmd(args []string) error {
 	}
 	return fmt.Errorf("unknown tasks command %q (list, run <name>)", rest[0])
 }
-
