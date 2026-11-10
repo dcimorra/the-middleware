@@ -1,7 +1,9 @@
 package panel
 
 import (
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -364,4 +366,70 @@ func TestRandomSiteNamesFitInOneLabel(t *testing.T) {
 	if n := most*longest + most - 1; n > 63 {
 		t.Errorf("%d words of %d letters make a %d-character label; DNS allows 63", most, longest, n)
 	}
+}
+
+// The whole panel, as a browser that takes gzip downloads it, against as
+// it is written: every text file smaller, each with a tag of its own, the
+// same bytes once unpacked, and the pictures left alone.
+func TestThePanelsTextGoesOutCompressed(t *testing.T) {
+	h := Handler()
+	plain, packed := 0, 0
+	err := fs.WalkDir(FS, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || p == "index.html" {
+			return err
+		}
+		url := AssetPrefix + p
+		raw := get(t, h, url)
+		req := httptest.NewRequest(http.MethodGet, url, nil)
+		req.Header.Set("Accept-Encoding", "gzip, br")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != 200 || raw.Code != 200 {
+			t.Fatalf("%s: %d and %d", p, raw.Code, rec.Code)
+		}
+		plain += raw.Body.Len()
+		packed += rec.Body.Len()
+		if raw.Header().Get("Content-Encoding") != "" {
+			t.Errorf("%s: compressed for a client that did not ask", p)
+		}
+		if rec.Header().Get("Content-Length") != strconv.Itoa(rec.Body.Len()) {
+			t.Errorf("%s: Content-Length %s for %d bytes", p, rec.Header().Get("Content-Length"), rec.Body.Len())
+		}
+		if rec.Header().Get("Content-Encoding") != "gzip" {
+			if strings.HasSuffix(p, ".js") && raw.Body.Len() > 2048 {
+				t.Errorf("%s: %d bytes of script not compressed", p, raw.Body.Len())
+			}
+			return nil
+		}
+		if strings.HasSuffix(p, ".png") {
+			t.Errorf("%s: a picture was compressed", p)
+		}
+		if rec.Header().Get("ETag") == raw.Header().Get("ETag") || rec.Header().Get("Vary") != "Accept-Encoding" {
+			t.Errorf("%s: one tag for two bodies, or no Vary: %v", p, rec.Header())
+		}
+		zr, err := gzip.NewReader(rec.Body)
+		if err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+		if out, _ := io.ReadAll(zr); string(out) != raw.Body.String() {
+			t.Errorf("%s: not the same file once unpacked", p)
+		}
+		// And its own tag saves the download, as the plain one's does.
+		again := httptest.NewRequest(http.MethodGet, url, nil)
+		again.Header.Set("Accept-Encoding", "gzip")
+		again.Header.Set("If-None-Match", rec.Header().Get("ETag"))
+		rec = httptest.NewRecorder()
+		h.ServeHTTP(rec, again)
+		if rec.Code != http.StatusNotModified || rec.Body.Len() != 0 {
+			t.Errorf("%s: %d with its own tag", p, rec.Code)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if packed > plain/2 {
+		t.Errorf("the panel is %d bytes compressed of %d", packed, plain)
+	}
+	t.Logf("the panel: %d bytes as written, %d compressed", plain, packed)
 }

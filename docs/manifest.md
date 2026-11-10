@@ -432,6 +432,17 @@ next.
   `no-store` and `no-cache`, which stay: a line written for the public
   pages does not make the signed-in ones public. On static files
   `cache.static_max_age` sets `Cache-Control` over both.
+- Static files need nothing written to be served well. Text (HTML, CSS,
+  scripts, JSON, SVG, XML) of a kilobyte or more goes out gzipped to the
+  clients that take it, compressed once per change of the file and not once
+  per visit; pictures, video and `woff2`, compressed already, go as they
+  are. A script, stylesheet or font named by a hash of its content, as
+  bundlers write them (`index-Bx2Yz9Qa.js`, `main.8f3c2a1b.css`), answers
+  `Cache-Control: public, max-age=31536000, immutable`, since its name
+  changes when it does; pages and every other file are revalidated as
+  before. A `Cache-Control` in `headers`, or `cache.static_max_age`, wins
+  over that. What a site's own process answers is passed on as it sent it,
+  compressed or not.
 - `cache.rules` are the house's response cache, kept in memory and served
   without asking the site, behind the door so nothing passes a password.
   `origin` keeps what the site marks (`s-maxage`, else `max-age`) for as

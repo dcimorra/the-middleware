@@ -16,8 +16,11 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/dcimorra/the-middleware/internal/gz"
 )
 
 //go:embed ui
@@ -52,13 +55,29 @@ func init() {
 // an ETag derived from their content, so a browser revalidates for free
 // and never keeps a stale app.js across an upgrade. There is no build step
 // that could put a hash in the file name, so the hash goes in the ETag.
+//
+// Text goes out compressed to whoever takes it. The panel is ninety files
+// and a megabyte and a half with no build step to shrink them, and through
+// the 80/443 door or the VPN nobody else compresses: a first load on a
+// phone was all of it, as written.
 func Handler() http.Handler {
-	return &handler{etags: map[string]string{}}
+	return &handler{files: map[string]*file{}}
 }
 
 type handler struct {
 	mu    sync.Mutex
-	etags map[string]string
+	files map[string]*file
+}
+
+// file is one embedded file ready to send. The files are part of the
+// binary and never change while it runs, so each is read, hashed and
+// compressed once, the first time it is asked for.
+type file struct {
+	data []byte
+	// packed is data gzipped, nil when that saves nothing (the icons).
+	packed []byte
+	tag    string
+	ctype  string
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -99,60 +118,81 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) serve(w http.ResponseWriter, r *http.Request, name string) {
-	data, err := fs.ReadFile(FS, name)
-	if err != nil {
+	f := h.file(name)
+	if f == nil {
 		http.NotFound(w, r)
 		return
 	}
-	tag := h.etag(name, data)
+	hd := w.Header()
+	body, tag := f.data, f.tag
+	if f.packed != nil {
+		hd.Add("Vary", "Accept-Encoding")
+		if gz.Accepts(r) {
+			// Another body, another tag: a cache between the browser and
+			// here must not answer one for the other.
+			body, tag = f.packed, strings.TrimSuffix(f.tag, `"`)+`-gz"`
+			hd.Set("Content-Encoding", "gzip")
+		}
+	}
+	hd.Set("ETag", tag)
+	hd.Set("Cache-Control", "no-cache")
 	if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, tag) {
-		w.Header().Set("ETag", tag)
+		hd.Del("Content-Encoding")
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	// Go's table knows these, but a stripped container may ship a bare
-	// /etc/mime.types, and a module script served as text/plain is refused
-	// by the browser. The common ones are pinned; the rest ask the table.
-	var ct string
-	switch path.Ext(name) {
-	case ".js", ".mjs":
-		ct = "text/javascript; charset=utf-8"
-	case ".css":
-		ct = "text/css; charset=utf-8"
-	case ".json":
-		ct = "application/json"
-	case ".html":
-		ct = "text/html; charset=utf-8"
-	case ".svg":
-		ct = "image/svg+xml"
-	case ".webmanifest":
-		ct = "application/manifest+json"
-	case ".png":
-		ct = "image/png"
-	default:
-		ct = mime.TypeByExtension(path.Ext(name))
-		if ct == "" {
-			ct = http.DetectContentType(data)
-		}
-	}
-	w.Header().Set("Content-Type", ct)
-	w.Header().Set("ETag", tag)
-	w.Header().Set("Cache-Control", "no-cache")
+	hd.Set("Content-Type", f.ctype)
+	hd.Set("Content-Length", strconv.Itoa(len(body)))
 	if r.Method == http.MethodHead {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	_, _ = w.Write(data)
+	_, _ = w.Write(body)
 }
 
-func (h *handler) etag(name string, data []byte) string {
+func (h *handler) file(name string) *file {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if tag, ok := h.etags[name]; ok {
-		return tag
+	if f, ok := h.files[name]; ok {
+		return f
+	}
+	data, err := fs.ReadFile(FS, name)
+	if err != nil {
+		// Not kept: the names that are not there are whatever a scanner
+		// asks for, without end.
+		return nil
 	}
 	sum := sha256.Sum256(data)
-	tag := `"` + hex.EncodeToString(sum[:8]) + `"`
-	h.etags[name] = tag
-	return tag
+	f := &file{data: data, tag: `"` + hex.EncodeToString(sum[:8]) + `"`, ctype: contentType(name, data)}
+	if gz.Compressible(f.ctype) {
+		f.packed = gz.Smaller(data)
+	}
+	h.files[name] = f
+	return f
+}
+
+// contentType pins the common types. Go's table knows them, but a
+// stripped container may ship a bare /etc/mime.types, and a module script
+// served as text/plain is refused by the browser. The rest ask the table.
+func contentType(name string, data []byte) string {
+	switch path.Ext(name) {
+	case ".js", ".mjs":
+		return "text/javascript; charset=utf-8"
+	case ".css":
+		return "text/css; charset=utf-8"
+	case ".json":
+		return "application/json"
+	case ".html":
+		return "text/html; charset=utf-8"
+	case ".svg":
+		return "image/svg+xml"
+	case ".webmanifest":
+		return "application/manifest+json"
+	case ".png":
+		return "image/png"
+	}
+	if ct := mime.TypeByExtension(path.Ext(name)); ct != "" {
+		return ct
+	}
+	return http.DetectContentType(data)
 }

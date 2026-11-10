@@ -71,6 +71,7 @@ manifest and take the code out.
 | http → https | `force_https`, name by name | § 8 |
 | HSTS, `X-Frame-Options`, CORS, any header on every answer | `headers` | § 8 |
 | cache pages or assets | `cache` | § 8 |
+| gzip, long cache for hashed bundles (`index-Bx2Yz9Qa.js`) on a static site | already done for every static site: text is gzipped, a bundler's hashed scripts, stylesheets and fonts are `immutable` for a year | nothing to write (docs/manifest.md); a `run` site compresses in its own server |
 | a maintenance page, a site gone (410) | `hold` | § 3 |
 | the page a visitor sees while the site starts or is down | `notice.theme` | docs/manifest.md |
 | another name, its `www.` | `aliases`, `www` (operator only) | § 3 |
