@@ -442,3 +442,59 @@ func TestPartialMessagesBecomeDeltasOfTheMainAgentsTextOnly(t *testing.T) {
 		t.Fatalf("the whole message still comes: %+v", evs)
 	}
 }
+
+// Newer CLIs write system lines the parser does not know, some with
+// fields of another shape than a stream_event's ("event" a string). They
+// were shown in the chat as the agent's words; they must give nothing,
+// and the session they name still counts.
+func TestALineOfTheCLIsOwnIsNeverTheAgentsWords(t *testing.T) {
+	p := &parser{}
+	for _, l := range []string{
+		`{"type":"system","subtype":"ui_invalidate","event":"ui.render","uuid":"a28e6801","session_id":"fe13"}`,
+		`{"type":"system","subtype":"something_new","event":{"nested":true},"session_id":"fe13"}`,
+		`{"type":"brand_new_kind","message":"x","session_id":"fe13"}`,
+		`{"type":"stream_event","event":"not an object","session_id":"fe13"}`,
+	} {
+		if evs, done := p.Line(l); len(evs) != 0 || done {
+			t.Fatalf("%s gave %+v", l, evs)
+		}
+	}
+	if p.sessionID != "fe13" {
+		t.Fatalf("session = %q", p.sessionID)
+	}
+	evs, _ := p.Line(`Not logged in · Please run /login`)
+	if len(evs) != 1 || evs[0].Kind != agent.KindText {
+		t.Fatalf("a plain line is still read: %+v", evs)
+	}
+	evs, _ = p.Line(`{not json at all`)
+	if len(evs) != 1 || evs[0].Kind != agent.KindText {
+		t.Fatalf("a line that only looks like JSON is still read: %+v", evs)
+	}
+	// An error given as a string, not an object, is still the reason.
+	evs, done := p.Line(`{"type":"result","subtype":"error_during_execution","is_error":true,"error":"boom","session_id":"fe13"}`)
+	if !done || len(evs) != 2 || evs[1].Kind != agent.KindError || evs[1].Text != "boom" {
+		t.Fatalf("string error: %+v", evs)
+	}
+}
+
+// The same line in the middle of a real run: the reply is the words alone.
+func TestARunWithAUIInvalidateLineAnswersOnlyTheWords(t *testing.T) {
+	p := &parser{}
+	var texts []string
+	for _, l := range []string{
+		`{"type":"system","subtype":"init","session_id":"s"}`,
+		`{"type":"system","subtype":"ui_invalidate","event":"ui.render","uuid":"u","session_id":"s"}`,
+		`{"type":"assistant","message":{"content":[{"type":"text","text":"Soy Claude."}]},"session_id":"s"}`,
+		`{"type":"result","subtype":"success","result":"Soy Claude.","session_id":"s","total_cost_usd":0.1}`,
+	} {
+		evs, _ := p.Line(l)
+		for _, e := range evs {
+			if e.Kind == agent.KindText {
+				texts = append(texts, e.Text)
+			}
+		}
+	}
+	if len(texts) != 1 || texts[0] != "Soy Claude." {
+		t.Fatalf("texts = %q", texts)
+	}
+}

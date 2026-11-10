@@ -347,10 +347,10 @@ type line struct {
 	Result    string  `json:"result"`
 	Cost      float64 `json:"total_cost_usd"`
 	// Error is where Qwen Code, which prints this same format, puts a
-	// failed turn's reason; Claude Code puts it in Result.
-	Error struct {
-		Message string `json:"message"`
-	} `json:"error"`
+	// failed turn's reason; Claude Code puts it in Result. Raw, like
+	// Event: a line whose field has another shape than expected must
+	// still decode (see Event).
+	Error json.RawMessage `json:"error"`
 	// ParentToolUseID marks a subagent's messages: the Task call that
 	// started it.
 	ParentToolUseID string `json:"parent_tool_use_id"`
@@ -369,14 +369,35 @@ type line struct {
 		ContextWindow int `json:"contextWindow"`
 	} `json:"modelUsage"`
 	// Event is a stream_event's: the API's streaming event as it came
-	// (--include-partial-messages).
-	Event struct {
-		Type  string `json:"type"`
-		Delta struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"delta"`
-	} `json:"event"`
+	// (--include-partial-messages). Kept raw and read only on a
+	// stream_event: newer CLIs send system lines whose "event" is a
+	// string ({"type":"system","subtype":"ui_invalidate","event":
+	// "ui.render"}), and with a struct here the whole line failed to
+	// decode and was shown in the chat as the agent's words.
+	Event json.RawMessage `json:"event"`
+}
+
+// streamEvent is what a stream_event's Event holds.
+type streamEvent struct {
+	Type  string `json:"type"`
+	Delta struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"delta"`
+}
+
+// errorText reads a failed turn's error: an object with a message, or a
+// plain string.
+func errorText(raw json.RawMessage) string {
+	var e struct {
+		Message string `json:"message"`
+	}
+	if json.Unmarshal(raw, &e) == nil {
+		return e.Message
+	}
+	var s string
+	_ = json.Unmarshal(raw, &s)
+	return s
 }
 
 // usage is one model call's tokens. What the call read (fresh, written to
@@ -434,8 +455,22 @@ func (p *parser) Line(raw string) ([]agent.Event, bool) {
 		return nil, false
 	}
 	var l line
-	if !strings.HasPrefix(raw, "{") || json.Unmarshal([]byte(raw), &l) != nil {
+	if !strings.HasPrefix(raw, "{") || !json.Valid([]byte(raw)) {
+		// Not the stream: what the CLI printed plainly ("Not logged
+		// in", a crash) is worth reading.
 		return []agent.Event{{Kind: agent.KindText, Text: raw}}, false
+	}
+	if json.Unmarshal([]byte(raw), &l) != nil {
+		// A JSON line is the CLI talking to its own interface, never the
+		// agent's words: one this parser cannot read is dropped, not
+		// shown. Its session still counts.
+		var head struct {
+			SessionID string `json:"session_id"`
+		}
+		if json.Unmarshal([]byte(raw), &head) == nil && head.SessionID != "" {
+			p.sessionID = head.SessionID
+		}
+		return nil, false
 	}
 	if l.SessionID != "" {
 		p.sessionID = l.SessionID
@@ -511,8 +546,9 @@ func (p *parser) Line(raw string) ([]agent.Event, bool) {
 		// Only the main agent's text: a subagent's is its own, and what
 		// the model thinks or the input of a tool it calls is not the
 		// answer being written.
-		if l.ParentToolUseID == "" && l.Event.Type == "content_block_delta" && l.Event.Delta.Type == "text_delta" && l.Event.Delta.Text != "" {
-			return []agent.Event{{Kind: agent.KindDelta, Text: l.Event.Delta.Text, SessionID: p.sessionID}}, false
+		var e streamEvent
+		if l.ParentToolUseID == "" && json.Unmarshal(l.Event, &e) == nil && e.Type == "content_block_delta" && e.Delta.Type == "text_delta" && e.Delta.Text != "" {
+			return []agent.Event{{Kind: agent.KindDelta, Text: e.Delta.Text, SessionID: p.sessionID}}, false
 		}
 		return nil, false
 	case "rate_limit_event":
@@ -525,7 +561,7 @@ func (p *parser) Line(raw string) ([]agent.Event, bool) {
 		if l.IsError || (l.Subtype != "" && l.Subtype != "success") {
 			text := l.Result
 			if text == "" {
-				text = l.Error.Message
+				text = errorText(l.Error)
 			}
 			if text == "" {
 				text = l.Subtype
