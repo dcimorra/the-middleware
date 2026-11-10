@@ -462,7 +462,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if gz.Accepts(r) {
 		w = &gzipOK{ResponseWriter: w}
 	}
+	if changesSite(r) {
+		// What was asked is most often a line of a manifest; the engine
+		// reads it now, not at its next tick.
+		defer s.opts.Engine.Kick()
+	}
 	s.mux.ServeHTTP(w, r)
+}
+
+// changesSite is a request that may have written a site's manifest or its
+// folder: anything but a read under /sites. Conversations are not: a
+// turn's messages come by the dozen and change no manifest.
+func changesSite(r *http.Request) bool {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
+		return false
+	}
+	rest, ok := strings.CutPrefix(r.URL.Path, Prefix+"/sites")
+	return ok && (rest == "" || rest[0] == '/') && !strings.Contains(rest, "/chat")
 }
 
 // gzipOK marks an answer whose caller takes gzip, for WriteJSON, which

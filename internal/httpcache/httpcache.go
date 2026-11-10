@@ -345,11 +345,20 @@ func varyOf(h http.Header) []string {
 // maxEntry, release lets the requests waiting on the same key go.
 type recorder struct {
 	http.ResponseWriter
-	status   int
-	buf      bytes.Buffer
-	tooBig   bool
-	unkept   bool
-	written  bool
+	status  int
+	buf     bytes.Buffer
+	tooBig  bool
+	unkept  bool
+	written bool
+	// header is the answer's headers as the site sent them, taken when
+	// the status is known and before the writers outside this one see
+	// it. They share the map and change it as the answer passes: the
+	// Web Vitals hook marks the page gzip as it compresses it on the way
+	// out, and read after the handler returned, that mark was kept with
+	// the page the site sent, which is not compressed. Every later
+	// visitor got a plain page announced as gzip, which no browser
+	// shows.
+	header   http.Header
 	keepable func(status int) bool
 	release  func()
 }
@@ -359,6 +368,7 @@ func (r *recorder) settle(code int) {
 		return
 	}
 	r.status, r.written = code, true
+	r.header = r.ResponseWriter.Header().Clone()
 	if r.keepable != nil && !r.keepable(code) {
 		r.unkept = true
 		r.letGo()

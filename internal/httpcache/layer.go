@@ -92,11 +92,16 @@ func (c *Cache) Wrap(next http.Handler, lookup func(r *http.Request) (Site, bool
 		if r.Method != http.MethodGet || rec.tooBig || rec.unkept {
 			return
 		}
-		ttl := ttlFor(rule, w.Header(), rec.status)
+		if rec.header == nil {
+			// Nothing was written: an empty 200 from a handler that
+			// just returned. Its headers are as it left them.
+			rec.header = w.Header().Clone()
+		}
+		ttl := ttlFor(rule, rec.header, rec.status)
 		if ttl <= 0 {
 			return
 		}
-		c.keep(site, k, r, w.Header(), rec.status, rec.buf.Bytes(), ttl)
+		c.keep(site, k, r, rec.header, rec.status, rec.buf.Bytes(), ttl)
 	})
 }
 

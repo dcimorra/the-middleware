@@ -60,6 +60,8 @@ type Engine struct {
 	// that arrives during the shutdown cannot Add to a Wait in progress.
 	wg      sync.WaitGroup
 	closing bool
+	// kick asks Run for a pass now (Kick).
+	kick chan struct{}
 }
 
 // Site is the engine's view of one folder.
@@ -140,7 +142,22 @@ func New(opts Options) *Engine {
 	if opts.Bus == nil {
 		opts.Bus = events.New("")
 	}
-	return &Engine{opts: opts, sites: map[string]*Site{}, aliases: map[string]string{}}
+	return &Engine{opts: opts, sites: map[string]*Site{}, aliases: map[string]string{}, kick: make(chan struct{}, 1)}
+}
+
+// Kick has the engine reconcile now instead of at its next tick. Whoever
+// just wrote a manifest calls it: a site stopped, held or saved from the
+// panel otherwise went on as it was for up to a whole tick, and the page
+// that reloaded after the click showed the state from before it. It never
+// blocks, and kicks that arrive during a pass are one pass more, not many.
+func (e *Engine) Kick() {
+	if e == nil {
+		return
+	}
+	select {
+	case e.kick <- struct{}{}:
+	default:
+	}
 }
 
 // Run adopts what is already running, then reconciles until ctx ends.
@@ -169,6 +186,8 @@ func (e *Engine) Run(ctx context.Context) {
 			e.wg.Wait()
 			return
 		case <-t.C:
+			e.tick(ctx)
+		case <-e.kick:
 			e.tick(ctx)
 		}
 	}

@@ -358,3 +358,55 @@ func TestAHitTheBrowserAlreadyHasIsNotSentAgain(t *testing.T) {
 		t.Errorf("no validator kept: %d", rec.Code)
 	}
 }
+
+// marking is a writer outside the cache that changes the answer's headers
+// as it passes, the way the Web Vitals hook marks a page it compresses.
+type marking struct {
+	http.ResponseWriter
+	done bool
+}
+
+func (m *marking) WriteHeader(code int) {
+	if !m.done {
+		m.done = true
+		m.Header().Set("Content-Encoding", "gzip")
+		m.Header().Del("Content-Length")
+		m.Header().Set("ETag", `W/"changed"`)
+	}
+	m.ResponseWriter.WriteHeader(code)
+}
+
+func (m *marking) Write(p []byte) (int, error) {
+	if !m.done {
+		m.WriteHeader(http.StatusOK)
+	}
+	return m.ResponseWriter.Write(p)
+}
+
+// What is kept is what the site sent. The hooks outside the cache share
+// the header map and change it on the way out; read after the handler
+// returned, their marks were kept with the site's body, and a page kept
+// while Web Vitals compressed it was answered ever after as gzip, plain.
+func TestWhatAnOuterHookDoesToTheAnswerIsNotKeptWithIt(t *testing.T) {
+	o := &origin{header: map[string]string{"Content-Type": "text/html", "ETag": `"v1"`}}
+	_, h, _ := setup([]Rule{{Path: "/", Mode: ModeForce, TTL: 60}}, o)
+	outer := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { h.ServeHTTP(&marking{ResponseWriter: w}, r) })
+	first := get(outer, "/page")
+	if first.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatal("the outer hook did not mark the first answer")
+	}
+	// Asked again past the outer hook: the cache's own answer.
+	hit := get(h, "/page")
+	if hit.Header().Get("X-Middleware-Cache") != "hit" || o.calls.Load() != 1 {
+		t.Fatalf("not a hit: %v, %d calls", hit.Header(), o.calls.Load())
+	}
+	if ce := hit.Header().Get("Content-Encoding"); ce != "" {
+		t.Errorf("the hit says Content-Encoding %q over a plain body", ce)
+	}
+	if et := hit.Header().Get("ETag"); et != `"v1"` {
+		t.Errorf("the hit's ETag is %q, not the site's", et)
+	}
+	if hit.Body.String() != first.Body.String() {
+		t.Errorf("the hit's body: %q", hit.Body.String())
+	}
+}
