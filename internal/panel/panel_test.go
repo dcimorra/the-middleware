@@ -433,3 +433,60 @@ func TestThePanelsTextGoesOutCompressed(t *testing.T) {
 	}
 	t.Logf("the panel: %d bytes as written, %d compressed", plain, packed)
 }
+
+// The shell points at this build's own prefix, where a file is kept for
+// good; the same file by its plain address, or under another build's
+// prefix, is revalidated; and every module the shell announces is there.
+func TestThisBuildsFilesAreKeptForGoodUnderItsOwnPrefix(t *testing.T) {
+	h := Handler()
+	shell := get(t, h, "/sites/example.com")
+	prefix := AssetPrefix + "~" + Version() + "/"
+	body := shell.Body.String()
+	if shell.Header().Get("Cache-Control") != "no-cache" {
+		t.Errorf("the shell: Cache-Control %q", shell.Header().Get("Cache-Control"))
+	}
+	for _, want := range []string{`<script type="module" src="` + prefix + `app.js">`, `<link rel="stylesheet" href="` + prefix + `app.css">`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the shell lacks %s", want)
+		}
+	}
+	links := regexp.MustCompile(`<link rel="modulepreload" href="([^"]+)">`).FindAllStringSubmatch(body, -1)
+	if len(links) < 50 {
+		t.Fatalf("%d modules announced", len(links))
+	}
+	for _, l := range links {
+		rec := get(t, h, l[1])
+		if rec.Code != 200 || !strings.HasPrefix(l[1], prefix) || !strings.HasPrefix(rec.Header().Get("Content-Type"), "text/javascript") {
+			t.Errorf("%s: %d %s", l[1], rec.Code, rec.Header().Get("Content-Type"))
+		}
+		if cc := rec.Header().Get("Cache-Control"); cc != "public, max-age=31536000, immutable" {
+			t.Errorf("%s: Cache-Control %q", l[1], cc)
+		}
+	}
+	// Every module a file imports is announced: one that is not would be
+	// found a round trip later, which is what the list is there to save.
+	announced := map[string]bool{prefix + "app.js": true}
+	for _, l := range links {
+		announced[l[1]] = true
+	}
+	_ = fs.WalkDir(FS, ".", func(p string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && strings.HasSuffix(p, ".js") && p != "sw.js" && !announced[prefix+p] {
+			t.Errorf("%s is not announced", p)
+		}
+		return err
+	})
+	plain := get(t, h, "/assets/app.js")
+	other := get(t, h, "/assets/~000000000000/app.js")
+	mine := get(t, h, prefix+"app.js")
+	if plain.Body.String() != mine.Body.String() || other.Body.String() != mine.Body.String() {
+		t.Error("one file, three bodies")
+	}
+	if plain.Header().Get("Cache-Control") != "no-cache" || other.Header().Get("Cache-Control") != "no-cache" {
+		t.Errorf("kept for good outside this build's prefix: %q, %q", plain.Header().Get("Cache-Control"), other.Header().Get("Cache-Control"))
+	}
+	for _, p := range []string{prefix + "index.html", prefix, AssetPrefix + "~" + Version(), prefix + "missing.js"} {
+		if rec := get(t, h, p); rec.Code != 404 {
+			t.Errorf("%s: %d", p, rec.Code)
+		}
+	}
+}

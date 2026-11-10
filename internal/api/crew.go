@@ -66,7 +66,7 @@ func (s *Server) RegisterCrew(c *crew.Crew, m *chat.Manager) {
 		}
 		return c.List(), nil
 	})
-	s.Handle("POST", base, "Create an agent (body: name, goal, provider?, model?, min_minutes?, max_minutes?, quota_percent?, context_percent?, disk_mb?); it starts off", func(w http.ResponseWriter, r *http.Request) (any, error) {
+	s.Handle("POST", base, "Create an agent (body: name, goal, provider?, model?, min_minutes?, max_minutes?, quota_percent?, disk_mb?); it starts off", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		if err := operator(r); err != nil {
 			return nil, err
 		}

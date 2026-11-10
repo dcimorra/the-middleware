@@ -263,7 +263,7 @@ func (e *Env) printPilot(st autopilot.Status) error {
 		fmt.Fprintf(e.Stdout, "held back: %s\n", st.State.Skipped)
 	}
 	if st.ContextPercent >= 0 {
-		fmt.Fprintf(e.Stdout, "context: %d of %d tokens (%d%%), a new session at %d%%\n", st.State.Context, st.State.Window, st.ContextPercent, l.ContextPercent)
+		fmt.Fprintf(e.Stdout, "context: %d of %d tokens (%d%%); every wake is a new conversation\n", st.State.Context, st.State.Window, st.ContextPercent)
 	}
 	for _, w := range st.Quota {
 		reset := ""
