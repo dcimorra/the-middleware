@@ -29,6 +29,9 @@ func BenchmarkChainStatic(b *testing.B) { benchChain(b, "static.example", "/") }
 
 func BenchmarkChainUpstream(b *testing.B) { benchChain(b, "up.example", "/hello") }
 
+// BenchmarkChainCached is an upstream's page answered by the house cache.
+func BenchmarkChainCached(b *testing.B) { benchChain(b, "cached.example", "/hello") }
+
 func benchChain(b *testing.B, host, path string) {
 	addr := startChain(b)
 	tr := &http.Transport{MaxIdleConnsPerHost: 64}
@@ -96,6 +99,7 @@ func startChain(b *testing.B) string {
 	for name, manifest := range map[string]string{
 		"static.example": `{"version":2,"waf":{"rate":{"requests":100000000,"window":"1s","burst":100000000}}}`,
 		"up.example":     `{"version":2,"waf":{"rate":{"requests":100000000,"window":"1s","burst":100000000}},"upstream":"http://` + upLn.Addr().String() + `"}`,
+		"cached.example": `{"version":2,"waf":{"rate":{"requests":100000000,"window":"1s","burst":100000000}},"cache":{"rules":[{"path":"/","mode":"force","ttl":600}]},"upstream":"http://` + upLn.Addr().String() + `"}`,
 	} {
 		dir := filepath.Join(root, "sites", name)
 		os.MkdirAll(dir, 0o755)
@@ -136,7 +140,7 @@ func startChain(b *testing.B) string {
 				addr := evs[len(evs)-1].Data.Listen
 				// The engine routes on its first tick; wait for both sites.
 				for ready := time.Now().Add(15 * time.Second); time.Now().Before(ready); time.Sleep(50 * time.Millisecond) {
-					if a.Engine.Hosts()["up.example"] != "" && a.Engine.Hosts()["static.example"] != "" {
+					if hs := a.Engine.Hosts(); hs["up.example"] != "" && hs["static.example"] != "" && hs["cached.example"] != "" {
 						return addr
 					}
 				}
