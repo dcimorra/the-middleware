@@ -247,11 +247,20 @@ func classify(ua string) class {
 	return c
 }
 
-func browserName(key string) string {
+// browserNames is the catalogue by key, built once: browserName runs for
+// every request and building the catalogue for each was most of what
+// counting a visit allocated.
+var browserNames = sync.OnceValue(func() map[string]string {
+	m := map[string]string{}
 	for _, o := range security.Browsers() {
-		if o.Key == key {
-			return o.Name
-		}
+		m[o.Key] = o.Name
+	}
+	return m
+})
+
+func browserName(key string) string {
+	if n, ok := browserNames()[key]; ok {
+		return n
 	}
 	return key
 }

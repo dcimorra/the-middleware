@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dcimorra/the-middleware/internal/compress"
 )
 
 func TestThePercentileIsTheOneGoogleRanksBy(t *testing.T) {
@@ -147,7 +149,7 @@ func TestTheScriptGoesIntoTheHeadOfAPageAndNowhereElse(t *testing.T) {
 	}, ""); body != "<p>bare</p>" {
 		t.Fatalf("bare page: %q", body)
 	}
-	if acceptsGzip("gzip;q=0") || !acceptsGzip("deflate, gzip;q=0.5") || acceptsGzip("br") {
+	if compress.AcceptsHeader("gzip;q=0") || !compress.AcceptsHeader("deflate, gzip;q=0.5") || compress.AcceptsHeader("br") {
 		t.Fatal("Accept-Encoding misread")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -583,7 +584,7 @@ func (e *Engine) serviceSnapshotsLocked(s *Site) map[string]ServiceSnapshot {
 		}
 		if svc := s.Services[name]; svc != nil {
 			sn.Starting, sn.Error, sn.Failures, sn.Waiting = svc.starting, svc.lastErr, svc.failures, svc.waiting
-			sn.Health, sn.Checks = svc.health.status, append([]Check(nil), svc.health.checks...)
+			sn.Health, sn.Checks = svc.health.status, slices.Clip(svc.health.checks)
 			if svc.inst != nil {
 				sn.Alive, sn.Port, sn.Revision = true, svc.inst.Port(), svc.inst.Revision()
 			} else if svc.port != 0 {
@@ -625,7 +626,7 @@ func (e *Engine) serviceView(s *Site, sn Snapshot, host, urlPath string) (Snapsh
 	}
 	if svc != nil {
 		sn.Handing, sn.Error, sn.Failures = svc.starting, svc.lastErr, svc.failures
-		sn.Health, sn.Checks = svc.health.status, append([]Check(nil), svc.health.checks...)
+		sn.Health, sn.Checks = svc.health.status, slices.Clip(svc.health.checks)
 		if svc.inst != nil && (svc.spec == nil || !svc.spec.Unpublished) {
 			sn.Port, sn.Alive, sn.Revision = svc.inst.Port(), true, svc.inst.Revision()
 			return sn, true

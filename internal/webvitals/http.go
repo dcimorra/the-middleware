@@ -11,8 +11,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
+
+	"github.com/dcimorra/the-middleware/internal/compress"
 )
 
 // Script measures the page and sends what it measured once, when the
@@ -126,29 +127,11 @@ const maxScan = 256 << 10
 // here with gzip when the browser takes it, so what reaches the browser
 // is as small as it would have been, minus brotli.
 func Inject(w http.ResponseWriter, r *http.Request) (http.ResponseWriter, *http.Request, func()) {
-	gz := acceptsGzip(r.Header.Get("Accept-Encoding"))
+	gz := compress.Accepts(r)
 	r2 := r.Clone(r.Context())
 	r2.Header.Set("Accept-Encoding", "identity")
 	iw := &injector{w: w, gzip: gz}
 	return iw, r2, iw.finish
-}
-
-func acceptsGzip(ae string) bool {
-	for _, part := range strings.Split(ae, ",") {
-		name, params, _ := strings.Cut(strings.TrimSpace(part), ";")
-		if !strings.EqualFold(strings.TrimSpace(name), "gzip") {
-			continue
-		}
-		for _, p := range strings.Split(params, ";") {
-			k, v, _ := strings.Cut(strings.TrimSpace(p), "=")
-			if strings.EqualFold(k, "q") {
-				q, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-				return err == nil && q > 0
-			}
-		}
-		return true
-	}
-	return false
 }
 
 // injector holds the start of an HTML page until </head> is in it, puts

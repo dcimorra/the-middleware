@@ -5,9 +5,11 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"html/template"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -17,11 +19,11 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/dcimorra/the-middleware/internal/fsx"
-
+	"github.com/dcimorra/the-middleware/internal/compress"
 	"github.com/dcimorra/the-middleware/internal/edge"
 	"github.com/dcimorra/the-middleware/internal/engine"
 	"github.com/dcimorra/the-middleware/internal/manifest"
@@ -243,6 +245,7 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, sn engine.Snap
 			pr.Out.Header.Set("X-Forwarded-Proto", scheme(pr.In))
 		},
 		Transport:     h.transport,
+		BufferPool:    copyBuffers,
 		FlushInterval: -1, // streams (SSE, chunked) flush as they come
 		// The manifest's headers replace the site's own. Set on the writer
 		// before the proxy ran, they were sent next to the site's (the
@@ -265,6 +268,16 @@ func (h *Handler) forward(w http.ResponseWriter, r *http.Request, sn engine.Snap
 	}
 	rp.ServeHTTP(w, r)
 }
+
+// copyBuffers lends the proxy its copy buffers. Without a pool every
+// answer forwarded allocated a fresh 32 KiB for the copy, which was a
+// third of everything the request path allocated (BenchmarkChainUpstream).
+var copyBuffers = &bufferPool{p: sync.Pool{New: func() any { b := make([]byte, 32*1024); return &b }}}
+
+type bufferPool struct{ p sync.Pool }
+
+func (b *bufferPool) Get() []byte  { return *b.p.Get().(*[]byte) }
+func (b *bufferPool) Put(v []byte) { b.p.Put(&v) }
 
 // static serves files from the site folder. Paths are cleaned and rooted so
 // "../" cannot leave the folder, and dotfiles (.git, .env) are never served.
@@ -291,45 +304,92 @@ func (h *Handler) static(w http.ResponseWriter, r *http.Request, sn engine.Snaps
 		return
 	}
 	full := filepath.Join(root, filepath.FromSlash(clean))
-	if !insideSite(sn.Dir, full) {
+	f, st, err := openInside(sn.Dir, full)
+	if errors.Is(err, errOutside) {
 		http.NotFound(w, r)
 		return
 	}
-	st, err := os.Stat(full)
 	if err == nil && st.IsDir() {
+		f.Close()
 		if !strings.HasSuffix(r.URL.Path, "/") {
 			http.Redirect(w, r, clean+"/", http.StatusMovedPermanently)
 			return
 		}
 		full = filepath.Join(full, "index.html")
-		st, err = os.Stat(full)
+		f, st, err = openInside(sn.Dir, full)
+		if err == nil && st.IsDir() {
+			f.Close()
+			err = os.ErrNotExist
+		}
 	}
 	if err != nil {
 		if spa {
-			full = filepath.Join(root, "index.html")
-			if _, err := os.Stat(full); err == nil {
-				serveFile(w, r, full, sn)
-				return
+			if f, st, err := openInside(sn.Dir, filepath.Join(root, "index.html")); err == nil {
+				defer f.Close()
+				if !st.IsDir() {
+					serveFile(w, r, "index.html", f, st, sn)
+					return
+				}
 			}
 		}
 		// A site with a 404.html gets it; the rest get the plain one.
-		if custom := filepath.Join(root, "404.html"); fsx.IsFile(custom) {
-			w.WriteHeader(http.StatusNotFound)
-			http.ServeFile(w, r, custom)
-			return
+		if f, st, err := openInside(sn.Dir, filepath.Join(root, "404.html")); err == nil {
+			defer f.Close()
+			if !st.IsDir() {
+				h := w.Header()
+				h.Set("Content-Type", "text/html; charset=utf-8")
+				h.Set("Content-Length", strconv.FormatInt(st.Size(), 10))
+				w.WriteHeader(http.StatusNotFound)
+				if r.Method != http.MethodHead {
+					io.Copy(w, f)
+				}
+				return
+			}
 		}
 		http.NotFound(w, r)
 		return
 	}
-	serveFile(w, r, full, sn)
+	defer f.Close()
+	serveFile(w, r, filepath.Base(full), f, st, sn)
 }
 
-func serveFile(w http.ResponseWriter, r *http.Request, full string, sn engine.Snapshot) {
+// name is the name asked for, not the one a link led to: the type is
+// the one the address promises.
+func serveFile(w http.ResponseWriter, r *http.Request, name string, f *os.File, st os.FileInfo, sn engine.Snapshot) {
 	if sn.Manifest != nil && sn.Manifest.Cache != nil && sn.Manifest.Cache.StaticMaxAge > 0 {
 		w.Header().Set("Cache-Control", "public, max-age="+strconv.Itoa(int(time.Duration(sn.Manifest.Cache.StaticMaxAge).Seconds())))
 	}
-	http.ServeFile(w, r, full)
+	// What http.ServeFile did besides serving: one address per page, so
+	// /docs/index.html and /docs/ are not two pages to a cache.
+	if strings.HasSuffix(r.URL.Path, "/index.html") {
+		http.Redirect(w, r, "./", http.StatusMovedPermanently)
+		return
+	}
+	if ct := compress.TypeByName(name); ct != "" && compress.Compressible(ct) {
+		h := w.Header()
+		h.Add("Vary", "Accept-Encoding")
+		// A range is of the file as it is on disk; a client asking for
+		// one gets the file as it is.
+		if st.Size() >= compress.MinSize && st.Size() <= compress.MaxSize && r.Header.Get("Range") == "" && compress.Accepts(r) {
+			if data, err := staticGzip.Get(filepath.Join(sn.Dir, f.Name()), st.Size(), st.ModTime(), f); err == nil && data != nil {
+				h.Set("Content-Type", ct)
+				h.Set("Content-Encoding", "gzip")
+				http.ServeContent(w, r, name, st.ModTime(), bytes.NewReader(data))
+				return
+			}
+			if _, err := f.Seek(0, io.SeekStart); err != nil {
+				http.Error(w, "cannot read the file", http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+	http.ServeContent(w, r, name, st.ModTime(), f)
 }
+
+// staticGzip keeps the compressed static files of every site, 64 MiB
+// at most: a site's scripts and stylesheets are compressed once per
+// change instead of once per visit.
+var staticGzip = compress.NewCache(64 << 20)
 
 func wwwAlternate(host string) string {
 	if strings.HasPrefix(host, "www.") {
@@ -345,28 +405,64 @@ func scheme(r *http.Request) string {
 	return "http"
 }
 
-// insideSite reports whether full, with its links resolved, is still in the
+// errOutside is a path that, its links resolved, leaves the site folder.
+var errOutside = errors.New("outside the site")
+
+// openInside opens full if, with its links resolved, it is still in the
 // site folder. The site's agent can write a link in public/ to ~/.ssh as
 // easily as an index.html, and a lexical check would serve what it points
-// at. A path that does not exist yet is judged by its nearest existing
-// parent, so a 404 stays a 404.
-func insideSite(siteDir, full string) bool {
-	base, err := filepath.EvalSymlinks(siteDir)
+// at. The file judged is the file served: the path asked for used to be
+// checked and then its folder's index.html, the SPA's fallback or the 404
+// page served wherever they pointed.
+//
+// The open goes through an os.Root at the site's folder, so the kernel
+// walk itself refuses a link out, and a link swapped in after a check is
+// not followed. os.Root also refuses an absolute link that stays inside
+// the site (`public -> /srv/.../sites/x/dist`), which sites have; only
+// then are the links resolved by hand, checked and the real path opened
+// through the root. Resolving every path first was a quarter of the time
+// a static request took (BenchmarkChainStatic). A path that does not
+// exist is a plain not-exist error, whatever folder it would be in.
+func openInside(siteDir, full string) (*os.File, os.FileInfo, error) {
+	rel, err := filepath.Rel(siteDir, full)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+		return nil, nil, errOutside
+	}
+	root, err := os.OpenRoot(siteDir)
 	if err != nil {
-		return false
+		return nil, nil, err
 	}
-	p := full
-	for {
-		if real, err := filepath.EvalSymlinks(p); err == nil {
-			rel, err := filepath.Rel(base, real)
-			return err == nil && rel != ".." && !strings.HasPrefix(rel, "../")
-		}
-		parent := filepath.Dir(p)
-		if parent == p {
-			return false
-		}
-		p = parent
+	defer root.Close()
+	f, err := root.Open(rel)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil, err
 	}
+	if err != nil {
+		base, err := filepath.EvalSymlinks(siteDir)
+		if err != nil {
+			return nil, nil, err
+		}
+		real, err := filepath.EvalSymlinks(full)
+		if err != nil {
+			return nil, nil, err
+		}
+		rel, err := filepath.Rel(base, real)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+			return nil, nil, errOutside
+		}
+		if f, err = root.Open(rel); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return nil, nil, err
+			}
+			return nil, nil, errOutside
+		}
+	}
+	st, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, nil, err
+	}
+	return f, st, nil
 }
 
 func dirExists(p string) bool { st, err := os.Stat(p); return err == nil && st.IsDir() }

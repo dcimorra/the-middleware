@@ -200,6 +200,65 @@ func TestStaticDoesNotFollowALinkOutOfTheSite(t *testing.T) {
 	}
 }
 
+// The file finally served is the one judged, not the path asked for: "/"
+// and "/docs/" were checked as folders and then their index.html was
+// served wherever it pointed, and so were the 404 page and a SPA's
+// fallback. A site's agent can write any of them as a link to ~/.ssh.
+func TestStaticDoesNotFollowALinkedIndexOut(t *testing.T) {
+	outside := t.TempDir()
+	os.WriteFile(filepath.Join(outside, "id_rsa"), []byte("PRIVATE"), 0o600)
+	key := filepath.Join(outside, "id_rsa")
+	serve := func(t *testing.T, manifestJSON string, layout func(dir string), path string) {
+		t.Helper()
+		dir := t.TempDir()
+		layout(dir)
+		m, err := manifest.Parse([]byte(manifestJSON))
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := New(lookupFor(map[string]engine.Snapshot{"a.test": {Domain: "a.test", Dir: dir, Mode: manifest.ModeStatic, Manifest: m}}))
+		resp := do(t, h, "a.test", path)
+		b, _ := io.ReadAll(resp.Body)
+		if strings.Contains(string(b), "PRIVATE") {
+			t.Fatalf("%s served the file outside through a link (%d)", path, resp.StatusCode)
+		}
+	}
+	t.Run("index", func(t *testing.T) {
+		serve(t, `{"version":2}`, func(dir string) { os.Symlink(key, filepath.Join(dir, "index.html")) }, "/")
+	})
+	t.Run("folder index", func(t *testing.T) {
+		serve(t, `{"version":2}`, func(dir string) {
+			os.MkdirAll(filepath.Join(dir, "docs"), 0o755)
+			os.Symlink(key, filepath.Join(dir, "docs", "index.html"))
+		}, "/docs/")
+	})
+	t.Run("404 page", func(t *testing.T) {
+		serve(t, `{"version":2}`, func(dir string) { os.Symlink(key, filepath.Join(dir, "404.html")) }, "/nothing")
+	})
+	t.Run("spa fallback", func(t *testing.T) {
+		serve(t, `{"version":2,"static":{"spa":true}}`, func(dir string) { os.Symlink(key, filepath.Join(dir, "index.html")) }, "/app/route")
+	})
+	t.Run("root is a link out", func(t *testing.T) {
+		serve(t, `{"version":2,"static":{"root":"web"}}`, func(dir string) { os.Symlink(outside, filepath.Join(dir, "web")) }, "/id_rsa")
+	})
+}
+
+// A link that stays inside the site is followed: a built site often links
+// its current release into public/.
+func TestStaticFollowsALinkInsideTheSite(t *testing.T) {
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "releases", "r1"), 0o755)
+	os.WriteFile(filepath.Join(dir, "releases", "r1", "index.html"), []byte("<p>r1</p>"), 0o644)
+	os.Symlink(filepath.Join(dir, "releases", "r1"), filepath.Join(dir, "public"))
+	m, _ := manifest.Parse([]byte(`{"version":2}`))
+	h := New(lookupFor(map[string]engine.Snapshot{"a.test": {Domain: "a.test", Dir: dir, Mode: manifest.ModeStatic, Manifest: m}}))
+	resp := do(t, h, "a.test", "/")
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 || !strings.Contains(string(b), "r1") {
+		t.Fatalf("a link inside the site was not followed: %d %q", resp.StatusCode, b)
+	}
+}
+
 func TestADeadInstanceGetsTheUnavailablePage(t *testing.T) {
 	h := New(lookupFor(map[string]engine.Snapshot{"a.test": {Domain: "a.test", Mode: manifest.ModeRun, Alive: false}}))
 	if resp := do(t, h, "a.test", "/"); resp.StatusCode != 503 {

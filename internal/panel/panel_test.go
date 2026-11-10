@@ -1,7 +1,10 @@
 package panel
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/json"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -363,5 +366,51 @@ func TestRandomSiteNamesFitInOneLabel(t *testing.T) {
 	}
 	if n := most*longest + most - 1; n > 63 {
 		t.Errorf("%d words of %d letters make a %d-character label; DNS allows 63", most, longest, n)
+	}
+}
+
+// The panel's text goes compressed to a browser that takes gzip, under
+// a tag of its own, and plain to one that does not.
+func TestAssetsAreCompressedForABrowserThatTakesGzip(t *testing.T) {
+	h := Handler()
+	ask := func(path, enc, match string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if enc != "" {
+			req.Header.Set("Accept-Encoding", enc)
+		}
+		if match != "" {
+			req.Header.Set("If-None-Match", match)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	plain := ask("/assets/app.css", "", "")
+	zipped := ask("/assets/app.css", "gzip, deflate, br", "")
+	if zipped.Header().Get("Content-Encoding") != "gzip" || plain.Header().Get("Content-Encoding") != "" {
+		t.Fatalf("encodings: %q / %q", zipped.Header().Get("Content-Encoding"), plain.Header().Get("Content-Encoding"))
+	}
+	if zipped.Header().Get("ETag") == plain.Header().Get("ETag") {
+		t.Fatal("both representations carry one tag")
+	}
+	if !strings.Contains(zipped.Header().Get("Vary"), "Accept-Encoding") || !strings.Contains(plain.Header().Get("Vary"), "Accept-Encoding") {
+		t.Fatal("no Vary: Accept-Encoding")
+	}
+	zr, err := gzip.NewReader(zipped.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	back, _ := io.ReadAll(zr)
+	if !bytes.Equal(back, plain.Body.Bytes()) {
+		t.Fatal("the compressed stylesheet does not unpack to the plain one")
+	}
+	if zipped.Header().Get("Content-Length") == "" {
+		t.Fatal("no length")
+	}
+	if again := ask("/assets/app.css", "gzip", zipped.Header().Get("ETag")); again.Code != http.StatusNotModified {
+		t.Fatalf("the compressed tag did not save the download: %d", again.Code)
+	}
+	if png := ask("/assets/icons/apple-touch-icon.png", "gzip", ""); png.Header().Get("Content-Encoding") != "" {
+		t.Fatal("an image was compressed")
 	}
 }

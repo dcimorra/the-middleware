@@ -118,7 +118,11 @@ Exactly one of these decides, checked in this order:
 4. `upstream` → a process the middleware does not supervise (a fixed port
    someone else owns). Proxied as is.
 5. `static` → files from `static.root` (default `public`, then the folder
-   itself). `spa: true` serves `index.html` for unknown paths.
+   itself). `spa: true` serves `index.html` for unknown paths. Text files
+   (HTML, CSS, JavaScript, JSON, SVG, XML; 1 KiB to 8 MiB) go gzipped to a
+   browser that takes it, compressed once per change and kept in memory
+   (64 MiB for every site), with `Vary: Accept-Encoding`; a request for a
+   range gets the file as it is.
 
 A folder with no `site.json` is **not served** and the panel lists it as
 "unmanaged", because a folder that serves silently and a folder that is
@@ -322,6 +326,11 @@ starts on it, written down in `data/docker-volumes.json` (docker cannot add
 a label to a volume that exists), and is refused to the second. A container
 whose name another site's running container already has (a worker's port is
 written in its manifest) is neither removed to make room nor adopted.
+
+A static file is judged where it really is, links resolved, and that is the
+file served: a folder's `index.html`, the SPA fallback and `404.html` are
+judged too, so a link from any of them out of the site is a 404. Links that
+stay inside the site, relative or absolute, are followed.
 
 ## `env_from_file`: deploying by pointer
 

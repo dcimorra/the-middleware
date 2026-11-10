@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -284,7 +285,7 @@ func (e *Engine) Restart(ctx context.Context, domain string) error {
 
 func (e *Engine) snapshot(s *Site) Snapshot {
 	sn := Snapshot{Domain: s.Domain, Dir: s.Dir, Mode: s.Mode, Manifest: s.Manifest, Handing: s.handing, Error: s.Err,
-		Health: s.health.status, Checks: append([]Check(nil), s.health.checks...), Missing: e.missingLocked(s)}
+		Health: s.health.status, Checks: slices.Clip(s.health.checks), Missing: e.missingLocked(s)}
 	if sn.Error == "" {
 		sn.Error = s.lastErr
 		sn.Failures = s.failures

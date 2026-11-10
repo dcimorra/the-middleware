@@ -276,9 +276,14 @@ func SetLocal(root string, open bool, httpAddr, dnsAddr string) (State, error) {
 // without a signal, a tick, or a restart. Size is compared along with
 // mtime because two writes inside one timestamp tick are possible on a
 // filesystem with coarse mtimes.
+//
+// The stat is taken outside the lock and the lock is a read lock while
+// nothing changed: every request of every site asks this, and with the
+// syscall made under one mutex the whole request path queued behind it
+// on every core.
 type stateFile struct {
 	path  string
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	mtime int64
 	size  int64
 	state State
@@ -286,11 +291,20 @@ type stateFile struct {
 }
 
 func (f *stateFile) get() State {
+	st, statErr := os.Stat(f.path)
+	if statErr == nil {
+		f.mu.RLock()
+		if f.ok && st.ModTime().UnixNano() == f.mtime && st.Size() == f.size {
+			s := f.state
+			f.mu.RUnlock()
+			return s
+		}
+		f.mu.RUnlock()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	st, err := os.Stat(f.path)
-	if err != nil {
-		if f.ok && os.IsNotExist(err) {
+	if statErr != nil {
+		if f.ok && os.IsNotExist(statErr) {
 			// The file was removed: defaults again, as a fresh install.
 			f.state, f.mtime, f.size = DefaultState(), 0, 0
 		}

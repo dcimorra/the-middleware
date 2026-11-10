@@ -16,8 +16,11 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/dcimorra/the-middleware/internal/compress"
 )
 
 //go:embed ui
@@ -53,12 +56,13 @@ func init() {
 // and never keeps a stale app.js across an upgrade. There is no build step
 // that could put a hash in the file name, so the hash goes in the ETag.
 func Handler() http.Handler {
-	return &handler{etags: map[string]string{}}
+	return &handler{etags: map[string]string{}, gz: map[string][]byte{}}
 }
 
 type handler struct {
 	mu    sync.Mutex
 	etags map[string]string
+	gz    map[string][]byte
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -105,44 +109,80 @@ func (h *handler) serve(w http.ResponseWriter, r *http.Request, name string) {
 		return
 	}
 	tag := h.etag(name, data)
+	gz := len(data) >= compress.MinSize && compress.Compressible(contentType(name, data))
+	if gz {
+		w.Header().Add("Vary", "Accept-Encoding")
+		if gz = compress.Accepts(r); gz {
+			// Another representation, so another tag: a cache that held
+			// the plain one must not answer a 304 for the compressed.
+			tag = strings.TrimSuffix(tag, `"`) + `-gz"`
+		}
+	}
 	if match := r.Header.Get("If-None-Match"); match != "" && strings.Contains(match, tag) {
 		w.Header().Set("ETag", tag)
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	// Go's table knows these, but a stripped container may ship a bare
-	// /etc/mime.types, and a module script served as text/plain is refused
-	// by the browser. The common ones are pinned; the rest ask the table.
-	var ct string
-	switch path.Ext(name) {
-	case ".js", ".mjs":
-		ct = "text/javascript; charset=utf-8"
-	case ".css":
-		ct = "text/css; charset=utf-8"
-	case ".json":
-		ct = "application/json"
-	case ".html":
-		ct = "text/html; charset=utf-8"
-	case ".svg":
-		ct = "image/svg+xml"
-	case ".webmanifest":
-		ct = "application/manifest+json"
-	case ".png":
-		ct = "image/png"
-	default:
-		ct = mime.TypeByExtension(path.Ext(name))
-		if ct == "" {
-			ct = http.DetectContentType(data)
-		}
-	}
+	ct := contentType(name, data)
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("ETag", tag)
 	w.Header().Set("Cache-Control", "no-cache")
+	if gz {
+		data = h.gzipped(name, data)
+		w.Header().Set("Content-Encoding", "gzip")
+	}
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	if r.Method == http.MethodHead {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 	_, _ = w.Write(data)
+}
+
+// gzipped is an asset compressed, once per process: the files are in
+// the binary and never change under it. The panel is about 1.4 MB of
+// scripts, styles and strings, sent whole on every cold load through a
+// door nobody else compresses (80/443, the VPN, the bench) and to
+// cloudflared through the tunnel.
+func (h *handler) gzipped(name string, data []byte) []byte {
+	h.mu.Lock()
+	z, ok := h.gz[name]
+	h.mu.Unlock()
+	if ok {
+		return z
+	}
+	z = compress.Bytes(data)
+	h.mu.Lock()
+	h.gz[name] = z
+	h.mu.Unlock()
+	return z
+}
+
+// contentType is an asset's type. Go's table knows these, but a stripped
+// container may ship a bare /etc/mime.types, and a module script served
+// as text/plain is refused by the browser. The common ones are pinned;
+// the rest ask the table.
+func contentType(name string, data []byte) string {
+	switch path.Ext(name) {
+	case ".js", ".mjs":
+		return "text/javascript; charset=utf-8"
+	case ".css":
+		return "text/css; charset=utf-8"
+	case ".json":
+		return "application/json"
+	case ".html":
+		return "text/html; charset=utf-8"
+	case ".svg":
+		return "image/svg+xml"
+	case ".webmanifest":
+		return "application/manifest+json"
+	case ".png":
+		return "image/png"
+	}
+	if ct := mime.TypeByExtension(path.Ext(name)); ct != "" {
+		return ct
+	}
+	return http.DetectContentType(data)
 }
 
 func (h *handler) etag(name string, data []byte) string {
