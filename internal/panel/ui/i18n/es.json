@@ -1122,6 +1122,8 @@
   "dash.nameHint": "Cómo aparece este nodo en los paneles de los demás. Hasta 40 caracteres.",
   "dash.makeCode": "Generar el código",
   "dash.codeExpires": "Caduca a las {at}.",
+  "dash.copyCloudConfig": "Copiar como cloud-config",
+  "dash.cloudConfigHint": "Para un servidor nuevo: pégalo como «cloud config» o «user data» al crear la máquina (Hetzner, DigitalOcean, AWS, Oracle… cualquiera con cloud-init). Instala middleware y se une a esta red él solo en el primer arranque. Crea el servidor en seguida: el código que lleva dentro caduca con este.",
   "dash.code": "Código de invitación",
   "dash.codeNeeded": "Primero pega el código.",
   "dash.howTitle": "Cómo funciona el enlace",

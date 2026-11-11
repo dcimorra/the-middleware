@@ -99,9 +99,12 @@ chmod 0755 "$TMP/$NAME"
 # Not exec'd, so the trap above removes the download afterwards.
 if [ -t 0 ]; then
   "$TMP/$NAME" install "$@"
-elif [ -c /dev/tty ]; then
+elif (: </dev/tty) 2>/dev/null; then
   # Piped through sh, stdin is the script. sudo still needs a terminal for
   # its password prompt, so reattach it; the confirmation is skipped.
+  # Opened, not looked at: /dev/tty is there as a device with no terminal
+  # behind it too (cloud-init, a CI job, cron), where opening it fails and
+  # `set -e` ended the script here, after the download, with no word.
   "$TMP/$NAME" install --yes "$@" </dev/tty
 else
   "$TMP/$NAME" install --yes "$@"

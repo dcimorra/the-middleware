@@ -233,7 +233,19 @@ its address for the mesh; without it, the house's guess (its public address
 and UDP 51821), and behind NAT it only calls out. A node that joins with a
 public address gets the ports door opened (80 and 443) and its new sites
 published there, since it has no tunnel of its own; behind NAT, or with a
-door already chosen on it, its doors stay as they were. A node that already has a
+door already chosen on it, its doors stay as they were.
+
+For a server that is being rented, the invitation dialog also offers
+**Copy as cloud-config**: a cloud-init file with the code inside. Pasted
+as the machine's "cloud config" or "user data" when it is created
+(Hetzner, DigitalOcean, AWS, Oracle, anything with cloud-init), the server
+creates a user `mw`, downloads the newest release and checks its sha256,
+installs, and joins on its first boot; then it installs the browser and
+the system's updates. It has to be created within the code's fifteen
+minutes. If the code expired, everything is installed all the same and
+`sudo -u mw middleware setup --join <code>` with a new one joins it. What
+it did is in `/var/log/middleware-bootstrap.log`. The file is
+[`internal/installer/cloud-config.yaml`](../internal/installer/cloud-config.yaml). A node that already has a
 domain can drop it from the Dashboard (its card, **Network only**): its
 record and tunnel route are retired. It is refused outside a network, or
 with no other node answering, because the panel would then be reached only

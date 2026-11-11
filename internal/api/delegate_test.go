@@ -193,6 +193,10 @@ func TestADelegateWorksOnASiteOfAnotherNodeWithoutSeeingIt(t *testing.T) {
 	a, am := nodeFixture(t, "alpha", port)
 	c, cm := nodeFixture(t, "gamma", port)
 	_, inv := a.call("POST", "/api/v1/nodes/invite", map[string]string{"endpoint": "198.51.100.1:51821"})
+	// The same code inside the cloud-init file a new server boots with.
+	if cc, _ := inv["cloud_config"].(string); !strings.HasPrefix(cc, "#cloud-config\n") || !strings.Contains(cc, `MIDDLEWARE_JOIN="`+inv["code"].(string)+`"`) {
+		t.Fatalf("the invitation's cloud-config does not carry its code: %.80q", cc)
+	}
 	if res, out := c.call("POST", "/api/v1/nodes/join", map[string]string{"code": inv["code"].(string)}); res.StatusCode != 200 {
 		t.Fatalf("join: %d %s", res.StatusCode, text(out))
 	}

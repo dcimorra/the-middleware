@@ -1122,6 +1122,8 @@
   "dash.nameHint": "How this node appears in the others' panels. Up to 40 characters.",
   "dash.makeCode": "Make the code",
   "dash.codeExpires": "Expires at {at}.",
+  "dash.copyCloudConfig": "Copy as cloud-config",
+  "dash.cloudConfigHint": "For a new server: paste it as the “cloud config” or “user data” when you create the machine (Hetzner, DigitalOcean, AWS, Oracle… anything with cloud-init). It installs middleware and joins this network by itself on first boot. Create the server right away: the code inside expires with this one.",
   "dash.code": "Invitation code",
   "dash.codeNeeded": "Paste the code first.",
   "dash.howTitle": "How linking works",
