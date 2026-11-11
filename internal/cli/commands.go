@@ -1134,5 +1134,38 @@ func (e *Env) joinNetwork(root, code, endpoint string) error {
 		where = "no public endpoint: it calls out"
 	}
 	fmt.Fprintf(e.Stdout, "Joined the network of %s (%d other nodes; this one at %s).\nManage it from their panels: Dashboard, this node's card. It has no domain and no operator of its own; `middleware setup --domain <name>` gives it one later.\n", out.Inviter, out.Members, where)
+	e.openPortsForJoined(cl, root, endpoint)
 	return nil
+}
+
+// openPortsForJoined opens 80 and 443 on a node that has just joined a
+// network with a public address, and puts its new sites there. A fresh
+// installation has only the tunnel door open (DefaultState: an installer
+// cannot assume a public address), and `setup --domain` is what chooses
+// a door; a node that joins never runs it. So every node added to a
+// network sat with the ports closed and "tunnel" as the door of its new
+// sites, with no tunnel configured on it: a site moved there was
+// published on a door nothing reached. The tunnel door is left open: it
+// is the loopback listener, which is also how the other nodes' hops
+// through the mesh come in.
+// Only when nobody decided yet, and never behind a NAT (no endpoint),
+// where 80 and 443 reach nothing. A failure is said and stops nothing:
+// the node is in the network, and the Inbound screen does the same.
+func (e *Env) openPortsForJoined(cl *Client, root, endpoint string) {
+	if endpoint == "" {
+		return
+	}
+	st, err := inbound.LoadState(root)
+	if err != nil || st.Ports.Open || st.NewSites != "" || len(st.Domains) > 0 {
+		return
+	}
+	if err := cl.Do("POST", "/api/v1/inbound/doors/"+string(inbound.Ports), map[string]any{"open": true}, nil); err != nil {
+		fmt.Fprintf(e.Stdout, "Ports 80 and 443 were not opened (%v): open them on the Inbound screen.\n", err)
+		return
+	}
+	if err := cl.Do("PUT", "/api/v1/inbound/publishing", map[string]any{"new_sites": inbound.Ports}, nil); err != nil {
+		fmt.Fprintf(e.Stdout, "Ports 80 and 443 are open, but new sites still go to the tunnel (%v): change it on the Inbound screen.\n", err)
+		return
+	}
+	fmt.Fprintln(e.Stdout, "Ports 80 and 443 are open and new sites are published on them.")
 }
