@@ -10,6 +10,7 @@ import (
 
 	"github.com/dcimorra/the-middleware/internal/auth"
 	"github.com/dcimorra/the-middleware/internal/events"
+	"github.com/dcimorra/the-middleware/internal/installer"
 	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/nodes"
 )
@@ -156,7 +157,14 @@ func (s *Server) nodesInvite(w http.ResponseWriter, r *http.Request) (any, error
 		return nil, meshErr(err)
 	}
 	s.opts.Bus.Emit(events.Event{Type: "node.invited", Actor: "operator", Message: "an invitation to join the network was made", Data: map[string]any{"expires": exp}})
-	return map[string]any{"code": code, "expires": exp}, nil
+	out := map[string]any{"code": code, "expires": exp}
+	// The same code inside a cloud-init file, for a server that is being
+	// rented now: pasted where the provider asks for its user data, the
+	// machine installs the house and joins by itself.
+	if cc, err := installer.CloudConfig(code); err == nil {
+		out["cloud_config"] = cc
+	}
+	return out, nil
 }
 
 func (s *Server) nodesJoin(w http.ResponseWriter, r *http.Request) (any, error) {

@@ -1,0 +1,141 @@
+#cloud-config
+#
+# middleware: a new server that installs the house and joins its network
+# by itself on first boot. Paste the whole file as the server's "cloud
+# config" / "user data" when creating it (Hetzner, DigitalOcean, AWS,
+# Oracle, any provider with cloud-init), and create the server right away:
+# the invitation code inside works once, for fifteen minutes.
+#
+# Provider firewall, if there is one: UDP 51821 (the network between the
+# nodes), TCP 22, TCP 80 and 443.
+# Images: Ubuntu 24.04 or Debian 12, x86 or ARM.
+# What it did is in /var/log/middleware-bootstrap.log
+
+users:
+  - default
+  - name: mw                      # the user middleware runs as (never root)
+    gecos: Middleware
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: ALL=(ALL) NOPASSWD:ALL
+
+package_update: true
+packages:
+  - curl
+  - ca-certificates
+
+write_files:
+  - path: /etc/middleware-bootstrap.env
+    permissions: "0600"
+    content: |
+      # The invitation code (Dashboard -> Invite a node).
+      MIDDLEWARE_JOIN="@@MIDDLEWARE_JOIN@@"
+      # Empty = the newest release. To pin one: v2.0.0-alpha.139
+      MIDDLEWARE_VERSION=""
+      # Empty = the house works out the public address and UDP 51821.
+      # Or "203.0.113.10:51821".
+      MIDDLEWARE_ENDPOINT=""
+
+  # SSH with keys only. root still signs in with its key; to close that,
+  # change the second line to "PermitRootLogin no" (sign in as mw).
+  - path: /etc/ssh/sshd_config.d/10-middleware.conf
+    permissions: "0644"
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin prohibit-password
+      KbdInteractiveAuthentication no
+
+  # apt waits for its lock instead of failing when the first boot's
+  # unattended upgrades hold it.
+  - path: /etc/apt/apt.conf.d/90-middleware-lock-timeout
+    permissions: "0644"
+    content: |
+      DPkg::Lock::Timeout "600";
+
+  - path: /usr/local/sbin/middleware-bootstrap.sh
+    permissions: "0755"
+    content: |
+      #!/bin/sh
+      # Downloads the newest release, checks its sha256, installs as the
+      # user mw (the installer uses sudo where it must) and joins the
+      # network. Not scripts/install.sh: this runs with no terminal, and
+      # the join has to come before anything slow.
+      set -eu
+      . /etc/middleware-bootstrap.env
+      OPERATOR=mw
+      REPO=dcimorra/the-middleware
+      export DEBIAN_FRONTEND=noninteractive
+
+      # The SSH keys the provider gave root work for mw too.
+      if [ -s /root/.ssh/authorized_keys ] && [ ! -s "/home/$OPERATOR/.ssh/authorized_keys" ]; then
+        install -d -m 700 -o "$OPERATOR" -g "$OPERATOR" "/home/$OPERATOR/.ssh"
+        install -m 600 -o "$OPERATOR" -g "$OPERATOR" /root/.ssh/authorized_keys "/home/$OPERATOR/.ssh/authorized_keys"
+      fi
+      systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+
+      case "$(uname -m)" in
+        x86_64|amd64) ARCH=amd64 ;;
+        aarch64|arm64) ARCH=arm64 ;;
+        *) echo "no release binary for $(uname -m)"; exit 1 ;;
+      esac
+
+      # The newest by version, prereleases included (as scripts/install.sh).
+      TAG="${MIDDLEWARE_VERSION:-}"
+      if [ -z "$TAG" ]; then
+        TAG="$(curl -fsSL --retry 5 --retry-delay 3 "https://api.github.com/repos/$REPO/releases?per_page=100" \
+          | sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\(v[0-9][^"]*\)".*/\1/p' \
+          | awk '{ s = $0; sub(/^v/, "", s); pre = ""; i = index(s, "-");
+                   if (i) { pre = substr(s, i + 1); s = substr(s, 1, i - 1) }
+                   split(s, a, "."); np = split(pre, p, ".");
+                   printf "%08d%08d%08d %d %-12s %08d %s\n", a[1], a[2], a[3], (pre == ""), p[1], p[2], $0 }' \
+          | sort | tail -n 1 | awk '{ print $NF }')"
+      fi
+      [ -n "$TAG" ] || { echo "could not tell the newest release"; exit 1; }
+
+      NAME="middleware-linux-$ARCH"
+      BASE="https://github.com/$REPO/releases/download/$TAG"
+      TMP="$(mktemp -d)"
+      chmod 755 "$TMP"
+      echo "Downloading $BASE/$NAME"
+      curl -fsSL --retry 5 --retry-delay 3 -o "$TMP/$NAME" "$BASE/$NAME"
+      curl -fsSL --retry 5 --retry-delay 3 -o "$TMP/$NAME.sha256" "$BASE/$NAME.sha256"
+      WANT="$(cut -d' ' -f1 "$TMP/$NAME.sha256")"
+      GOT="$(sha256sum "$TMP/$NAME" | cut -d' ' -f1)"
+      [ -n "$WANT" ] && [ "$WANT" = "$GOT" ] || { echo "checksum mismatch: not installing"; exit 1; }
+      chmod 755 "$TMP/$NAME"
+
+      # The installer does the rest: packages, docker, nvm, fail2ban, what
+      # the sites' jails need, the units, and at the end the join.
+      # No browser yet: joining comes first, before the code expires.
+      set -- install --yes --browser no
+      case "$MIDDLEWARE_JOIN" in
+        "") echo "No invitation code: installing without joining." ;;
+        *) set -- "$@" --join "$MIDDLEWARE_JOIN"
+           [ -z "${MIDDLEWARE_ENDPOINT:-}" ] || set -- "$@" --endpoint "$MIDDLEWARE_ENDPOINT" ;;
+      esac
+      cd /
+      if sudo -H -u "$OPERATOR" "$TMP/$NAME" "$@" </dev/null; then
+        echo "MIDDLEWARE: installed."
+      else
+        echo "MIDDLEWARE: the installer ended with an error (most often: the code expired or was used)."
+        echo "Make another in a node's panel (Dashboard -> Invite a node) and run here:"
+        echo "  sudo -u $OPERATOR middleware setup --join <code>"
+      fi
+      rm -rf "$TMP"
+      # The code opens once: it is not left written here.
+      sed -i 's/^MIDDLEWARE_JOIN=.*/MIDDLEWARE_JOIN=""/' /etc/middleware-bootstrap.env
+
+      # Joined, now what takes long: the browser for the sites' pictures
+      # and the system's updates.
+      if [ -x /usr/local/bin/middleware ]; then
+        sudo -H -u "$OPERATOR" /usr/local/bin/middleware install --requirements --browser yes </dev/null || true
+        sudo -H -u "$OPERATOR" /usr/local/bin/middleware doctor </dev/null || true
+      fi
+      apt-get -y -o Dpkg::Options::=--force-confold upgrade || true
+      if [ -f /var/run/reboot-required ]; then
+        echo "Restarting in a minute to apply the updates."
+        shutdown -r +1
+      fi
+
+runcmd:
+  - /usr/local/sbin/middleware-bootstrap.sh >> /var/log/middleware-bootstrap.log 2>&1

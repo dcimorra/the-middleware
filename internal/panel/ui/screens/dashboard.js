@@ -390,7 +390,26 @@ export function dashboardScreen() {
         const box = h("textarea", { class: "mono code-box", rows: "4", readonly: true }, r.code);
         const cp = h("button", { type: "button", class: "btn sm" }, icon("copy"), t("common.copy"));
         cp.addEventListener("click", async () => { if (await copy(r.code)) toast(t("common.copied"), "ok"); });
-        clear(out).append(box, h("div", { class: "row" }, cp, h("span", { class: "small muted" }, t("dash.codeExpires", { at: new Date(r.expires).toLocaleTimeString() }))));
+        const row = h("div", { class: "row" }, cp);
+        const more = [];
+        // For a server that is being rented now: the same code inside a
+        // cloud-init file. Where the page cannot write to the clipboard
+        // (plain http through an SSH tunnel), the file takes the box's
+        // place to be selected by hand.
+        if (r.cloud_config) {
+          const cc = h("button", { type: "button", class: "btn sm" }, icon("copy"), t("dash.copyCloudConfig"));
+          cc.addEventListener("click", async () => {
+            if (await copy(r.cloud_config)) { toast(t("common.copied"), "ok"); return; }
+            box.value = r.cloud_config;
+            box.rows = 12;
+            box.select();
+            toast(t("common.copyFailed"), "bad");
+          });
+          row.append(cc);
+          more.push(h("p", { class: "small muted" }, t("dash.cloudConfigHint")));
+        }
+        row.append(h("span", { class: "small muted" }, t("dash.codeExpires", { at: new Date(r.expires).toLocaleTimeString() })));
+        clear(out).append(box, row, ...more);
         box.select();
         load();
         return false;
