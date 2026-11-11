@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/dcimorra/the-middleware/internal/inbound"
 	"github.com/dcimorra/the-middleware/internal/settings"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -353,6 +355,21 @@ func TestSetupJoinEntersTheNetworkThroughTheService(t *testing.T) {
 		json.NewDecoder(r.Body).Decode(&got)
 		w.Write([]byte(`{"ok":true,"inviter":"alpha","members":2}`))
 	})
+	var asked []string
+	mux.HandleFunc("POST /api/v1/inbound/doors/{door}", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Open bool `json:"open"`
+		}
+		json.NewDecoder(r.Body).Decode(&b)
+		asked = append(asked, fmt.Sprintf("door %s %v", r.PathValue("door"), b.Open))
+		w.Write([]byte(`{}`))
+	})
+	mux.HandleFunc("PUT /api/v1/inbound/publishing", func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		json.NewDecoder(r.Body).Decode(&b)
+		asked = append(asked, fmt.Sprintf("new sites %v", b["new_sites"]))
+		w.Write([]byte(`{}`))
+	})
 	ts := httptest.NewServer(mux)
 	defer ts.Close()
 	cl := &Client{Base: ts.URL, HTTP: ts.Client(), Via: ts.URL}
@@ -366,5 +383,62 @@ func TestSetupJoinEntersTheNetworkThroughTheService(t *testing.T) {
 	}
 	if !strings.Contains(out, "network of alpha") || !strings.Contains(out, "no operator of its own") {
 		t.Fatalf("output: %s", out)
+	}
+	// A node with a public address and no door chosen gets 80 and 443,
+	// and its new sites go there: it has no tunnel to be published on.
+	if want := []string{"door ports true", "new sites ports"}; !slices.Equal(asked, want) {
+		t.Fatalf("after joining, asked %v, want %v", asked, want)
+	}
+	if !strings.Contains(out, "Ports 80 and 443 are open") {
+		t.Fatalf("output: %s", out)
+	}
+}
+
+// A node that joins keeps its doors as they are when 80 and 443 would
+// reach nothing (behind a NAT, no endpoint) or when a door was already
+// chosen on it: joining is not a second opinion on the Inbound screen.
+func TestSetupJoinLeavesTheDoorsWhenThereIsNothingToDecide(t *testing.T) {
+	for name, tc := range map[string]struct {
+		suggested string
+		prepare   func(t *testing.T, root string)
+	}{
+		"behind a nat": {"", func(*testing.T, string) {}},
+		"door already chosen": {"203.0.113.9:51821", func(t *testing.T, root string) {
+			st := inbound.DefaultState()
+			st.NewSites = inbound.Tunnel
+			if err := os.MkdirAll(filepath.Join(root, "data"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := inbound.SaveState(root, st); err != nil {
+				t.Fatal(err)
+			}
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var asked []string
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /api/v1/nodes", func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprintf(w, `{"suggested_endpoint":%q}`, tc.suggested)
+			})
+			mux.HandleFunc("POST /api/v1/nodes/join", func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(`{"ok":true,"inviter":"alpha","members":2}`))
+			})
+			mux.HandleFunc("/api/v1/inbound/", func(w http.ResponseWriter, r *http.Request) {
+				asked = append(asked, r.Method+" "+r.URL.Path)
+				w.Write([]byte(`{}`))
+			})
+			ts := httptest.NewServer(mux)
+			defer ts.Close()
+			cl := &Client{Base: ts.URL, HTTP: ts.Client(), Via: ts.URL}
+			root := t.TempDir()
+			tc.prepare(t, root)
+			out, err := run(t, cl, "setup", "--root", root, "--join", "CODE123")
+			if err != nil {
+				t.Fatalf("%v: %s", err, out)
+			}
+			if len(asked) != 0 || strings.Contains(out, "Ports 80") {
+				t.Fatalf("the doors were touched: %v\n%s", asked, out)
+			}
+		})
 	}
 }

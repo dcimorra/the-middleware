@@ -230,7 +230,10 @@ invitation code (or `middleware install --join <code>`, or
 has no domain and no operator of its own: it is managed from the network's
 panels, and nothing of it is public but its sites. `--endpoint ip:port` is
 its address for the mesh; without it, the house's guess (its public address
-and UDP 51821), and behind NAT it only calls out. A node that already has a
+and UDP 51821), and behind NAT it only calls out. A node that joins with a
+public address gets the ports door opened (80 and 443) and its new sites
+published there, since it has no tunnel of its own; behind NAT, or with a
+door already chosen on it, its doors stay as they were. A node that already has a
 domain can drop it from the Dashboard (its card, **Network only**): its
 record and tunnel route are retired. It is refused outside a network, or
 with no other node answering, because the panel would then be reached only

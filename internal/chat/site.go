@@ -732,6 +732,14 @@ func (m *Manager) scan() map[string]askState {
 		m.asks[f] = a
 	}
 	out := map[string]askState{}
+	// A conversation is listed only where it can be opened: its site's
+	// folder is on this node. A site that moved to another node leaves
+	// its conversations here (an archive keeps what the house knew of the
+	// site), and one that comes back sets them aside as
+	// "<domain>.before-…" (relocate): both were listed as asking, twice
+	// and three times over the one that travelled with the site, and
+	// answered "no such site" when opened.
+	here := map[string]bool{}
 	for f, a := range m.asks {
 		if !seen[f] {
 			delete(m.asks, f)
@@ -739,6 +747,15 @@ func (m *Manager) scan() map[string]askState {
 		}
 		rel, _ := filepath.Rel(root, f)
 		domain, id, _ := strings.Cut(strings.TrimSuffix(rel, ".json"), string(filepath.Separator))
+		ok, known := here[domain]
+		if !known {
+			_, err := m.workdir(domain)
+			ok = err == nil
+			here[domain] = ok
+		}
+		if !ok {
+			continue
+		}
 		out[Name(domain, id)] = a
 	}
 	return out
@@ -830,19 +847,28 @@ func (m *Manager) Recent(limit int) []RecentChat {
 // counted, not a reason to stop: with every site in it, one turn
 // somewhere would make the button never work. What the turns cost stays
 // in the ledger.
+//
+// The agents' sessions go too (the network agent's and each crew
+// member's): the bar lists them, and "delete all" that left a dozen
+// "autopilot" lines behind looked like a button that did not work. An
+// agent keeps what it chooses in its notebook and every wake of its is a
+// new conversation, so nothing of its is lost with them.
 func (m *Manager) PurgeAll() (purged, busy int, err error) {
+	mine := func(domain string) bool {
+		return IsHouse(domain) || IsCrew(domain) || manifest.ValidName(domain)
+	}
 	root := filepath.Join(m.opts.Root, "data", "chat")
 	var names []string
 	ents, _ := os.ReadDir(root)
 	for _, e := range ents {
 		if domain, ok := strings.CutSuffix(e.Name(), ".json"); ok && !e.IsDir() {
-			if domain == Middleware || manifest.ValidName(domain) {
+			if mine(domain) {
 				names = append(names, domain)
 			}
 			continue
 		}
 		domain := e.Name()
-		if !e.IsDir() || (domain != Middleware && !manifest.ValidName(domain)) {
+		if !e.IsDir() || !mine(domain) {
 			continue
 		}
 		files, _ := os.ReadDir(filepath.Join(root, domain))
