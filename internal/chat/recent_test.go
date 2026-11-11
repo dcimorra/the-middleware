@@ -83,6 +83,15 @@ func TestPurgeAllForgetsEveryPanelConversationButTheOneAtWork(t *testing.T) {
 	write(t, m, Middleware, "", OriginPanel, "la casa", now, false)
 	write(t, m, "b.test", "", OriginPanel, "la de b", now, true)
 	write(t, m, "a.test", "d0", OriginSite, "de un programa", now, false)
+	// The agents' sessions are in the bar, so they go with the rest.
+	write(t, m, Autopilot, "c1", OriginPanel, "Session of 2026-11-11 06:06", now, false)
+	if err := os.MkdirAll(CrewDesk(root, "instagram"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, m, CrewPrefix+"instagram", "c2", OriginPanel, "Session of 2026-11-09 14:54", now, false)
+	if got := names(m.Recent(0)); len(got) != 5 {
+		t.Fatalf("before the purge the bar lists %v", got)
+	}
 	up := m.uploadsDir("a.test#a1")
 	os.MkdirAll(up, 0o700)
 	os.WriteFile(filepath.Join(up, "a.txt"), []byte("x"), 0o600)
@@ -93,7 +102,7 @@ func TestPurgeAllForgetsEveryPanelConversationButTheOneAtWork(t *testing.T) {
 	defer close(p.hold)
 
 	n, busy, err := m.PurgeAll()
-	if err != nil || n != 4 || busy != 1 {
+	if err != nil || n != 6 || busy != 1 {
 		t.Fatalf("purged %d, busy %d, %v", n, busy, err)
 	}
 	if got := names(m.Recent(0)); len(got) != 1 || got[0] != "a.test" {
@@ -107,5 +116,45 @@ func TestPurgeAllForgetsEveryPanelConversationButTheOneAtWork(t *testing.T) {
 	}
 	if w := m.Waiting(); len(w.Asking) != 0 {
 		t.Fatalf("a purged conversation still waits: %+v", w.Asking)
+	}
+}
+
+// A site that moved to another node leaves its conversations on this one,
+// and when it comes back they are set aside as "<domain>.before-…" to make
+// room for the ones that travelled with it. Neither can be opened here
+// ("no such site"), so neither is in the bar nor counted as waiting: one
+// pending question showed three times after a move there and back.
+func TestRecentAndWaitingLeaveOutConversationsWhoseSiteIsNotHere(t *testing.T) {
+	p := &fakeProvider{key: "fake", script: []agent.Event{{Kind: agent.KindResult, Text: "ok"}}}
+	m, root, _ := newManager(t, p)
+	now := time.Now().UTC()
+	write(t, m, "a.test", "", OriginPanel, "la que viajó con el sitio", now, true)
+	write(t, m, "a.test", "a1", OriginPanel, "otra", now.Add(-time.Minute), true)
+	// What relocate's commit does with the copies an earlier life left.
+	chats := filepath.Join(root, "data", "chat")
+	for _, name := range []string{"a.test.json", "a.test"} {
+		if err := os.Rename(filepath.Join(chats, name), filepath.Join(chats, name+".before-20261111T115200Z")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(t, m, "a.test", "", OriginPanel, "la que viajó con el sitio", now, true)
+	// And a site that left: its folder is gone, its conversations are not.
+	write(t, m, "b.test", "", OriginPanel, "pendiente", now, true)
+	if err := os.RemoveAll(filepath.Join(root, "sites", "b.test")); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := names(m.Recent(0)); len(got) != 1 || got[0] != "a.test" {
+		t.Fatalf("the bar lists %v, want only a.test", got)
+	}
+	if w := m.Waiting(); len(w.Asking) != 1 || w.Asking[0].Name != "a.test" {
+		t.Fatalf("waiting: %+v", w.Asking)
+	}
+	// The site back, its conversations are listed again: nothing was removed.
+	if err := os.MkdirAll(filepath.Join(root, "sites", "b.test"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := names(m.Recent(0)); len(got) != 2 {
+		t.Fatalf("with b.test back the bar lists %v", got)
 	}
 }
