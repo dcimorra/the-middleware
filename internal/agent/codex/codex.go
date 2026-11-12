@@ -135,17 +135,38 @@ func (p *Provider) Args(req agent.Request) []string {
 	if model != "" {
 		args = append(args, "--model", model)
 	}
-	prompt := req.Prompt
-	if req.System != "" {
-		prompt = req.System + "\n\n---\n\n" + req.Prompt
-	}
-	if strings.HasPrefix(prompt, "-") {
+	prompt := message(req)
+	if len(prompt) > agent.MaxArg/2 {
+		// Read from the standard input (Start): an argument stops at
+		// 128 KiB and the kernel refuses to start the command at all.
+		prompt = "-"
+	} else if strings.HasPrefix(prompt, "-") {
 		prompt = " " + prompt
 	}
 	if req.SessionID != "" {
 		args = append(args, req.SessionID)
 	}
 	return append(args, prompt)
+}
+
+// message is what Codex is told: it has no system text of its own, so
+// the house's goes first.
+func message(req agent.Request) string {
+	if req.System != "" {
+		return req.System + "\n\n---\n\n" + req.Prompt
+	}
+	return req.Prompt
+}
+
+// start runs the turn, its message on the standard input when Args left
+// it out of the command line.
+func (p *Provider) start(ctx context.Context, req agent.Request, env map[string]string) (agent.Run, error) {
+	args := p.Args(req)
+	input := ""
+	if args[len(args)-1] == "-" {
+		input = message(req)
+	}
+	return req.Jail.StartInput(ctx, &parser{}, req.Stream, req.Workdir, req.Jail.Env(env), input, p.cfg.Bin, args...)
 }
 
 // Start implements agent.Provider.
@@ -168,7 +189,7 @@ func (p *Provider) Start(ctx context.Context, req agent.Request) (agent.Run, err
 			return nil, err
 		}
 		env["CODEX_HOME"] = p.cfg.Home
-		return req.Jail.Start(ctx, &parser{}, req.Stream, req.Workdir, req.Jail.Env(env), p.cfg.Bin, p.Args(req)...)
+		return p.start(ctx, req, env)
 	}
 	// CODEX_API_KEY is what `codex exec` reads; nothing is written to
 	// auth.json under the site's HOME.
@@ -193,7 +214,7 @@ func (p *Provider) Start(ctx context.Context, req agent.Request) (agent.Run, err
 		}
 		env["CODEX_HOME"] = home
 	}
-	return req.Jail.Start(ctx, &parser{}, req.Stream, req.Workdir, req.Jail.Env(env), p.cfg.Bin, p.Args(req)...)
+	return p.start(ctx, req, env)
 }
 
 // Adopt implements agent.Adopter.

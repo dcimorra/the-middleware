@@ -122,3 +122,31 @@ func TestTheDoorsPermissionsTurnCodexsShellAndWebOff(t *testing.T) {
 		t.Fatalf("permissions: %s", got)
 	}
 }
+
+// A message longer than an argument can be is read by Codex on its
+// standard input ("-"), whole and with the house's text first; a short
+// one stays the argument it always was.
+func TestALongMessageIsReadFromStandardInput(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "codex")
+	os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > "+filepath.Join(dir, "args")+"\ncat > "+filepath.Join(dir, "stdin")+"\n"), 0o755)
+	site := filepath.Join(dir, "site")
+	os.MkdirAll(site, 0o755)
+	p := New(Config{Bin: bin, APIKey: "sk-test"})
+	if args := p.Args(agent.Request{Prompt: "hola"}); args[len(args)-1] != "hola" {
+		t.Fatalf("a short message: args = %v", args)
+	}
+	message := strings.Repeat("chapter one. ", 40*1024)
+	run, err := p.Start(context.Background(), agent.Request{Workdir: site, Prompt: message, System: "The house's rules.", SessionID: "t1", Jail: agent.Jail{SiteDir: site}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent.Collect(context.Background(), run)
+	args, _ := os.ReadFile(filepath.Join(dir, "args"))
+	if !strings.HasSuffix(string(args), "\nt1\n-\n") || len(args) > 4096 {
+		t.Fatalf("args (%d bytes) do not end in the session and \"-\"", len(args))
+	}
+	if in, _ := os.ReadFile(filepath.Join(dir, "stdin")); string(in) != "The house's rules.\n\n---\n\n"+message {
+		t.Fatalf("Codex read %d bytes", len(in))
+	}
+}
