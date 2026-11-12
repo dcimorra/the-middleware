@@ -61,7 +61,8 @@ never shell strings. Paths are relative to the site folder.
     "deny_countries": ["XX"],
     "routes": {
       "/admin": { "password": "", "message": "", "allow": ["10.1.0.0/16"], "deny": [], "note": "back office" }
-    }
+    },
+    "key": ""
   },
 
   "security": {
@@ -380,6 +381,16 @@ next.
   because a skipped entry can leave an allow list empty, and an empty one
   admits everyone. Passwords are stored hashed; set them from the panel or
   the API, which hash what they are given.
+  `key` hides the site: without `?access-token=<key>` once in the address,
+  every name of the site answers the page of a name the house does not
+  serve (404), ahead of the forbidden page and the password box, so
+  nothing says a site is there. With it, the browser gets a pass for 400
+  days (HttpOnly, SameSite=Lax) and is sent to the same address without
+  the key; the rest of `access` applies after. It holds
+  `sha256:<64 hex>`, the key's hash, never the key: the house makes the
+  key (panel, Access tab; `POST /sites/{domain}/access/key`; `middleware
+  site key <domain> on`) and shows it once. A new key ends every pass of
+  the old one. A service's `access.key` is asked for after the site's.
 - `security` decides by what a caller claims to be, and is the softest door
   on purpose: the country is the edge's and can be believed, the
   User-Agent is written by the caller and can say anything. It clears out

@@ -2526,5 +2526,18 @@
   "panelKey.offDone": "El panel ya no pide su clave",
   "panelKey.isOn": "Oculto desde {at}.",
   "panelKey.once": "Esta es la dirección con la clave. Solo se muestra ahora:",
-  "panelKey.cli": "Si pierdes la clave: `middleware panel key off` en el servidor la quita, y `middleware panel key on` genera otra y la imprime."
+  "panelKey.cli": "Si pierdes la clave: `middleware panel key off` en el servidor la quita, y `middleware panel key on` genera otra y la imprime.",
+  "siteKey.title": "Sitio oculto tras una clave",
+  "siteKey.hint": "Con la clave puesta, las direcciones del sitio responden «aquí no hay ningún sitio», como un dominio que este servidor no tiene, salvo que se llegue una vez con ?access-token=… en la dirección: entonces ese navegador se queda con un pase y la clave sale de la barra. Va antes que la contraseña y las listas de direcciones, que siguen aplicándose después.",
+  "siteKey.on": "Ocultar tras una clave",
+  "siteKey.onQ": "¿Ocultar el sitio tras una clave?",
+  "siteKey.newQ": "¿Generar una clave nueva para el sitio?",
+  "siteKey.onBody": "La dirección con la clave se muestra una sola vez: guárdala o compártela con quien deba entrar. Una clave nueva deja fuera a los navegadores que entraron con la anterior.",
+  "siteKey.new": "Generar otra",
+  "siteKey.off": "Quitar la clave",
+  "siteKey.offQ": "¿Dejar de ocultar el sitio?",
+  "siteKey.offBody": "El sitio volverá a responder a quien llegue a sus direcciones.",
+  "siteKey.offDone": "El sitio ya no pide su clave",
+  "siteKey.isOn": "Oculto: solo entra quien llegó con la clave.",
+  "siteKey.once": "Esta es la dirección con la clave. Solo se muestra ahora:"
 }

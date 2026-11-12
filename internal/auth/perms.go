@@ -92,6 +92,9 @@ var permRoutes = map[string][]string{
 	PermCode: {
 		"PUT " + siteBase + "/manifest",
 		"PATCH " + siteBase + "/manifest",
+		// The key is written to the manifest, as the access form is.
+		"POST " + siteBase + "/access/key",
+		"DELETE " + siteBase + "/access/key",
 		"POST " + siteBase + "/manifest/history/{id}/restore",
 		"PUT " + siteBase + "/file",
 		"POST " + siteBase + "/deploy",

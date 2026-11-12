@@ -2526,5 +2526,18 @@
   "panelKey.offDone": "The panel no longer asks for its key",
   "panelKey.isOn": "Hidden since {at}.",
   "panelKey.once": "This is the address with the key. It is shown only now:",
-  "panelKey.cli": "If you lose the key: `middleware panel key off` on the server removes it, and `middleware panel key on` makes another and prints it."
+  "panelKey.cli": "If you lose the key: `middleware panel key off` on the server removes it, and `middleware panel key on` makes another and prints it.",
+  "siteKey.title": "Site hidden behind a key",
+  "siteKey.hint": "With the key on, the site's addresses answer \"no site here\", like a domain this server does not have, unless someone arrives once with ?access-token=… in the address: then that browser keeps a pass and the key leaves the bar. It comes before the password and the address lists, which still apply after it.",
+  "siteKey.on": "Hide behind a key",
+  "siteKey.onQ": "Hide the site behind a key?",
+  "siteKey.newQ": "Make a new key for the site?",
+  "siteKey.onBody": "The address with the key is shown only once: keep it, or share it with whoever should get in. A new key shuts out the browsers that came in with the old one.",
+  "siteKey.new": "Make another",
+  "siteKey.off": "Remove the key",
+  "siteKey.offQ": "Stop hiding the site?",
+  "siteKey.offBody": "The site will answer whoever reaches its addresses again.",
+  "siteKey.offDone": "The site no longer asks for its key",
+  "siteKey.isOn": "Hidden: only who came with the key gets in.",
+  "siteKey.once": "This is the address with the key. It is shown only now:"
 }

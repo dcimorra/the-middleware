@@ -429,7 +429,14 @@ type Access struct {
 	Deny          []string                `json:"deny,omitempty"`
 	DenyCountries []string                `json:"deny_countries,omitempty"`
 	Routes        map[string]*RouteAccess `json:"routes,omitempty"`
+	// Key hides the site from whoever does not bring it once as
+	// ?access-token=<key>: its SHA-256, "sha256:<64 hex>" (internal/access
+	// key.go). The key itself is shown once, when it is made.
+	Key string `json:"key,omitempty"`
 }
+
+// KeyPrefix starts access.key.
+const KeyPrefix = "sha256:"
 
 // RouteAccess is a zone: a path prefix with rules added to the site's.
 type RouteAccess struct {
@@ -869,12 +876,30 @@ func validHold(field string, h *Hold) error {
 }
 
 // validAccess checks every address of an access section.
+func validKeyHash(s string) bool {
+	h, ok := strings.CutPrefix(s, KeyPrefix)
+	if !ok || len(h) != 64 {
+		return false
+	}
+	for _, c := range h {
+		if !('0' <= c && c <= '9' || 'a' <= c && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func validAccess(field string, a *Access) error {
 	if a == nil {
 		return nil
 	}
 	if err := validAddrs(field+".allow", a.Allow); err != nil {
 		return err
+	}
+	if a.Key != "" && !validKeyHash(a.Key) {
+		// A key typed in clear would never match, and the site would
+		// look hidden from everyone, its owner included.
+		return fmt.Errorf("%s.key: want %s and 64 hex digits, the hash of a key (the panel or `middleware site key` makes one)", field, KeyPrefix)
 	}
 	if err := validAddrs(field+".deny", a.Deny); err != nil {
 		return err
