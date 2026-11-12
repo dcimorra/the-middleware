@@ -11,7 +11,7 @@ import { open, confirm, field, toggle, checkbox } from "../components/dialog.js"
 import { toast, toastError } from "../components/toast.js";
 import { getTheme, setTheme, setLang } from "../lib/theme.js";
 import { fmtTime, fmtAgo, fmtBytes } from "../lib/dom.js";
-import { passkeysCard, panelAccessCard } from "./settings-access.js";
+import { passkeysCard, panelAccessCard, panelKeyCard } from "./settings-access.js";
 import { usersCard } from "./settings-users.js";
 import { pushCard } from "./settings-push.js";
 import { autofixCard, automationCard } from "./settings-autofix.js";
@@ -42,7 +42,7 @@ export function settingsScreen({ query } = {}) {
     install: [general, pagesCard, cacheCard],
     notify: [pushCard()],
     agents: [agentsCard, automationCard(), autofixCard(), depsCard],
-    access: [passkeysCard(), panelAccessCard(), usersCard(), tokensCard],
+    access: [passkeysCard(), panelAccessCard(), panelKeyCard(), usersCard(), tokensCard],
     browser: [localCard],
   };
 

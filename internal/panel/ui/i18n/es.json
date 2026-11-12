@@ -2512,5 +2512,19 @@
   "autopilot.orderCancelBody": "Se le dice que no lo haga.",
   "autopilot.perWeekHint": "Ideas suyas en cualquier periodo de siete días. Los sitios que tú pidas van aparte.",
   "autopilot.perWeekSaved": "Ahora puede hacer {n} a la semana",
-  "autopilot.kind.order": "pedido"
+  "autopilot.kind.order": "pedido",
+  "panelKey.title": "Panel oculto tras una clave",
+  "panelKey.hint": "Con la clave puesta, la dirección del panel responde «aquí no hay ningún sitio», como fuera de la VPN cuando el panel está solo en ella, salvo que llegues una vez con ?access-token=… en la dirección: entonces este navegador se queda con una cookie y la clave sale de la barra. Después sigue el inicio de sesión de siempre.",
+  "panelKey.on": "Ocultar tras una clave",
+  "panelKey.onQ": "¿Ocultar el panel tras una clave?",
+  "panelKey.newQ": "¿Generar una clave nueva?",
+  "panelKey.onBody": "La clave se muestra una sola vez. Guarda la dirección: otros navegadores y dispositivos necesitarán abrirla una vez. Este navegador sigue dentro. Una clave nueva deja sin acceso a los navegadores que entraron con la anterior.",
+  "panelKey.new": "Generar otra",
+  "panelKey.off": "Quitar la clave",
+  "panelKey.offQ": "¿Dejar de ocultar el panel?",
+  "panelKey.offBody": "La dirección del panel volverá a mostrar el inicio de sesión a quien llegue a ella.",
+  "panelKey.offDone": "El panel ya no pide su clave",
+  "panelKey.isOn": "Oculto desde {at}.",
+  "panelKey.once": "Esta es la dirección con la clave. Solo se muestra ahora:",
+  "panelKey.cli": "Si pierdes la clave: `middleware panel key off` en el servidor la quita, y `middleware panel key on` genera otra y la imprime."
 }

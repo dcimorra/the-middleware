@@ -163,6 +163,31 @@ func (s *Server) RegisterInbound(o InboundOptions) {
 		}
 		return h.Status().Doors, nil
 	})
+	s.Handle("GET", p+"/panel-key", "Whether the panel answers only with its key, and since when", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		k := h.PanelKeyState()
+		out := map[string]any{"on": k.On(), "param": inbound.PanelKeyParam}
+		if k.On() {
+			out["since"] = k.Since
+		}
+		return out, nil
+	})
+	// The key is in this answer and nowhere else: only its hash is kept.
+	// The caller's browser gets the cookie with it, or the panel would
+	// close on the one who just turned it on at their next request.
+	s.Handle("POST", p+"/panel-key", "Hide the panel behind a new key; the key is in this answer only", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		key, err := h.SetPanelKey(true)
+		if err != nil {
+			return nil, err
+		}
+		inbound.KeyCookie(w, r, key)
+		return map[string]any{"on": true, "key": key, "param": inbound.PanelKeyParam, "since": h.PanelKeyState().Since}, nil
+	})
+	s.Handle("DELETE", p+"/panel-key", "Stop hiding the panel behind a key", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		if _, err := h.SetPanelKey(false); err != nil {
+			return nil, err
+		}
+		return map[string]any{"on": false}, nil
+	})
 	s.Handle("PUT", p+"/local", "Set the local door: open flag and the http and dns addresses it listens on", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		var body struct {
 			Open bool   `json:"open"`

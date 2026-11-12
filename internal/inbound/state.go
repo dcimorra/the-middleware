@@ -99,6 +99,9 @@ type State struct {
 	// here is on the ports door if it has a certificate and on the tunnel
 	// otherwise, which is what "nobody decided yet" looks like.
 	Domains map[string]Door `json:"domains,omitempty"`
+	// PanelKey, when set, hides the panel from whoever does not bring
+	// its key (panelkey.go).
+	PanelKey PanelKey `json:"panel_key,omitzero"`
 }
 
 // DefaultState is a fresh installation: tunnel open, ports closed. The
