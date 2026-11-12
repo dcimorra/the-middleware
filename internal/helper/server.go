@@ -123,6 +123,7 @@ func (s *Server) init() {
 			OpMeshFirewall:    s.meshFirewall,
 			OpInstallRun:      s.installRun,
 			OpPortsOpen:       s.portsOpen,
+			OpPortsMeter:      s.portsMeter,
 		}
 	})
 }

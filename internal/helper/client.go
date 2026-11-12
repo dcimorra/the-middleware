@@ -172,3 +172,12 @@ func (c *Client) PortsOpen(ctx context.Context, ports []PortRule) (PortsResult, 
 	err := c.Call(ctx, OpPortsOpen, PortsArgs{Ports: ports}, &res)
 	return res, err
 }
+
+// PortsMeter reads what the sites' public ports moved since the chains
+// that count them were last written, and leaves those chains holding
+// ports (MeterChainIn, MeterChainOut).
+func (c *Client) PortsMeter(ctx context.Context, ports []MeterRule) (MeterResult, error) {
+	var res MeterResult
+	err := c.Call(ctx, OpPortsMeter, MeterArgs{Ports: ports}, &res)
+	return res, err
+}

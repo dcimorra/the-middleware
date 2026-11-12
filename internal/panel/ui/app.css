@@ -1087,6 +1087,31 @@ body.chat-fit .page-body > .card { max-height: 28vh; overflow-y: auto; }
 @media (max-width: 760px) { .visits-meter { width: 36px; } }
 .visits-meter .track { fill: var(--muted-soft); }
 .visits-meter .fill { fill: var(--accent); }
+/* The network tab: what came in is the accent, what went out the muted
+   ink, in the lines, the columns and their legend alike. */
+.net-spark { width: 100%; height: 70px; display: block; }
+.net-spark polyline { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.net-spark .in, .net-key.in { stroke: var(--accent); }
+.net-spark .out { stroke: var(--text-2); }
+.net-spark .base { stroke: var(--border); stroke-width: 1; }
+.net-bars .bar.in { fill: var(--accent); }
+.net-bars .bar.out { fill: var(--text-2); fill-opacity: .55; }
+.net-legend { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.net-key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-left: 8px; }
+.net-key:first-child { margin-left: 0; }
+.net-key.in { background: var(--accent); }
+.net-key.out { background: var(--text-2); opacity: .55; }
+.net-budget { margin: 12px 0; }
+.net-size { display: flex; gap: 8px; }
+.net-size input { flex: 1; min-width: 0; }
+.net-size select { flex: none; width: auto; }
+.net-meter { width: 100%; height: 10px; display: block; margin-top: 6px; }
+.net-meter .track { fill: var(--muted-soft); }
+.net-meter .fill { fill: var(--accent); }
+.net-meter.warn .fill { fill: var(--warn); }
+.net-meter.bad .fill { fill: var(--bad); }
+.net-meter .mark { fill: var(--text-3); }
+.level-bad { color: var(--bad); }
 
 /* ---------- sparkline ---------- */
 .spark { width: 100%; height: 72px; display: block; }

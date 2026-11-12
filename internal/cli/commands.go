@@ -31,7 +31,7 @@ const Usage = `  setup        print a one-time code to create the operator in th
                (--domain panel.example.com [--door ports|tunnel]: the panel's name and door)
                (--password: set the password from the terminal instead)
                (--reset: with an operator already set, a code to set a new one)
-  site         list | show | add | rm | restart | stop | start | hold | unhold | logs | deploy | tasks | backups | security | visits
+  site         list | show | add | rm | restart | stop | start | hold | unhold | logs | deploy | tasks | backups | security | visits | network
   site tasks <domain> [list | save <name> <file|-> | rm <name> | run <name> | stop <name> | log <name>]
                the tasks that run in that site's folder, through the API (what a site's agent may manage)
   site backups <domain> [list | run <name> | restore <name> <copy> | download <name> <copy> [file] | rm <name> <copy> | log <name>]
@@ -304,6 +304,9 @@ const siteUsage = `usage: middleware site <command> [flags]
                               who calls (countries, robots, browsers, User-Agents), the last
                               requests the manifest's security refused, and what it may name
   visits <domain> [--days 7]  people and pages by day, the top pages, links and countries
+  network [<domain>] [--days 7]
+                              bytes in and out: the rate now, today, the month, day by day,
+                              and the site's budget; without a domain, every site's
 `
 
 func (e *Env) site(args []string) error {
@@ -697,6 +700,8 @@ func (e *Env) site(args []string) error {
 			return err
 		}
 		return e.siteVisits(c, cl, domain, *days)
+	case "network", "net":
+		return e.siteNetwork(c, cl, domain, *days)
 	case "backups", "backup":
 		if err := need(); err != nil {
 			return err

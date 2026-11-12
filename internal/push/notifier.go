@@ -58,6 +58,14 @@ func For(e events.Event) (Message, bool) {
 		return Message{Kind: KindCritical, Title: "The supervisor panicked", Body: e.Message, URL: "/#/events", Tag: "panic"}, true
 	case "deps.critical":
 		return Message{Kind: KindCritical, Title: "Critical vulnerability in " + orHouse(site), Body: e.Message, URL: link("overview"), Tag: "audit-" + site}, true
+	case "site.network.warn", "site.network.limit":
+		// A budget the owner set is about to be, or was, spent: with
+		// cut on, the site is dark until someone raises it.
+		title := "Network budget nearly spent on " + orHouse(site)
+		if e.Type == "site.network.limit" {
+			title = "Network budget reached on " + orHouse(site)
+		}
+		return Message{Kind: KindCritical, Title: title, Body: e.Message, URL: link("network"), Tag: "network-" + site}, true
 	case "repo.failed":
 		return Message{Kind: KindRepo, Title: "A repository stopped pulling", Body: e.Message, URL: "/#/repos", Tag: "repo-" + site}, true
 	case "autopilot.ready":

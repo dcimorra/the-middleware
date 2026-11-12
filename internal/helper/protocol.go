@@ -55,11 +55,12 @@ const (
 	OpMeshFirewall    = "mesh.firewall"
 	OpInstallRun      = "requirements.install"
 	OpPortsOpen       = "ports.open"
+	OpPortsMeter      = "ports.meter"
 )
 
 // Ops lists every operation the helper answers, for the usage text and for
 // tests that make sure nothing was added without a handler.
-var Ops = []string{OpPing, OpFirewallApply, OpFirewallBlock, OpFirewallUnblock, OpFirewallStatus, OpVPNApply, OpVPNUp, OpVPNDown, OpVPNStatus, OpSysctlReserve, OpUpdateInstall, OpUpdateConfirm, OpMeshFirewall, OpInstallRun, OpPortsOpen}
+var Ops = []string{OpPing, OpFirewallApply, OpFirewallBlock, OpFirewallUnblock, OpFirewallStatus, OpVPNApply, OpVPNUp, OpVPNDown, OpVPNStatus, OpSysctlReserve, OpUpdateInstall, OpUpdateConfirm, OpMeshFirewall, OpInstallRun, OpPortsOpen, OpPortsMeter}
 
 // FirewallPolicy is the input of firewall.apply.
 type FirewallPolicy struct {
