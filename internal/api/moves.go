@@ -72,12 +72,16 @@ const movesKept = 50
 func (s *Server) movesDir() string { return filepath.Join(s.opts.Root, "data", "moves") }
 
 // movePlan is the steps a move goes through.
-func movePlan(install, published bool) []string {
+func movePlan(install, published, volumes bool) []string {
 	p := []string{relocate.StepCheck, relocate.StepCopy}
 	if install {
 		p = append(p, relocate.StepInstall)
 	}
-	p = append(p, relocate.StepStop, relocate.StepFinal, relocate.StepCommit, relocate.StepStart)
+	p = append(p, relocate.StepStop)
+	if volumes {
+		p = append(p, relocate.StepVolumes)
+	}
+	p = append(p, relocate.StepFinal, relocate.StepCommit, relocate.StepStart)
 	if published {
 		p = append(p, relocate.StepDNS)
 	}

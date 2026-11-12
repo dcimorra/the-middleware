@@ -48,6 +48,12 @@ jobs:
         run: |
           docker pull coturn/coturn:4.6.3-alpine || docker pull coturn/coturn:4.6.3-alpine
           DOCKER=1 go test ./internal/runtime -run TestARealRelayAnswersSTUN -v
+      # A site's docker volumes move with it through a real docker: owners,
+      # modes and links read back from the volume written. The fakes did
+      # not find that the last copy deleted the list an undone move
+      # removes its volumes by. It pulls nothing.
+      - name: volumes, live
+        run: DOCKER=1 go test ./internal/relocate -run TestARealVolumeMovesWithItsSiteFileForFile -v
       - name: build
         run: go build -o middleware ./cmd/middleware
       - name: no third-party dependencies in the core

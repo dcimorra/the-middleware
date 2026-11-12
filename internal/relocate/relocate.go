@@ -180,7 +180,51 @@ func Parts(root, domain string) []archive.Part {
 		// site arrived with its relay waiting for a yes nobody knew was
 		// being asked again.
 		{Name: "data/" + pubports.Dir + "/" + domain + ".json", Path: filepath.Join(data, pubports.Dir, domain+".json")},
+		// The copies of its database first of all: a site that arrived
+		// without them answered "no copies yet" on the day they were the
+		// only way back. And the rest of what the house knows of it by its
+		// name, which a rename already carried and a move did not.
+		{Name: "data/backups/" + domain, Path: filepath.Join(data, "backups", domain)},
+		{Name: "data/visits/" + domain, Path: filepath.Join(data, "visits", domain)},
+		{Name: "data/visits/" + domain + ".json", Path: filepath.Join(data, "visits", domain+".json")},
+		{Name: "data/webvitals/" + domain, Path: filepath.Join(data, "webvitals", domain)},
+		{Name: "data/webvitals/" + domain + ".json", Path: filepath.Join(data, "webvitals", domain+".json")},
+		{Name: "data/status/" + domain, Path: filepath.Join(data, "status", domain)},
+		{Name: "data/status/" + domain + ".json", Path: filepath.Join(data, "status", domain+".json")},
+		{Name: "data/seen/" + domain, Path: filepath.Join(data, "seen", domain)},
+		{Name: "data/seen/" + domain + ".json", Path: filepath.Join(data, "seen", domain+".json")},
+		{Name: "data/audit/" + domain + ".json", Path: filepath.Join(data, "audit", domain+".json")},
+		{Name: "data/agents/config/" + domain + ".json", Path: filepath.Join(data, "agents", "config", domain+".json")},
 	}
+}
+
+// firstParts is how many of Parts every house that can receive a site
+// places; what follows is said in a move's needs (Needs.Data) when the
+// site has it, so a node that would not place it refuses the move.
+const firstParts = 8
+
+// extraParts are the names of the parts after the first ones.
+func extraParts(root, domain string) map[string]bool {
+	out := map[string]bool{}
+	for _, p := range Parts(root, domain)[firstParts:] {
+		out[p.Name] = true
+	}
+	return out
+}
+
+// KnownData says this house places every part named in data (a move's
+// Needs.Data), and names one it does not.
+func KnownData(domain string, data []string) (string, bool) {
+	known := map[string]bool{}
+	for _, p := range Parts("", domain) {
+		known[p.Name] = true
+	}
+	for _, name := range data {
+		if !known[name] {
+			return name, false
+		}
+	}
+	return "", true
 }
 
 // Errors the receiving side answers with.
@@ -296,7 +340,11 @@ func (r Receiver) ReceiveDelta(ctx context.Context, domain string, body io.Reade
 			return nil
 		}
 		rel, _ := filepath.Rel(dir, p)
-		if rel == "." {
+		if rel == "." || rel == volumesName {
+			// The list of the volumes made here for this move is the
+			// target's own, never in a source's index: removed with what
+			// "was deleted at the source", a move undone after its last
+			// copy left those volumes on this node, under the site's name.
 			return nil
 		}
 		if d.IsDir() && Reinstalled(p) {

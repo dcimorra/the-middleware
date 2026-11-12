@@ -74,7 +74,7 @@ func FixedPorts(m *manifest.Manifest) []int {
 // would mix the two, and removing it is not a move's decision.
 func (r Receiver) CheckNeeds(ctx context.Context, need Needs) error {
 	d := r.docker()
-	for _, vol := range need.Volumes {
+	for _, vol := range append(append([]string(nil), need.Volumes...), need.Carried...) {
 		if d.VolumeExists(ctx, vol) {
 			return fmt.Errorf("the volume %s is already on this node (an earlier attempt, a site that had this name, or this site before it moved away): remove it here (docker volume rm %s, or from the leftovers of moves where it is listed) and move again", vol, vol)
 		}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dcimorra/the-middleware/internal/archive"
+	"github.com/dcimorra/the-middleware/internal/fsx"
 	"github.com/dcimorra/the-middleware/internal/manifest"
 )
 
@@ -111,6 +112,16 @@ type Needs struct {
 	// Volumes are the docker volumes its move fills there (MoveVolumes):
 	// none may be there already.
 	Volumes []string `json:"volumes,omitempty"`
+	// Carried are the docker volumes the move copies there as files, with
+	// the site stopped (Mover.carried): none may be there already, and
+	// the target must know how to take one. A node from before volumes
+	// were carried refuses the field, which is the answer wanted: it
+	// would have started the site on empty ones.
+	Carried []string `json:"carried,omitempty"`
+	// Data are the parts under data/ that go with it and are not in the
+	// first list a move ever had (ExtraParts), when the site has them: a
+	// target that does not place them all would drop them in silence.
+	Data []string `json:"data,omitempty"`
 	// Ports are the ones its workers have written (FixedPorts): each must
 	// be free there.
 	Ports []int `json:"ports,omitempty"`
@@ -176,6 +187,13 @@ type Mover struct {
 	Note func(string)
 }
 
+// Releaser is a Source whose house keeps counts of a site in memory
+// (its visits, who has seen it): Release has them written, so the copy
+// carries them.
+type Releaser interface {
+	Release(domain string)
+}
+
 // Needer is a Source that says itself what its site needs of the target,
 // for a site whose manifest this package cannot read (a V1 one).
 type Needer interface {
@@ -218,6 +236,11 @@ func (m *Mover) Move(ctx context.Context, domain string, t Target, progress func
 	progress(StepCheck, ask)
 	if _, err := m.check(ctx, domain, t, func(s string) { progress(StepCheck, s) }); err != nil {
 		return rep, err
+	}
+	// Whoever keeps counts of it in memory writes them, so the first copy
+	// carries them as they are and not as they were a minute ago.
+	if rl, ok := m.Source.(Releaser); ok {
+		rl.Release(domain)
 	}
 	exporter, _ := m.Source.(Exporter)
 	migrator, _ := t.(Migrator)
@@ -366,6 +389,32 @@ func (m *Mover) Move(ctx context.Context, domain string, t Target, progress func
 		}
 	}
 
+	// Its docker volumes, asked for again now that it is stopped: one made
+	// since the check goes too, and the target refuses one it already
+	// has. Before the commit and with nothing running on either side, so
+	// a copy that fails, or that is not there what it is here, undoes the
+	// move with the site never having started on it.
+	vols, err := m.carried(ctx, domain, planned, append(append([]string(nil), liveWorkers...), stopWorkers...))
+	if err != nil {
+		return restore(undone(err, m.undo(t, domain, false)))
+	}
+	if len(vols) > 0 {
+		if _, ok := t.(VolumeTaker); !ok {
+			return restore(undone(fmt.Errorf("%s cannot take the site's docker volumes (%s)", t.Name(), strings.Join(vols, ", ")), m.undo(t, domain, false)))
+		}
+		progress(StepVolumes, "copying its docker volumes ("+strings.Join(vols, ", ")+") to "+t.Name()+", with the site stopped")
+		if jr != nil {
+			jr.Carried = vols
+			_ = jr.write(m.Root)
+		}
+		if err := m.carry(ctx, domain, t, vols, progress); err != nil {
+			return restore(undone(fmt.Errorf("its docker volumes: %w", err), m.undo(t, domain, false)))
+		}
+	}
+
+	if rl, ok := m.Source.(Releaser); ok {
+		rl.Release(domain)
+	}
 	progress(StepFinal, "sending what changed")
 	n, err = m.stream(ctx, parts, since, func(r io.Reader) error { return t.SendDelta(ctx, domain, r) })
 	if err != nil {
@@ -430,7 +479,7 @@ func (m *Mover) Move(ctx context.Context, domain string, t Target, progress func
 		_ = jr.write(m.Root)
 	}
 
-	if err := m.settle(ctx, domain, t, original, &rep, progress); err != nil {
+	if err := m.settle(ctx, domain, t, original, vols, &rep, progress); err != nil {
 		return rep, err
 	}
 	progress(StepDone, fmt.Sprintf("%s runs on %s; it was down %s", domain, t.Name(), rep.Down))
@@ -442,7 +491,7 @@ func (m *Mover) Move(ctx context.Context, domain string, t Target, progress func
 // on its own time, not the move's: the site already runs there, and a
 // move whose time ran out in these last steps left its names pointing
 // here and its folder half packed.
-func (m *Mover) settle(ctx context.Context, domain string, t Target, original []byte, rep *Report, progress func(step, msg string)) error {
+func (m *Mover) settle(ctx context.Context, domain string, t Target, original []byte, carried []string, rep *Report, progress func(step, msg string)) error {
 	own := context.WithoutCancel(ctx)
 	// Its names move now, and only then does this node take its own route
 	// down: the other order would leave the names pointing at nothing.
@@ -479,6 +528,12 @@ func (m *Mover) settle(ctx context.Context, domain string, t Target, original []
 		path = ""
 	}
 	m.sourceVolumes(own, domain, mf, path, dumped)
+	if len(carried) > 0 {
+		// Copied and read back there, and still never removed here by a
+		// move: they are listed, and removing them is the operator's, once
+		// they have seen the site with its data where it now runs.
+		_ = LeaveVolumes(m.Root, domain, carried)
+	}
 	if err != nil {
 		return fmt.Errorf("moved and running on %s, but the copy here could not be archived: %w", t.Name(), err)
 	}
@@ -562,6 +617,13 @@ func (m *Mover) check(ctx context.Context, domain string, t Target, note func(st
 	if err != nil {
 		return nil, err
 	}
+	need.Carried, err = m.carried(ctx, domain, m.plannedManifest(domain, m.dir(domain)), moving)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := t.(VolumeTaker); !ok && len(need.Carried) > 0 {
+		return nil, fmt.Errorf("the site keeps data in docker volumes (%s), which this move cannot take to %s: it would start there on empty ones", strings.Join(need.Carried, ", "), t.Name())
+	}
 	if err := t.Check(ctx, domain, need); err != nil {
 		return nil, err
 	}
@@ -627,6 +689,12 @@ func (m *Mover) NeedsFor(domain string, t Target) (Needs, []string, error) {
 			return need, nil, fmt.Errorf("its tasks: %w", err)
 		}
 		need.Tasks = SortedNames(ts)
+	}
+	extra := extraParts(m.Root, domain)
+	for _, part := range m.PartsFor(domain) {
+		if extra[part.Name] && fsx.Exists(part.Path) {
+			need.Data = append(need.Data, part.Name)
+		}
 	}
 	return need, moving, nil
 }

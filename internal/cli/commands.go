@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -51,6 +52,9 @@ const Usage = `  setup        print a one-time code to create the operator in th
   nodes panel open|close
                every node's panel open to the internet again, or only through
                a VPN (the way out when no VPN of the network answers)
+  nodes send <file> <node> <site> [--as name]
+               a file of this machine to a site on another node, through the
+               network: it lands in that site's HOME as ~/inbox/<name>
 
   Every command takes --root <dir> and --json (machine-readable output).
   The CLI talks to the running supervisor over data/api.sock; without the
@@ -1127,6 +1131,7 @@ func (e *Env) nodes(args []string) error {
 	fs := flag.NewFlagSet("nodes", flag.ContinueOnError)
 	var c common
 	c.bind(fs)
+	as := fs.String("as", "", "send: the name the file arrives under (default: its own)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -1144,6 +1149,32 @@ func (e *Env) nodes(args []string) error {
 			done = "every node's panel answers only through a VPN (within a minute on the others)"
 		}
 		return e.simple(c, cl, "PUT", "/api/v1/nodes/settings", map[string]bool{"panel_vpn_only": pos[1] == "close"}, done)
+	}
+	if len(pos) >= 1 && pos[0] == "send" {
+		if len(pos) != 4 {
+			return fmt.Errorf("usage: middleware nodes send <file> <node> <site> [--as name]")
+		}
+		path, err := filepath.Abs(pos[1])
+		if err != nil {
+			return err
+		}
+		var raw []byte
+		if err := cl.Do("POST", "/api/v1/nodes/"+url.PathEscape(pos[2])+"/send", map[string]string{"path": path, "site": pos[3], "name": *as}, &raw); err != nil {
+			return err
+		}
+		if c.json {
+			e.printJSON(raw)
+			return nil
+		}
+		var out struct {
+			Node, Site, Path, SHA256 string
+			Bytes                    int64
+		}
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return err
+		}
+		fmt.Fprintf(e.Stdout, "%s has it, for %s: %s (%d bytes, sha256 %s, the same as here).\nThe site's agent and its processes read it there at that path; nothing serves it.\n", out.Node, out.Site, out.Path, out.Bytes, out.SHA256)
+		return nil
 	}
 	var raw []byte
 	if err := cl.Do("GET", "/api/v1/nodes", nil, &raw); err != nil {

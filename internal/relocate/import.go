@@ -206,7 +206,9 @@ func (t HTTPTarget) Check(ctx context.Context, d string, need Needs) error {
 
 // Send implements Target.
 func (t HTTPTarget) Send(ctx context.Context, d string, r io.Reader) error {
-	return t.do(ctx, "PUT", "/relocate/"+d, "application/gzip", r, nil)
+	// carries: an import has no house on the other side whose volumes
+	// could be left behind; what its workers keep moves by their commands.
+	return t.do(ctx, "PUT", "/relocate/"+d+"?carries=1", "application/gzip", r, nil)
 }
 
 // SendDelta implements Target.

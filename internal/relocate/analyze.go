@@ -46,6 +46,9 @@ type Analysis struct {
 	Installs []Install `json:"installs"`
 	Node     string    `json:"node,omitempty"`
 	Docker   bool      `json:"docker,omitempty"`
+	// Volumes are the docker volumes that go with it, copied with the
+	// site stopped.
+	Volumes []string `json:"volumes,omitempty"`
 	// Ports are the public ports its services answer on, which the
 	// target must have free and reachable.
 	Ports    []string      `json:"ports,omitempty"`
