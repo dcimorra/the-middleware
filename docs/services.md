@@ -84,6 +84,22 @@ The plan for a site that is today one image with a router inside
    `POST /manifest/history/{id}/restore`): the same handover, the other
    way.
 
+## A service's data when the site moves
+
+A service's named volume is the site's data, and it moves with the site
+to another node ([api.md](api.md), "Moving a site to another node"):
+copied file for file once the site is stopped, read back on the other
+node, and compared, before anything starts there. A move that cannot
+carry a volume whole is undone; the volume where the site was is never
+removed by the move. verdelaurel.es is why: its `db` service kept
+Postgres in `mw-verdelaurel-es-db`, the move took the folder, and the
+service ran `initdb` on an empty volume on the other node while the web
+seeded a demo catalogue over a shop with orders.
+
+A database prefers a dump to its files between machines of different
+processors: declare it in `backups` ([manifest.md](manifest.md)), whose
+copies go with the site too.
+
 ## A site needs a port that is not HTTP
 
 A TURN relay beside a WebRTC app, a game server, a broker: something that

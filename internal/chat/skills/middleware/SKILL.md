@@ -77,6 +77,8 @@ manifest and take the code out.
 | the page a visitor sees while the site starts or is down | `notice.theme` | docs/manifest.md |
 | another name, its `www.` | `aliases`, `www` (operator only) | § 3 |
 | a copy of the database every night | `backups` | § 9 |
+| keep a service's data when the site moves to another node | already done: every named docker volume of the site (`volumes: ["db:/var/lib/…"]`) is copied with it and checked, and so are the `backups` copies; data in an anonymous volume or in a container's own layer is not, so name the volume | nothing to write |
+| a file from another node (a dump, an export the operator made there) | the operator sends it with `middleware nodes send <file> <node> <site>`; it is in your HOME, `~/inbox/<name>` | ask the operator; you cannot fetch it |
 | look at what is in the database, from the panel | site → Database: the databases `backups` names and the SQLite files of the folder, read-only | nothing to write; name a PostgreSQL/MySQL one in `backups` |
 | something every so often | a task | § 9 |
 | a process always up, or several processes | `workers`, `services` | § 3 |

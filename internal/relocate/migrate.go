@@ -439,8 +439,10 @@ func (s *V1Source) Export(ctx context.Context, domain string, manifestData []byt
 // volumesFile lists the volumes a migration created in a staging, so a
 // move that is undone takes them out with the rest.
 func (r Receiver) volumesFile(domain string) string {
-	return filepath.Join(r.staging(domain), "volumes.json")
+	return filepath.Join(r.staging(domain), volumesName)
 }
+
+const volumesName = "volumes.json"
 
 func (r Receiver) docker() runtime.Docker {
 	if r.Docker != nil {

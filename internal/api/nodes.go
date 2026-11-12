@@ -36,6 +36,7 @@ func (s *Server) RegisterNodes(m *nodes.Mesh, canClose func() error) {
 	// mesh, and /nodes is what a node may not ask of another (nodeMay).
 	s.Handle("POST", Prefix+"/system/panel/network-only", "Take this node's panel off its domain: its DNS record and tunnel route are retired and it is managed only from the network (another node's panel, through the mesh) or locally. Refused outside a network or with no other node answering", s.panelNetworkOnly)
 	s.registerRelocateSource(m)
+	s.registerSend(m)
 	for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
 		s.Handle(method, Prefix+"/nodes/{id}/api/{path...}", "The API of another node, through the mesh: what the panel uses to work on another machine", s.nodesProxy)
 	}

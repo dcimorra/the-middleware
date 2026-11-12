@@ -51,7 +51,10 @@ type Journal struct {
 	// Manifest is the one the site had before the move stopped it.
 	Manifest []byte `json:"manifest"`
 	// Held are its tasks the move turned off here.
-	Held    []string  `json:"held,omitempty"`
+	Held []string `json:"held,omitempty"`
+	// Carried are the docker volumes it copied to the target, which stay
+	// here listed once the move ends well.
+	Carried []string  `json:"carried,omitempty"`
 	Started time.Time `json:"started"`
 }
 
@@ -162,7 +165,7 @@ func (m *Mover) Recover(ctx context.Context, j Journal, t Target, progress func(
 				j.Step = JournalReady
 				_ = j.write(m.Root)
 			}
-			if err := m.settle(ctx, domain, t, j.Manifest, &rep, progress); err != nil {
+			if err := m.settle(ctx, domain, t, j.Manifest, j.Carried, &rep, progress); err != nil {
 				removeJournal(m.Root, domain)
 				return rep, err
 			}

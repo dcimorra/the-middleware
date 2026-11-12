@@ -43,7 +43,8 @@ type Leftover struct {
 
 // asideParents are the folders a commit sets things aside in: the parents
 // of the parts under data/ (Parts).
-var asideParents = []string{"data/homes", "data/chat", "data/history", "data/deploys", "data/agents/cost"}
+var asideParents = []string{"data/homes", "data/chat", "data/history", "data/deploys", "data/agents/cost", "data/ports",
+	"data/backups", "data/visits", "data/webvitals", "data/status", "data/seen", "data/audit", "data/agents/config"}
 
 // Leftovers lists what moves left under root, the largest first.
 func Leftovers(root string, now time.Time) []Leftover {

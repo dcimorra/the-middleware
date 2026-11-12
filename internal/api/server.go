@@ -227,6 +227,7 @@ func New(opts Options) *Server {
 	s.registerUsers()
 	s.registerSites()
 	s.registerRelocateTarget()
+	s.registerInbox()
 	s.registerImportToken()
 	s.registerEvents()
 	s.registerSystem()

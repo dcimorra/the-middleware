@@ -843,6 +843,8 @@ network and the credentials are decided at each machine's own panel.
 | POST | `/system/panel/network-only` | → `{ok, was, manage_from}`: the panel leaves its domain (its record and tunnel route retired) and the node is managed from the network alone; under `/system` so another node's panel can ask it through the mesh. 409 outside a network, with no other node answering, or with no domain |
 | POST | `/nodes/leave` | → `{ok}`; tells the others, takes the interface down |
 | DELETE | `/nodes/{id}` | → `{ok, name}`; removes the node for every node, and tells it |
+| POST | `/nodes/{id}/send` | the operator only: `{path, site, name?}` → `{node, site, name, path, bytes, sha256}`; sends a file of this machine (`path`, whole) to a site on another node (`id` is its id or its name), where it lands in the site's HOME as `~/inbox/<name>` (its own name by default). What the node wrote is checked against what was read here (SHA-256); 502 with the node's reason when it did not take it. Events `node.sent` here and `site.inbox` there |
+| PUT | `/sites/{domain}/inbox/{name}` | the operator or another node only: the raw body is kept as `data/homes/<domain>/inbox/<name>` (0600; a name that is there is replaced; written beside it first, so a file half arrived is never in the inbox) → `{site, name, path, bytes, sha256}`. Never under the site's folder: nothing serves it, and the site's agent and processes read it as `~/inbox/<name>` |
 | GET | `/nodes/overview` | → `[{id, name, ip, version, self, ok, error, latency_ms, summary}]`, this node first, every member asked in parallel (8 s each) |
 | GET | `/node/summary` | → `{id, name, version, started, hostname, sites: {sites, projects, serving, stopped, trouble: [{domain, why}]}, events (last warnings and errors), vitals: {now, minutes: [[unix, cpu, mem]], open_episode}, chats: {asking, working}, update}` |
 | GET | `/nodes/{id}/api/{path...}` | the member's `/api/v1/{path...}` through the mesh, streams included. Its 401 comes back as a 502: not being recognised over there is not this panel's session ending |
@@ -871,14 +873,43 @@ open` on any machine reopens every panel.
 ### Moving a site to another node
 
 A site moves with its folder, its HOME, its conversations, its cost, its
-history and its deploy record. A first copy goes while it serves; it is
+history, its deploy record, the copies of its database (`data/backups`),
+its visits, its web vitals, its status page's history and its docker
+volumes. A first copy goes while it serves; it is
 then stopped and a second copy carries only the files changed since the
 first, with the index of every name, so what was deleted here is deleted
 there: the stop lasts that second copy and the start on the other side.
 The target keeps what arrives apart (`data/relocate/<site>`) until the
 commit, and refuses a name it already has. A target that does not answer
 healthy in three minutes is removed there and the site started here again
-as it was. Only once it answers there are its names published on that
+as it was.
+
+**Its docker volumes go with it.** Every volume that is the site's on the
+node it leaves (labelled `middleware.site`, claimed by it before volumes
+had labels, or named in its manifest by the site, a worker or a service),
+and that no worker's `move` command fills, is copied once the site is
+stopped and before it is put in place: read out as a tar through a
+container that is never started (an image made from an empty tar, so no
+image is pulled and none needs `tar`), sent gzipped, written into a new
+volume of the same name on the target, labelled as the site's, and read
+back from that volume. The move goes on only if what the target read from
+its disk is what was read here, name by name with kinds, modes, owners,
+links and contents (`relocate.volumes` says each). A copy that fails, a
+volume a running container still mounts after the stop, a target that
+already has a volume of that name, or a docker that cannot be asked
+which volumes the site has, each ends the move before the commit, with the
+site started again where it was: a site is never started on a volume that
+did not arrive. The volumes where it was are only read, never removed by
+a move, and are listed among what moves left (`/relocate/leftovers`) for
+the operator to remove. A node that runs a version from before this
+refuses such a site at the check (it does not know `carried`), and a site
+that such a node sends without its volumes is refused at the first copy,
+while it still serves where it is. A database's files are only good on
+the same kind of processor: between amd64 and arm64, a database that does
+not start on the copied files undoes the move, and its backups, which went
+too, are the way.
+
+Only once it answers there are its names published on that
 node over the records that pointed here (`over`, which only a node may
 ask), and only then does this node take its own route down. The copy here
 is archived, not deleted (`data/archive/`), so going back is a restore;
@@ -890,7 +921,7 @@ A move is given in all what its steps may take by the site's manifest
 site) and an hour for the copies; once the site answers there, pointing
 its names and archiving the copy here have their own time.
 Each step is a `relocate.*` event (`copy`, `stop`, `final`, `commit`,
-`start`, `dns`, `cleanup`, `done`, or `failed` with the step it failed at).
+`volumes`, `start`, `dns`, `cleanup`, `done`, or `failed` with the step it failed at).
 What does not go: its logs (this machine's), the tasks under `tasks/` that
 name it, and what a build left that only runs on this machine's processor
 (a site moved between amd64 and arm64 needs its build run again there).
@@ -916,12 +947,13 @@ then the journal waits for the next start.
 | POST | `/sites/{domain}/containerize` | `{provider?, model?}` → the job `{step, how?, error?, chat?, done, started}`; 409 when docker does not answer or the site already runs in one. The container is worked out (see [manifest.md](manifest.md#docker)), tried beside the site, and written only if it answered; when it cannot be, the agent named is asked in a new conversation (`chat`, its id), and without one the job ends `failed` with why. Events `containerize.trying`, `.done`, `.asked`, `.failed` |
 | GET | `/sites/{domain}/containerize` | → the job as it is now |
 | POST | `/sites/{domain}/move` | `{node}` → the move (as `GET /sites/{domain}/move` says it); it goes on in the background, each step an event `relocate.<step>` |
-| GET | `/sites/{domain}/move/plan` | `?node=` → `{analysis: {bytes, files, installs: [{dir, command, lockfile}], node?, docker?, names?, outside_links?: [{path, target}], warnings}, node_pinned?, node?, check_error?, exports?}`: what moving the site would do, before it does it. Dependencies are found as `node_modules` beside a `package.json` in any folder; links that leave the site's folder are listed (they point at whatever is there on the target). `check_error` is the target saying it cannot take it, or an export that waits for the stop whose program is not where it runs; `exports` says of each such export whether it has worked here before or will be tried, at the move, while the site still serves (see the manifest's workers) |
+| GET | `/sites/{domain}/move/plan` | `?node=` → `{analysis: {bytes, files, installs: [{dir, command, lockfile}], node?, docker?, names?, volumes?, outside_links?: [{path, target}], warnings}, node_pinned?, node?, check_error?, exports?}`: what moving the site would do, before it does it. Dependencies are found as `node_modules` beside a `package.json` in any folder; links that leave the site's folder are listed (they point at whatever is there on the target). `check_error` is the target saying it cannot take it, or an export that waits for the stop whose program is not where it runs; `exports` says of each such export whether it has worked here before or will be tried, at the move, while the site still serves (see the manifest's workers) |
 | GET | `/sites/{domain}/move` | → the site's last move from this node: `{id, domain, node, step, done, started, ended?, error?, steps: [{step, message, state, started, ended?, error?}], report?: {archive, down, first_bytes, last_bytes, dns}}`; `state` is `running`, `ok`, `failed` or `warn` (the names did not follow), and a failure's way back is its own step, `restore` |
 | GET | `/moves` | → every move from this node kept on disk (the last 50), the newest first; `?domain=` one site's. A move a restart cut is put right when the house starts again (its journal, a `recover` step); one without a journal is said as failed at the step it was in |
-| POST | `/relocate/{domain}/check` | the receiving node, before anything moves: `{names, docker, tasks, volumes, ports, public}` (the names published where the site is; whether it runs in a container; its task files; the docker volumes its move fills here; its workers' written ports; its services' public ports) → `{ok}`, or 409 when the name is a site here, this node cannot publish every one of those names, or the site runs in a container and this node has no docker that answers, a task name or one of those volumes is already here, or one of those ports is taken (a public port: another site here declares it, the house holds it, or something listens on it) |
+| POST | `/relocate/{domain}/check` | the receiving node, before anything moves: `{names, docker, tasks, volumes, carried, data, ports, public}` (the names published where the site is; whether it runs in a container; its task files; the docker volumes its move fills here by command; the ones it copies here as files; the parts under `data/` it has that the first moves did not carry, such as `data/backups/<domain>`; its workers' written ports; its services' public ports) → `{ok}`, or 409 when this node would not place one of those parts, the name is a site here, this node cannot publish every one of those names, or the site runs in a container and this node has no docker that answers, a task name or one of those volumes is already here, or one of those ports is taken (a public port: another site here declares it, the house holds it, or something listens on it) |
 | POST | `/relocate/{domain}/notes` | the receiving node, after a site arrived: `{warnings}`, what the node it came from found running beside it that did not travel (a compose file's containers) → `{ok}`; each is a `relocate.incomplete` event here |
-| PUT | `/relocate/{domain}` | the receiving node: a site's bundle (`.tar.gz`) as the raw body → `{files, dirs, links, bytes}`; 409 when the name is a site here |
+| PUT | `/relocate/{domain}` | the receiving node: a site's bundle (`.tar.gz`) as the raw body → `{files, dirs, links, bytes}`; 409 when the name is a site here, or when the sender does not say it carries volumes (`?carries=1`) and the manifest received mounts named volumes no `move` command fills: a node from before volumes were carried, whose site would start here on empty ones |
+| PUT | `/relocate/{domain}/volumes/{volume}` | the receiving node, with the site stopped where it is: a docker volume of the site as a gzipped tar, the raw body → `{digest, files, bytes}`, what this node read back from the volume it wrote; the volume is made here labelled as the site's, recorded so a move that is undone removes it, and removed at once if it was not written whole. 409 when a volume of that name is here; 400 for a name that is not a volume of that site |
 | PUT | `/relocate/{domain}/delta` | the last copy: changed files and the index, laid over what was received |
 | POST | `/relocate/{domain}/prepare` | the network, or an import token for that site: `{dirs?}` (the site's folders whose `node_modules` the source left behind, relative to it; none is its root): start installing a received site's dependencies in each, in its staging, for this machine (`npm ci --include=dev`, or pnpm or yarn by the lockfile, dev dependencies included, with the Node the site gets here) → `{started, id}` (`{started: false, running: true, id}` while an earlier one runs, which the moving node does not wait on). It runs on its own, not inside the request (a connection between nodes, or Cloudflare's 100 seconds, would cut it); a move calls it after the first copy, while the site still serves where it was, for a Node site on the machine, whose `node_modules` is left behind |
 | GET | `/relocate/{domain}/prepare` | → `{id, done, output?, error?}`: what the install said, or why it failed; a process killed says by what (its 30 minutes, the kernel for lack of memory with the machine's memory, or another SIGKILL) |

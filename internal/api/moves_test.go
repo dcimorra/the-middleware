@@ -11,11 +11,11 @@ import (
 // and why, and the way back, kept across a restart of the house.
 func TestAMoveIsReadAsItsOperationsAndSurvivesARestart(t *testing.T) {
 	f := newFixture(t).withToken()
-	j, busy := f.srv.newMove("m.test", "b", movePlan(true, false))
+	j, busy := f.srv.newMove("m.test", "b", movePlan(true, false, false))
 	if busy != nil {
 		t.Fatal(busy)
 	}
-	if _, busy := f.srv.newMove("m.test", "b", movePlan(true, false)); busy == nil {
+	if _, busy := f.srv.newMove("m.test", "b", movePlan(true, false, false)); busy == nil {
 		t.Fatal("a second move of the same site while one runs")
 	}
 	for _, st := range []string{relocate.StepCheck, relocate.StepCopy, relocate.StepStop, relocate.StepFinal, relocate.StepCommit, relocate.StepStart, relocate.StepRestore} {

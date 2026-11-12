@@ -1,6 +1,7 @@
 package api
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -67,12 +68,20 @@ func (s *Server) registerRelocateTarget() {
 				return nil, Errorf(http.StatusConflict, "%v: the site's task could not come with it", err)
 			}
 		}
+		if len(body.Carried) > 0 && !body.Docker {
+			if err := dockerAnswers(r.Context()); err != nil {
+				return nil, Errorf(http.StatusConflict, "this node has no working docker (%v) and the site keeps data in docker volumes (%s)", err, strings.Join(body.Carried, ", "))
+			}
+		}
+		if name, ok := relocate.KnownData(domain, body.Data); !ok {
+			return nil, Errorf(http.StatusConflict, "this node runs a version that would not keep %s, which the site has where it is: update this node first", name)
+		}
 		if body.Docker {
 			if err := dockerAnswers(r.Context()); err != nil {
 				return nil, Errorf(http.StatusConflict, "this node has no working docker (%v) and the site runs in a container: install docker here (run middleware install again), or take the site out of its container before moving it", err)
 			}
 		}
-		if err := rc.CheckNeeds(r.Context(), body); err != nil {
+		if err := receiverFor(rc).CheckNeeds(r.Context(), body); err != nil {
 			return nil, Errorf(http.StatusConflict, "%v", err)
 		}
 		if len(body.Public) > 0 {
@@ -103,11 +112,39 @@ func (s *Server) registerRelocateTarget() {
 	})
 	s.Handle("PUT", Prefix+"/relocate/{domain}", "Receive a site moving in from another node: its bundle (.tar.gz) as the raw body, kept apart until commit", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		defer s.receiving()()
-		rep, err := rc.Receive(r.Context(), r.PathValue("domain"), r.Body)
+		domain := r.PathValue("domain")
+		rep, err := rc.Receive(r.Context(), domain, r.Body)
 		if err != nil {
 			return nil, bad(err)
 		}
+		// A node from before volumes went with a site sends the folder and
+		// would have this one start its containers on empty volumes: said
+		// now, at the first copy, while the site still serves where it is.
+		if r.URL.Query().Get("carries") == "" {
+			if mf, err := manifest.Load(rc.StagingSite(domain)); err == nil {
+				if left := relocate.Uncarried(domain, mf); len(left) > 0 {
+					_ = rc.Discard(domain)
+					return nil, Errorf(http.StatusConflict, "the node %s comes from runs a version that leaves a site's docker volumes behind (%s), and it would start here on empty ones: update that node first", domain, strings.Join(left, ", "))
+				}
+			}
+		}
 		return rep, nil
+	})
+	s.Handle("PUT", Prefix+"/relocate/{domain}/volumes/{volume}", "A docker volume of a site moving in, sent with the site stopped where it is: a gzipped tar as the raw body, written into a new volume of that name (refused if one is here), read back from it and answered as what is now on this disk (digest, files, bytes)", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		defer s.receiving()()
+		zr, err := gzip.NewReader(r.Body)
+		if err != nil {
+			return nil, Errorf(http.StatusBadRequest, "the volume's body is not gzip: %v", err)
+		}
+		defer zr.Close()
+		sum, err := receiverFor(rc).TakeVolume(r.Context(), r.PathValue("domain"), r.PathValue("volume"), zr)
+		if errors.Is(err, relocate.ErrVolumeHere) {
+			return nil, Errorf(http.StatusConflict, "%v", err)
+		}
+		if err != nil {
+			return nil, bad(err)
+		}
+		return sum, nil
 	})
 	s.Handle("PUT", Prefix+"/relocate/{domain}/delta", "The last copy of a site moving in: what changed since the first, and the index of what is there", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		defer s.receiving()()
@@ -155,6 +192,11 @@ func (s *Server) registerRelocateTarget() {
 			return nil, bad(err)
 		}
 		_ = relocate.MarkArrived(s.opts.Root, domain, time.Now())
+		// Its visits and the rest came with it, placed under the feet of
+		// whoever keeps them in memory for a name that was here before.
+		if mgr, err := s.sitesManager(); err == nil && mgr.Release != nil {
+			mgr.Release(domain)
+		}
 		if o := s.portsOptions(); o != nil {
 			// Its approval came with it, placed under the book's feet.
 			o.Book.Release(domain)
@@ -484,7 +526,8 @@ func (s *Server) registerRelocateSource(m *nodes.Mesh) {
 			}
 		}
 		_, published := src.Published(domain)
-		job, busy := s.newMove(domain, x.Name, movePlan(install, published))
+		vols, _ := src.Volumes(r.Context(), domain)
+		job, busy := s.newMove(domain, x.Name, movePlan(install, published, len(vols) > 0))
 		if busy != nil {
 			return nil, Errorf(http.StatusConflict, "%s is already moving to %s (%s)", domain, busy.Node, busy.Step)
 		}
@@ -555,6 +598,12 @@ func (s *Server) registerRelocateSource(m *nodes.Mesh) {
 		a := relocate.Analyze(dir, relocate.Excluding(parts(s.opts.Root, domain), dir, site.Manifest), install, names)
 		if cs := foreignContainers(r.Context(), dir); len(cs) > 0 {
 			a.Warnings = append(a.Warnings, relocate.Unmanaged(dir, site.Manifest, cs)...)
+		}
+		if vols, err := src.Volumes(r.Context(), domain); err != nil {
+			a.Warnings = append(a.Warnings, fmt.Sprintf("docker could not be asked which volumes are the site's (%v): the move will not start until it can, since it would leave them behind", err))
+		} else if len(vols) > 0 {
+			a.Volumes = vols
+			a.Warnings = append(a.Warnings, fmt.Sprintf("its docker volumes (%s) are copied file for file with the site stopped, which adds their copy to the time it is down, and stay on this node, listed, until you remove them. A database's files are only good on a machine of the same kind of processor: to move between amd64 and arm64, take a copy of the database first (its backups go with the site) and restore it there if it does not start", strings.Join(vols, ", ")))
 		}
 		out := map[string]any{"analysis": a}
 		if install && a.Node == "" {
@@ -708,6 +757,55 @@ func (src siteSource) Archive(ctx context.Context, domain string, m []byte) (str
 	return path, err
 }
 
+// volumeDocker is the docker a site's volumes are read from and written
+// to; the tests give it one of their own.
+var volumeDocker = func(root string) goruntime.Docker {
+	return goruntime.Docker{Data: filepath.Join(root, "data")}
+}
+
+// receiverFor is rc with the docker volumes are written through.
+func receiverFor(rc relocate.Receiver) relocate.Receiver {
+	d := volumeDocker(rc.Root)
+	rc.Docker = &d
+	return rc
+}
+
+// Volumes implements relocate.Carrier: every docker volume that is the
+// site's on this node, labelled, claimed or named in its manifest.
+func (src siteSource) Volumes(ctx context.Context, domain string) ([]string, error) {
+	var mf *manifest.Manifest
+	if site, err := src.mgr.Get(domain); err == nil {
+		mf = site.Manifest
+	}
+	d := volumeDocker(src.s.opts.Root)
+	if d.Bin == "" {
+		if _, err := exec.LookPath("docker"); err != nil {
+			// No docker on this machine: no volumes on it.
+			return nil, nil
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	return relocate.DockerCarrier{Docker: d}.SiteVolumes(ctx, domain, mf)
+}
+
+// VolumeUsers implements relocate.Carrier.
+func (src siteSource) VolumeUsers(ctx context.Context, volume string) ([]string, error) {
+	return volumeDocker(src.s.opts.Root).VolumeUsers(ctx, volume)
+}
+
+// ReadVolume implements relocate.Carrier.
+func (src siteSource) ReadVolume(ctx context.Context, volume string, w io.Writer) error {
+	return volumeDocker(src.s.opts.Root).ReadVolume(ctx, volume, w)
+}
+
+// Release implements relocate.Releaser.
+func (src siteSource) Release(domain string) {
+	if src.mgr.Release != nil {
+		src.mgr.Release(domain)
+	}
+}
+
 // RemoveVolumes implements relocate.Volumer: the volumes of a site that
 // moved away, once its archive keeps their dumps.
 func (src siteSource) RemoveVolumes(ctx context.Context, vols []string) error {
@@ -814,7 +912,34 @@ func (t meshTarget) older(err error) error {
 }
 
 func (t meshTarget) Send(ctx context.Context, domain string, body io.Reader) error {
-	return t.older(t.stream(ctx, "PUT", "/relocate/"+domain, body))
+	// carries: this node sends the site's docker volumes after its stop,
+	// which the target otherwise refuses a site that has them for.
+	return t.older(t.stream(ctx, "PUT", "/relocate/"+domain+"?carries=1", body))
+}
+
+// TakeVolume implements relocate.VolumeTaker: the tar goes gzipped, a
+// database's files being mostly air, and the node answers with what it
+// read back from the volume it wrote.
+func (t meshTarget) TakeVolume(ctx context.Context, domain, volume string, body io.Reader) (relocate.VolumeSum, error) {
+	var sum relocate.VolumeSum
+	pr, pw := io.Pipe()
+	go func() {
+		zw := gzip.NewWriter(pw)
+		_, err := io.Copy(zw, body)
+		if err == nil {
+			err = zw.Close()
+		}
+		pw.CloseWithError(err)
+	}()
+	defer pr.CloseWithError(errors.New("the target stopped reading"))
+	path := "/relocate/" + domain + "/volumes/" + volume
+	var err error
+	if t.call != nil {
+		err = t.call(ctx, "PUT", path, io.Reader(pr), &sum)
+	} else {
+		err = t.m.Stream(ctx, t.x, "PUT", path, "application/gzip", pr, &sum)
+	}
+	return sum, t.older(err)
 }
 
 func (t meshTarget) SendDelta(ctx context.Context, domain string, body io.Reader) error {

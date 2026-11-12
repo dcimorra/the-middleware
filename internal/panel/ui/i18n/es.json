@@ -819,6 +819,7 @@
   "site.moveStep.install": "Instalando sus dependencias en {node}, para esa máquina, mientras sirve aquí",
   "site.moveStep.stop": "Parando para la copia final",
   "site.moveStep.final": "Enviando lo que cambió",
+  "site.moveStep.volumes": "Copiando sus volúmenes de docker a {node}, parado, y comprobándolos",
   "site.moveStep.export": "Exportando aquí los datos de sus workers, parado",
   "site.moveStep.import": "Importando los datos de sus workers en {node}",
   "site.moveStep.commit": "Colocándolo en {node}",

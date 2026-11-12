@@ -70,6 +70,7 @@ in the API ([api.md](api.md)) and the panel.
 | command | what |
 | --- | --- |
 | `events [-f] [--since] [--type prefix] [--subject domain]` | the audit trail; `-f` streams |
+| `nodes send <file> <node> <site> [--as name]` | send a file of this machine to a site on another node of the network (by the node's name or id), through the mesh: it lands in that site's HOME as `~/inbox/<name>`, checked by SHA-256, where the site's agent and processes read it and nothing serves it. The operator's (and the house's agent's): a copy of a database made on one node reaches the site that needs it on another |
 | `system` | version, root, uptime, listeners, load, memory, disk |
 | `system restart` | SIGTERM to the supervisor; systemd restarts it, sites keep running |
 | `token list` / `token add <name>` / `token rm <id>` | API tokens; the token is shown once |

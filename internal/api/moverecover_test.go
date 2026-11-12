@@ -41,7 +41,7 @@ func stoppedForAMove(t *testing.T, f *fixture, step string) []byte {
 	}
 	// What StopForMove writes, with an engine that would obey it.
 	os.WriteFile(filepath.Join(dir, "site.json"), []byte(`{"version":2,"disabled":true,"static":{"root":"public"}}`), 0o644)
-	job, _ := f.srv.newMove("r.test", "node-b", movePlan(false, false))
+	job, _ := f.srv.newMove("r.test", "node-b", movePlan(false, false, false))
 	f.srv.advance(job, relocate.StepStop, "stopping r.test here for the last copy")
 	os.MkdirAll(filepath.Dir(relocate.JournalPath(f.root, "r.test")), 0o755)
 	j := relocate.Journal{Domain: "r.test", Target: "b-id", ID: job.ID, Step: step, Manifest: original, Held: held, Started: time.Now()}
