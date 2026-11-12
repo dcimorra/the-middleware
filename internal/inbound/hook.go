@@ -182,6 +182,9 @@ func (h *Hook) Wrap(next http.Handler) http.Handler {
 			pages.Write(w, r, "unknown", http.StatusNotFound)
 			return
 		}
+		if h.isPanel(host) && h.panelKeyGate(w, r) {
+			return
+		}
 		if !h.isPanel(host) {
 			st := h.file.get()
 			if (door == Tunnel && !st.Tunnel.Open) || (door == Ports && !st.Ports.Open) || (door == Local && !st.Local.Open) {

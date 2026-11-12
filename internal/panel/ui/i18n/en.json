@@ -2512,5 +2512,19 @@
   "autopilot.orderCancelBody": "It is told not to make it.",
   "autopilot.perWeekHint": "Its own ideas in any seven days. The sites you ask for are on top of these.",
   "autopilot.perWeekSaved": "It may now make {n} a week",
-  "autopilot.kind.order": "order"
+  "autopilot.kind.order": "order",
+  "panelKey.title": "Panel hidden behind a key",
+  "panelKey.hint": "With the key on, the panel's address answers \"no site here\", like outside the VPN when the panel is kept inside it, unless you arrive once with ?access-token=… in the address: then this browser keeps a cookie and the key leaves the bar. The usual sign-in follows.",
+  "panelKey.on": "Hide behind a key",
+  "panelKey.onQ": "Hide the panel behind a key?",
+  "panelKey.newQ": "Make a new key?",
+  "panelKey.onBody": "The key is shown only once. Keep the address: other browsers and devices need to open it once. This browser stays in. A new key shuts out the browsers that came in with the old one.",
+  "panelKey.new": "Make another",
+  "panelKey.off": "Remove the key",
+  "panelKey.offQ": "Stop hiding the panel?",
+  "panelKey.offBody": "The panel's address will show the sign-in to whoever reaches it again.",
+  "panelKey.offDone": "The panel no longer asks for its key",
+  "panelKey.isOn": "Hidden since {at}.",
+  "panelKey.once": "This is the address with the key. It is shown only now:",
+  "panelKey.cli": "If you lose the key: `middleware panel key off` on the server removes it, and `middleware panel key on` makes another and prints it."
 }

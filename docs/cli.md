@@ -90,6 +90,8 @@ in the API ([api.md](api.md)) and the panel.
 | `chat [--model m] <domain> <text…>` / `chat middleware <text…>` | a turn with the site's agent; progress is printed from the event stream |
 | `skill install [dir]` | write the skill the conversations run with (embedded in the binary, installed into every conversation's HOME before each turn) to `<root>/.claude/skills/middleware/`, or to `dir`, so Claude Code run by hand on the server loads it too. Needs no running process |
 | `deps status` / `deps check` / `deps install <claude\|agy>` | the agent CLIs under `modules/node`: what runs, the latest published, install or update now. The daily check does this on its own ([modules.md](modules.md)) |
+| `panel open [duration]` / `panel close` / `panel status` | the fire exit: lift the panel's address lists and closed password for a while (30 minutes unless told) |
+| `panel key on` / `panel key off` / `panel key status` | hide the panel behind a key: without `?access-token=<key>` once in the address its name answers like a name nobody serves. `on` makes a new key and prints the address with it (the only time it is shown; an earlier key stops working); `off` is the way back when it is lost. Works on `data/inbound.json` alone, the running process reads it on its next request |
 | `vpn status [--json]` / `vpn peer add <name>` / `vpn peer remove <name>` | the WireGuard door for the panel; `--socket` names the helper's socket. "VPN only" is `POST /modules/vpn/only` in the API |
 | `install` / `uninstall` / `doctor` | above |
 

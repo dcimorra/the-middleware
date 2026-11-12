@@ -29,6 +29,18 @@ comparing anything, from loopback too. `middleware panel open [30m]` on
 the server lifts both for a while, without a restart; the panel shows a
 red strip meanwhile.
 
+**The panel's key.** With a key set (`POST /inbound/panel-key`, or
+`middleware panel key on`), the panel's name answers whoever does not
+bring it with the page of a name nobody serves (404), before any of the
+above: the same page the panel gives outside the VPN when it is kept
+inside one. `?access-token=<key>` in any address of the panel sets an
+HttpOnly cookie (`mw_panel_key`, 400 days, SameSite=Lax) and answers 303
+to the same address without the key. Only the key's SHA-256 is kept, in
+`data/inbound.json`; a new key ends every cookie of the old one. The unix
+socket and loopback without a proxy header pass without it (the CLI, a
+site's door, an SSH tunnel). `middleware panel key off` removes it from
+the shell.
+
 **Passkeys** are WebAuthn credentials bound to the name the panel was opened
 by (ES256, Ed25519, RS256; attestation not asked). They work on a secure
 origin with a name, never on a bare IP, and survive a password change.
@@ -569,6 +581,9 @@ The external programs the modules run (the agent CLIs), installed under
 | POST | `/inbound/move` | `{domains: [], to: "tunnel"|"ports"}` → `{ok, lines: [{status, text}]}` |
 | PUT | `/inbound/publishing` | `{new_sites?: "tunnel"|"ports", public_ip?}` → `{new_sites, public_ip}`; an empty `public_ip` goes back to detecting it |
 | POST | `/inbound/doors/{door}` | `{open}` → `doors` (door is `tunnel`, `ports` or `local`; written to `data/inbound.json` and acted on at once) |
+| GET | `/inbound/panel-key` | → `{on, param, since?}`: whether the panel is hidden behind a key |
+| POST | `/inbound/panel-key` | → `{on, key, param, since}`; a new key (any earlier one stops working), in this answer only, with the caller's cookie set |
+| DELETE | `/inbound/panel-key` | → `{on: false}`; the panel answers at its address again |
 | PUT | `/inbound/local` | `{open, http?, dns?}` → `doors`; the local door's listeners (plain HTTP and the name server), 400 when an address is malformed or collides with the ports door |
 | GET | `/sites/{domain}/security/seen` | who called at the site → `{countries, bots, browsers, agents: [{key, name, extra, count, first, last}], since, total}`, heaviest first; counted before the security rules, so what they shut out is there too. In the `read` scope (`middleware site security <domain>`) |
 | POST | `/sites/{domain}/security/seen/forget` | → `{ok}`; empties the tally |
