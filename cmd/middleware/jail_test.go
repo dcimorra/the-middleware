@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -169,3 +170,44 @@ type nopParser struct{}
 
 func (nopParser) Line(string) ([]agent.Event, bool) { return nil, false }
 func (nopParser) Flush() []agent.Event              { return nil }
+
+// A message longer than the kernel takes as an argument reaches a jailed
+// turn whole, on its standard input: as an argument the turn never
+// started ("fork/exec /proc/self/exe: argument list too long"), and the
+// site's code asked again every few seconds for the same answer.
+func TestJailedTurnReadsALongMessage(t *testing.T) {
+	_, site, home := jailedHouse(t)
+	cli := filepath.Join(t.TempDir(), "fake-cli")
+	if err := os.WriteFile(cli, []byte("#!/bin/sh\nwc -c\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	j := agent.Jail{SiteDir: site, Home: home}
+	stream := filepath.Join(t.TempDir(), "turn.out")
+	message := strings.Repeat("a book. ", 64*1024)
+	run, err := j.StartInput(context.Background(), nopParser{}, stream, site, j.Env(nil), message, cli)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timeout := time.After(10 * time.Second)
+	for done := false; !done; {
+		select {
+		case _, ok := <-run.Events():
+			done = !ok
+		case <-timeout:
+			t.Fatal("turn did not end")
+		}
+	}
+	out, _ := os.ReadFile(stream)
+	if got := strings.TrimSpace(string(out)); got != "524288" {
+		errOut, _ := os.ReadFile(stream + ".err")
+		t.Fatalf("the turn read %q bytes of 524288: %s", got, errOut)
+	}
+	if _, err := os.Stat(stream + ".in"); err == nil {
+		t.Fatal("the message's file outlived the start of the turn")
+	}
+	// The same message as an argument is refused before the kernel is
+	// asked, as what it is.
+	if _, err := j.Start(context.Background(), nopParser{}, stream, site, j.Env(nil), cli, message); !errors.Is(err, agent.ErrTooLong) {
+		t.Fatalf("err = %v, want agent.ErrTooLong", err)
+	}
+}

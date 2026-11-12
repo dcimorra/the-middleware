@@ -433,7 +433,8 @@ func (s *Server) registerChat(m *chat.Manager, p string, name func(*http.Request
 
 // chatError maps the manager's errors: a busy conversation is 409, a
 // full house 429, an unknown site 404, an empty message or an unknown
-// provider 400.
+// provider 400, a message its agent's command line cannot carry 413 (the
+// same answer every time, and a 5xx is what a client tries again).
 func chatError(err error) error {
 	msg := err.Error()
 	var capacity *chat.ErrCapacity
@@ -446,6 +447,8 @@ func chatError(err error) error {
 		return Errorf(http.StatusForbidden, "%s", msg)
 	case errors.Is(err, agent.ErrUnknownProvider):
 		return Errorf(http.StatusBadRequest, "%s", msg)
+	case errors.Is(err, agent.ErrTooLong):
+		return Errorf(http.StatusRequestEntityTooLarge, "%s", msg)
 	case strings.HasSuffix(msg, "no such site"), strings.HasSuffix(msg, "is not a domain"):
 		return Errorf(http.StatusNotFound, "%s", msg)
 	case msg == "empty message":

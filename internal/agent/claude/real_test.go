@@ -124,3 +124,38 @@ func TestTheRealCLIRunsNothingTheSitePlanted(t *testing.T) {
 		t.Fatalf("the CLI's folder is not the house's: %v", err)
 	}
 }
+
+// With CLAUDE_BIN, the real CLI takes a message and a system text longer
+// than an argument can be, and both reach the model whole.
+func TestTheRealCLIReadsALongMessageAndALongSystemText(t *testing.T) {
+	bin := os.Getenv("CLAUDE_BIN")
+	if bin == "" {
+		t.Skip("CLAUDE_BIN runs it")
+	}
+	dir := t.TempDir()
+	root := filepath.Join(dir, "root")
+	site := filepath.Join(root, "sites", "a.example")
+	home := filepath.Join(root, "data", "homes", "a.example")
+	os.MkdirAll(site, 0o755)
+	api, seen := fakeAnthropic(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	run, err := New(Config{Bin: bin, APIKey: "sk-test"}).Start(ctx, agent.Request{
+		Workdir: site, Stream: filepath.Join(dir, "stream"), Jail: agent.NewJail(root, site, home),
+		Prompt: strings.Repeat("chapter one. ", 20*1024) + "MESSAGE_END_MARKER",
+		System: strings.Repeat("You know this book. ", 10*1024) + "SYSTEM_END_MARKER",
+		Env:    map[string]string{"ANTHROPIC_BASE_URL": api.URL, "IS_SANDBOX": "1"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := agent.Collect(ctx, run)
+	if last := evs[len(evs)-1]; last.Kind != agent.KindResult {
+		t.Fatalf("the turn did not end in a result: %+v", evs)
+	}
+	for _, want := range []string{"MESSAGE_END_MARKER", "SYSTEM_END_MARKER"} {
+		if !strings.Contains(seen(), want) {
+			t.Errorf("%s did not reach the model", want)
+		}
+	}
+}

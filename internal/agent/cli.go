@@ -65,7 +65,36 @@ func StartCLI(ctx context.Context, p Parser, dir string, env []string, bin strin
 // this process: what AdoptCLI reads after a restart. stream's .err file
 // beside it holds stderr.
 func StartCLIStream(ctx context.Context, p Parser, stream, dir string, env []string, bin string, args ...string) (*CLIRun, error) {
-	return startCLI(ctx, p, stream, dir, env, nil, bin, args...)
+	return startCLI(ctx, p, stream, dir, env, nil, "", bin, args...)
+}
+
+// MaxArg is the longest single argument or environment string a command
+// may carry. The kernel refuses a longer one whatever the total is
+// (MAX_ARG_STRLEN, 32 pages: 128 KiB with the terminating byte on 4 KiB
+// pages), and execve then fails with E2BIG for the whole command.
+const MaxArg = 128*1024 - 1
+
+// ErrTooLong is a turn whose command line the kernel would not take. It
+// is the same answer however often it is asked: nothing that starts turns
+// may try it again as it is.
+var ErrTooLong = errors.New("too long for a command line")
+
+// fits says the kernel will take args and env, string by string. The
+// total has its own limit (a quarter of the stack's), which only the
+// kernel knows for sure: that one comes back from Start as E2BIG.
+func fits(args, env []string) error {
+	for _, a := range args {
+		if len(a) > MaxArg {
+			return fmt.Errorf("an argument of %d KiB: %w (the limit is %d KiB each)", len(a)/1024, ErrTooLong, (MaxArg+1)/1024)
+		}
+	}
+	for _, e := range env {
+		if len(e) > MaxArg {
+			name, _, _ := strings.Cut(e, "=")
+			return fmt.Errorf("the variable %s of %d KiB: %w (the limit is %d KiB each)", name, len(e)/1024, ErrTooLong, (MaxArg+1)/1024)
+		}
+	}
+	return nil
 }
 
 // Enclose, when set, puts a site's turn in the site's jail (internal/jail)
@@ -79,10 +108,20 @@ var Enclose func(cmd *exec.Cmd, j Jail, bin string) error
 // Start is StartCLIStream for a turn run in j: enclosed, when the house
 // encloses turns.
 func (j Jail) Start(ctx context.Context, p Parser, stream, dir string, env []string, bin string, args ...string) (*CLIRun, error) {
-	return startCLI(ctx, p, stream, dir, env, &j, bin, args...)
+	return startCLI(ctx, p, stream, dir, env, &j, "", bin, args...)
 }
 
-func startCLI(ctx context.Context, p Parser, stream, dir string, env []string, j *Jail, bin string, args ...string) (*CLIRun, error) {
+// StartInput is Start for a CLI that reads the message on its standard
+// input: input is what it reads there. A message is as long as whoever
+// wrote it made it, and one of 128 KiB as an argument is one the kernel
+// refuses to start at all (a site's code sent its conversation a book
+// and every call came back "fork/exec /proc/self/exe: argument list too
+// long").
+func (j Jail) StartInput(ctx context.Context, p Parser, stream, dir string, env []string, input, bin string, args ...string) (*CLIRun, error) {
+	return startCLI(ctx, p, stream, dir, env, &j, input, bin, args...)
+}
+
+func startCLI(ctx context.Context, p Parser, stream, dir string, env []string, j *Jail, input, bin string, args ...string) (*CLIRun, error) {
 	path, err := exec.LookPath(bin)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", bin, err)
@@ -115,6 +154,25 @@ func startCLI(ctx context.Context, p Parser, stream, dir string, env []string, j
 	cmd.Dir = dir
 	cmd.Env = env
 	cmd.Stdin = nil
+	if input != "" {
+		// A file, as the output is, and not a pipe: nothing here has to
+		// stay to write it, so a supervisor that restarts while the CLI
+		// is still reading takes nothing from it. The descriptor is
+		// opened here and inherited (through setpriv and the jail's
+		// init), so the file needs no place inside the jail; removed
+		// once the child holds it, it lasts exactly as long as the turn.
+		in := stream + ".in"
+		if err := os.WriteFile(in, []byte(input), 0o600); err != nil {
+			return nil, err
+		}
+		defer os.Remove(in)
+		inf, err := os.Open(in)
+		if err != nil {
+			return nil, err
+		}
+		defer inf.Close()
+		cmd.Stdin = inf
+	}
 	// The files themselves, never a writer: Wait would then hang on a
 	// grandchild that keeps the descriptor.
 	cmd.Stdout, cmd.Stderr = out, errf
@@ -131,7 +189,15 @@ func startCLI(ctx context.Context, p Parser, stream, dir string, env []string, j
 			return nil, err
 		}
 	}
+	// Asked before the kernel is: its own refusal names the binary that
+	// was to run ("fork/exec /proc/self/exe") and not what was wrong.
+	if err := fits(cmd.Args, cmd.Env); err != nil {
+		return nil, fmt.Errorf("%s: %w", bin, err)
+	}
 	if err := cmd.Start(); err != nil {
+		if errors.Is(err, syscall.E2BIG) {
+			return nil, fmt.Errorf("%s: the command line and environment together: %w", bin, ErrTooLong)
+		}
 		return nil, err
 	}
 	r := &CLIRun{events: make(chan Event, 64), cmd: cmd, pid: cmd.Process.Pid, stream: stream, temp: temp, stop: make(chan struct{}), exited: make(chan struct{})}

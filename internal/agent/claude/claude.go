@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -124,10 +125,17 @@ func (p *Provider) ModelLabels() map[string]string {
 	return out
 }
 
+// SystemInline is the longest system text passed as an argument.
+const SystemInline = 32 * 1024
+
 // Args builds the command line for req. It is exported so a test, or an
 // operator wondering what will run, can see it without running anything.
-func (p *Provider) Args(req agent.Request, settingsFile string) []string {
-	args := []string{"-p", req.Prompt, "--output-format", "stream-json", "--verbose", "--permission-mode", p.cfg.PermissionMode}
+//
+// The message is not in it: the CLI reads it on its standard input
+// (Start), because an argument stops at 128 KiB and a message does not.
+// The system text is one too unless systemFile holds it.
+func (p *Provider) Args(req agent.Request, settingsFile, systemFile string) []string {
+	args := []string{"-p", "--output-format", "stream-json", "--verbose", "--permission-mode", p.cfg.PermissionMode}
 	if req.Model != "" {
 		args = append(args, "--model", req.Model)
 	}
@@ -139,7 +147,9 @@ func (p *Provider) Args(req agent.Request, settingsFile string) []string {
 		// messages, which still come (the parser keeps both).
 		args = append(args, "--include-partial-messages")
 	}
-	if req.System != "" {
+	if systemFile != "" {
+		args = append(args, "--append-system-prompt-file", systemFile)
+	} else if req.System != "" {
 		args = append(args, "--append-system-prompt", req.System)
 	}
 	if req.Jail.SiteDir != "" {
@@ -268,6 +278,17 @@ func (p *Provider) Start(ctx context.Context, req agent.Request) (agent.Run, err
 	if err := fsx.WriteJSON(settingsFile, Settings(req.Jail), 0o600); err != nil {
 		return nil, err
 	}
+	// A site's conversation is opened with the system text its code
+	// wrote, of whatever length. A long one goes in a file beside the
+	// settings, where the CLI reads it from inside the jail too; a short
+	// one stays an argument, as every CLI this ran on takes it.
+	systemFile := ""
+	if len(req.System) > SystemInline {
+		systemFile = strings.TrimSuffix(settingsFile, ".json") + "-system.md"
+		if err := os.WriteFile(systemFile, []byte(req.System), 0o600); err != nil {
+			return nil, err
+		}
+	}
 	env := map[string]string{}
 	for k, v := range req.Env {
 		env[k] = v
@@ -295,7 +316,7 @@ func (p *Provider) Start(ctx context.Context, req agent.Request) (agent.Run, err
 	if p.cfg.OAuthToken != "" && p.cfg.APIKey == "" && len(p.cfg.Env) == 0 {
 		env["CLAUDE_CODE_OAUTH_TOKEN"] = p.cfg.OAuthToken
 	}
-	return req.Jail.Start(ctx, &parser{}, req.Stream, req.Workdir, req.Jail.Env(env), p.cfg.Bin, p.Args(req, settingsFile)...)
+	return req.Jail.StartInput(ctx, &parser{}, req.Stream, req.Workdir, req.Jail.Env(env), req.Prompt, p.cfg.Bin, p.Args(req, settingsFile, systemFile)...)
 }
 
 // Adopt implements agent.Adopter.

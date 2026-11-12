@@ -32,7 +32,7 @@ func fakeBin(t *testing.T, dir string) (bin, argsFile, envFile string) {
 	envFile = filepath.Join(dir, "env")
 	os.WriteFile(filepath.Join(dir, "transcript.jsonl"), []byte(transcript), 0o644)
 	bin = filepath.Join(dir, "claude")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsFile + "\nenv > " + envFile + "\ncat " + filepath.Join(dir, "transcript.jsonl") + "\n"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > " + argsFile + "\nenv > " + envFile + "\ncat > " + filepath.Join(dir, "stdin") + "\ncat " + filepath.Join(dir, "transcript.jsonl") + "\n"
 	os.WriteFile(bin, []byte(script), 0o755)
 	return bin, argsFile, envFile
 }
@@ -73,7 +73,11 @@ func TestAFakeClaudeTranscriptBecomesEventsWithSessionAndCost(t *testing.T) {
 	}
 
 	args, _ := os.ReadFile(argsFile)
-	for _, want := range []string{"-p\nhello\n", "--output-format\nstream-json\n", "--verbose\n", "--permission-mode\nbypassPermissions\n", "--model\nsonnet\n", "--resume\nprev\n", "--add-dir\n" + site + "\n", "--append-system-prompt\nYou are in a jail.\n", "--settings\n", "--extra\n"} {
+	// The message is what the CLI reads, never an argument.
+	if in, _ := os.ReadFile(filepath.Join(dir, "stdin")); string(in) != "hello" {
+		t.Errorf("the CLI read %q, want the message", in)
+	}
+	for _, want := range []string{"-p\n--output-format\nstream-json\n", "--verbose\n", "--permission-mode\nbypassPermissions\n", "--model\nsonnet\n", "--resume\nprev\n", "--add-dir\n" + site + "\n", "--append-system-prompt\nYou are in a jail.\n", "--settings\n", "--extra\n"} {
 		if !strings.Contains(string(args), want) {
 			t.Errorf("args missing %q:\n%s", want, args)
 		}
@@ -94,6 +98,44 @@ func TestAFakeClaudeTranscriptBecomesEventsWithSessionAndCost(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"Read(//other/**)"`) || !strings.Contains(string(data), `"Bash(*/other*)"`) {
 		t.Fatalf("settings:\n%s", data)
+	}
+}
+
+// A site's code may send its conversation a book, as the message or as
+// the system text it opens it with: neither is an argument then, since
+// one over 128 KiB is a command the kernel refuses to start.
+func TestALongMessageAndALongSystemTextAreNotArguments(t *testing.T) {
+	dir := t.TempDir()
+	bin, argsFile, _ := fakeBin(t, dir)
+	site := filepath.Join(dir, "site")
+	home := filepath.Join(dir, "home")
+	os.MkdirAll(site, 0o755)
+	message := strings.Repeat("chapter one. ", 40*1024)
+	system := strings.Repeat("You know this book. ", 20*1024)
+	run, err := New(Config{Bin: bin}).Start(context.Background(), agent.Request{
+		Workdir: site, Prompt: message, System: system, Name: "a.example#door1",
+		Jail: agent.Jail{SiteDir: site, Home: home},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := agent.Collect(context.Background(), run)
+	if last := evs[len(evs)-1]; last.Kind != agent.KindResult {
+		t.Fatalf("the turn did not end in a result: %+v", last)
+	}
+	if in, _ := os.ReadFile(filepath.Join(dir, "stdin")); string(in) != message {
+		t.Fatalf("the CLI read %d bytes of the message's %d", len(in), len(message))
+	}
+	args, _ := os.ReadFile(argsFile)
+	if len(args) > 4096 {
+		t.Fatalf("the command line is %d bytes", len(args))
+	}
+	file := filepath.Join(home, ".middleware", "claude-settings-a.example#door1-system.md")
+	if !strings.Contains(string(args), "--append-system-prompt-file\n"+file+"\n") {
+		t.Fatalf("args:\n%s", args)
+	}
+	if got, _ := os.ReadFile(file); string(got) != system {
+		t.Fatalf("the system file holds %d bytes of %d", len(got), len(system))
 	}
 }
 
@@ -243,7 +285,7 @@ func TestALentFolderIsClosedToWritingAndAdded(t *testing.T) {
 	if strings.Contains(string(rules), "Read(//s/b") {
 		t.Fatal("the lent folder cannot be read")
 	}
-	args := strings.Join(New(Config{}).Args(agent.Request{Prompt: "x", Jail: j}, ""), " ")
+	args := strings.Join(New(Config{}).Args(agent.Request{Prompt: "x", Jail: j}, "", ""), " ")
 	if !strings.Contains(args, "--add-dir /s/b") {
 		t.Fatalf("args: %s", args)
 	}
@@ -416,10 +458,10 @@ func TestTheResultSaysHowMuchOfTheContextTheSessionHolds(t *testing.T) {
 // input are not.
 func TestPartialMessagesBecomeDeltasOfTheMainAgentsTextOnly(t *testing.T) {
 	p := New(Config{})
-	if args := strings.Join(p.Args(agent.Request{Prompt: "x", Partial: true}, ""), " "); !strings.Contains(args, "--include-partial-messages") {
+	if args := strings.Join(p.Args(agent.Request{Prompt: "x", Partial: true}, "", ""), " "); !strings.Contains(args, "--include-partial-messages") {
 		t.Fatalf("partial not asked for: %s", args)
 	}
-	if args := strings.Join(p.Args(agent.Request{Prompt: "x"}, ""), " "); strings.Contains(args, "--include-partial-messages") {
+	if args := strings.Join(p.Args(agent.Request{Prompt: "x"}, "", ""), " "); strings.Contains(args, "--include-partial-messages") {
 		t.Fatalf("partial asked for without Partial: %s", args)
 	}
 	pr := &parser{}

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -360,4 +361,54 @@ func TestASiteJailLendsItsOwnLogsAndNotTheOthers(t *testing.T) {
 			t.Errorf("%s is not denied", want)
 		}
 	}
+}
+
+// What a CLI is given to read arrives whole however long it is, and the
+// file it came in is gone once the CLI holds it.
+func TestACLIRunReadsItsInputWhateverItsLength(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake.sh")
+	os.WriteFile(script, []byte("#!/bin/sh\nwc -c | tr -d ' '\necho END\n"), 0o755)
+	stream := filepath.Join(dir, "turn.out")
+	j := Jail{Home: dir}
+	run, err := j.StartInput(context.Background(), &echoParser{}, stream, dir, j.Env(nil), strings.Repeat("x", 300*1024), script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs := Collect(context.Background(), run)
+	if len(evs) != 2 || evs[0].Text != "307200" || evs[1].Kind != KindResult {
+		t.Fatalf("events = %+v", evs)
+	}
+	if _, err := os.Stat(stream + ".in"); err == nil {
+		t.Fatal("the input's file was left behind")
+	}
+}
+
+// An argument or a variable the kernel would refuse is refused first,
+// with an error that says so and that callers can tell from one worth
+// trying again.
+func TestACommandLineTheKernelWouldRefuseIsErrTooLong(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "fake.sh")
+	os.WriteFile(script, []byte("#!/bin/sh\necho END\n"), 0o755)
+	env := Jail{Home: dir}.Env(nil)
+	if _, err := StartCLI(context.Background(), &echoParser{}, dir, env, script, strings.Repeat("x", MaxArg+1)); !errors.Is(err, ErrTooLong) {
+		t.Fatalf("a long argument: err = %v", err)
+	}
+	if _, err := StartCLI(context.Background(), &echoParser{}, dir, append(env, "BIG="+strings.Repeat("x", MaxArg)), script); !errors.Is(err, ErrTooLong) || !strings.Contains(err.Error(), "BIG") {
+		t.Fatalf("a long variable: err = %v", err)
+	}
+	// Each string fits and together they do not: the kernel's own word.
+	var many []string
+	for i := 0; i < 64; i++ {
+		many = append(many, strings.Repeat("x", MaxArg))
+	}
+	if _, err := StartCLI(context.Background(), &echoParser{}, dir, env, script, many...); !errors.Is(err, ErrTooLong) {
+		t.Fatalf("too much in all: err = %v", err)
+	}
+	run, err := StartCLI(context.Background(), &echoParser{}, dir, env, script, strings.Repeat("x", MaxArg))
+	if err != nil {
+		t.Fatalf("an argument at the limit: %v", err)
+	}
+	Collect(context.Background(), run)
 }
