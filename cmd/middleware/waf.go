@@ -308,6 +308,25 @@ func guardSite(sn engine.Snapshot) guard.SiteInfo {
 			s.Ports = append(s.Ports, w.Port)
 		}
 	}
+	// A service's public ports are the site's too, once the owner approved
+	// them: the first relay declared this way was reported as "a port that
+	// was not assigned to it" for the 3478 its manifest and its owner had
+	// given it. What still waits for approval is not added: the service is
+	// not started, and something else listening there is worth a word.
+	for _, sv := range sn.Services {
+		if sv.Pending != "" {
+			continue
+		}
+		for _, raw := range sv.Ports {
+			p, err := manifest.ParsePublicPort(raw)
+			if err != nil {
+				continue
+			}
+			for port := p.From; port <= p.To; port++ {
+				s.Ports = append(s.Ports, port)
+			}
+		}
+	}
 	return s
 }
 
