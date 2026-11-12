@@ -62,6 +62,8 @@ type Engine struct {
 	closing bool
 	// kick asks Run for a pass now (Kick).
 	kick chan struct{}
+	// loaded is set once the first pass has read every folder (Loaded).
+	loaded atomic.Bool
 }
 
 // Site is the engine's view of one folder.
@@ -169,6 +171,7 @@ func (e *Engine) Run(ctx context.Context) {
 	e.adoptAll(ctx)
 	e.reapContainers(ctx)
 	e.tick(ctx)
+	e.loaded.Store(true)
 	t := time.NewTicker(e.opts.Tick)
 	defer t.Stop()
 	for {
@@ -192,6 +195,13 @@ func (e *Engine) Run(ctx context.Context) {
 		}
 	}
 }
+
+// Loaded says whether the first pass has finished: until then Hosts and
+// Sites hold only the folders read so far (none at all while instances
+// are being adopted), so "no site answers to this name" is not yet
+// something the engine can say. The publisher read Hosts in that window
+// and called every published site an orphan at each supervisor start.
+func (e *Engine) Loaded() bool { return e.loaded.Load() }
 
 // Lookup returns the snapshot for a domain or one of its aliases: for a
 // site with services, the one that answers the name's root.

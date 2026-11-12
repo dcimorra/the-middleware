@@ -77,6 +77,12 @@ type Options struct {
 	DNS func() DNS
 	// Hosts returns every name → the site that owns it.
 	Hosts func() map[string]string
+	// Loaded says whether Hosts is the whole picture yet (nil: always).
+	// The engine fills it folder by folder at start, and a published site
+	// it has not reached is not an orphan: without this, every start
+	// warned publish.orphan for each published site, and a real orphan
+	// was lost among them.
+	Loaded func() bool
 	// PublicIP detects the address the ports door is reached at; the
 	// inbound state's public_ip, when set, wins over it.
 	PublicIP func(ctx context.Context) (string, error)
@@ -519,6 +525,10 @@ func (p *Publisher) reconcileSiteLocked(ctx context.Context, site string) []inbo
 	}
 	if published && !exists {
 		p.mu.Unlock()
+		if p.opts.Loaded != nil && !p.opts.Loaded() {
+			// Not known yet, either way: a later pass decides.
+			return nil
+		}
 		if !p.orphans[site] {
 			p.orphans[site] = true
 			p.emit("publish.orphan", site, "warn", "published, but no site answers to it any more; its records are kept until it is deleted through the house or unpublished", nil)
