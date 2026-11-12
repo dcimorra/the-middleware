@@ -926,6 +926,7 @@ func buildPublisher(a *app.App, set *moduleSet) *publish.Publisher {
 			}
 			return hosts
 		},
+		Loaded: a.Engine.Loaded,
 		VPNOnly: func(site string) bool {
 			sn, ok := a.Engine.Lookup(site)
 			// Only a site wholly inside the VPN is never published; one
