@@ -246,6 +246,9 @@ RestartSec=2
 # of the update on trial (middleware.update.json) that a rollback reads.
 ProtectSystem=strict
 ReadWritePaths=/etc/wireguard /etc/sysctl.d {{.RunDir}} {{.BinaryDir}}
+# iptables' lock, for the sites' public ports (ports.open); "-" because
+# a machine whose iptables is the nft one has no such file.
+ReadWritePaths=-/run/xtables.lock
 ProtectHome=yes
 PrivateTmp=yes
 NoNewPrivileges=yes

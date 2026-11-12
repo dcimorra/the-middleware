@@ -59,8 +59,16 @@ type Spec struct {
 	Fingerprint string
 	// Canary is how a new generation takes over (run.canary); nil hands
 	// all the traffic over at once.
-	Canary   *Canary
-	Revision string
+	Canary *Canary
+	// PublicPorts are the ports the service answers on the machine's own
+	// addresses (services.<name>.ports); HostNetwork runs its container
+	// on the machine's network (ports.go).
+	PublicPorts []PublicPort
+	HostNetwork bool
+	// NeedsPublicIP says the spec was resolved without the node's public
+	// address though it reads it: not one to start from.
+	NeedsPublicIP bool
+	Revision      string
 }
 
 // Rehash recomputes the revision after the engine added to the spec.
@@ -199,6 +207,12 @@ func (s *Spec) hash() string {
 	}
 	if s.Fingerprint != "" {
 		w("files", s.Fingerprint)
+	}
+	if len(s.PublicPorts) > 0 || s.HostNetwork {
+		w("public", strconv.FormatBool(s.HostNetwork))
+		for _, p := range s.PublicPorts {
+			w(p.String())
+		}
 	}
 	if s.Docker != nil && (s.Docker.Port != 0 || len(s.Docker.Watch) > 0) {
 		w("docker", strconv.Itoa(s.Docker.Port))

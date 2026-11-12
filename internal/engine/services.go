@@ -58,6 +58,14 @@ type ServiceSnapshot struct {
 	Waiting   string   `json:"waiting,omitempty"`
 	Optional  bool     `json:"optional,omitempty"`
 	Checks    []Check  `json:"checks,omitempty"`
+	// Ports are the service's public ports and Network "host" when its
+	// container is on the machine's network; PublicIP is the address
+	// they are reached at here. Pending is what of them waits for the
+	// owner's approval (Stopped is then "approval").
+	Ports    []string `json:"ports,omitempty"`
+	Network  string   `json:"network,omitempty"`
+	PublicIP string   `json:"public_ip,omitempty"`
+	Pending  string   `json:"pending,omitempty"`
 }
 
 // serviceNameOf is sv's name in m.
@@ -94,6 +102,11 @@ func serviceStopped(m *manifest.Manifest, sv *manifest.Service) string {
 	case m.Replica.Keeps(serviceNameOf(m, sv)):
 		// A replica's service with data runs on the primary only, and is
 		// reached through the mesh (internal/cluster).
+		return "elsewhere"
+	case m.IsReplica() && sv.Public():
+		// A public port is reached at the address the site's names point
+		// to, which is the primary's: a copy of the relay here would
+		// tell its peers an address nobody was sent to.
 		return "elsewhere"
 	}
 	return ""
@@ -133,6 +146,18 @@ func (e *Engine) reconcileServices(ctx context.Context, s *Site, m *manifest.Man
 			svc.waiting = ""
 			continue
 		}
+		if wait := e.publicPending(s.Domain, m, name); wait != "" {
+			// Also one that runs: an approval taken back stops it.
+			if svc.inst != nil {
+				e.emitService("service.stopping", s.Domain, name, "warn", name+": its public ports are no longer approved", nil)
+				e.retireServiceLocked(ctx, s.Domain, svc, drainOf(svc.spec), false)
+			}
+			if svc.waiting != wait {
+				svc.waiting = wait
+				e.emitService("ports.pending", s.Domain, name, "warn", name+": waits for the owner to approve "+wait+" (the site's page, or middleware site ports "+s.Domain+" approve)", map[string]any{"pending": wait})
+			}
+			continue
+		}
 		if svc.inst != nil {
 			select {
 			case err := <-svc.inst.Done():
@@ -146,7 +171,10 @@ func (e *Engine) reconcileServices(ctx context.Context, s *Site, m *manifest.Man
 			default:
 			}
 		}
-		spec, err := manifest.ServiceSpec(s.Domain, s.Dir, name, m, e.serviceAddrLocked(s, m))
+		spec, err := manifest.ServiceSpecOn(s.Domain, s.Dir, name, m, e.serviceAddrLocked(s, m), e.publicIP())
+		if err == nil && spec.NeedsPublicIP {
+			err = manifest.ErrNoPublicIP
+		}
 		if err != nil {
 			svc.lastErr = err.Error()
 			continue
@@ -172,6 +200,15 @@ func (e *Engine) reconcileServices(ctx context.Context, s *Site, m *manifest.Man
 			}
 		}
 		svc.waiting = ""
+		if svc.inst == nil {
+			if taken := e.publicConflictLocked(s, m, name); taken != "" {
+				if svc.lastErr != taken {
+					svc.lastErr = taken
+					e.emitService("ports.conflict", s.Domain, name, "error", name+": "+taken, nil)
+				}
+				continue
+			}
+		}
 		e.startServiceLocked(ctx, s, svc, spec, sv.HandsOver(), "engine")
 	}
 }
@@ -504,15 +541,24 @@ func (e *Engine) RestartService(ctx context.Context, domain, name string) error 
 	if why := serviceStopped(s.Manifest, sv); why != "" {
 		return fmt.Errorf("%s: %s is stopped (%s)", domain, name, why)
 	}
+	if wait := e.publicPending(domain, s.Manifest, name); wait != "" {
+		return fmt.Errorf("%s: %s waits for the owner to approve its public ports (%s)", domain, name, wait)
+	}
 	if e.closing {
 		return fmt.Errorf("%s: the supervisor is shutting down", domain)
 	}
 	spec := svc.spec
 	if spec == nil {
 		var err error
-		spec, err = manifest.ServiceSpec(domain, s.Dir, name, s.Manifest, e.serviceAddrLocked(s, s.Manifest))
+		spec, err = manifest.ServiceSpecOn(domain, s.Dir, name, s.Manifest, e.serviceAddrLocked(s, s.Manifest), e.publicIP())
+		if err == nil && spec.NeedsPublicIP {
+			err = manifest.ErrNoPublicIP
+		}
 		if err != nil {
 			return err
+		}
+		if taken := e.publicConflictLocked(s, s.Manifest, name); taken != "" && svc.inst == nil {
+			return fmt.Errorf("%s: %s: %s", domain, name, taken)
 		}
 		e.addSiteEnv(domain, s.Manifest, spec)
 	}
@@ -580,6 +626,12 @@ func (e *Engine) serviceSnapshotsLocked(s *Site) map[string]ServiceSnapshot {
 		sn := ServiceSnapshot{Name: name, Domains: sv.Domains, Runtime: "process", Published: s.Manifest.Published(name), Optional: sv.Optional, Stopped: serviceStopped(s.Manifest, sv)}
 		if sv.Run != nil && sv.Run.Runtime != "" {
 			sn.Runtime = sv.Run.Runtime
+		}
+		if sv.Public() {
+			sn.Ports, sn.Network, sn.PublicIP = sv.Ports, sv.Network, e.publicIP()
+			if sn.Pending = e.publicPending(s.Domain, s.Manifest, name); sn.Pending != "" && sn.Stopped == "" {
+				sn.Stopped = stoppedApproval
+			}
 		}
 		if svc := s.Services[name]; svc != nil {
 			sn.Starting, sn.Error, sn.Failures, sn.Waiting = svc.starting, svc.lastErr, svc.failures, svc.waiting
@@ -774,7 +826,7 @@ func (e *Engine) ServiceSpec(domain, name string) (*manifest.Spec, error) {
 	if s.Services == nil {
 		s.Services = map[string]*service{}
 	}
-	return manifest.ServiceSpec(domain, s.Dir, name, s.Manifest, e.serviceAddrLocked(s, s.Manifest))
+	return manifest.ServiceSpecOn(domain, s.Dir, name, s.Manifest, e.serviceAddrLocked(s, s.Manifest), e.publicIP())
 }
 
 // ServicePort is the port service keeps on the machine (a written one,

@@ -248,6 +248,11 @@ func (s *Server) sitesCreate(w http.ResponseWriter, r *http.Request) (any, error
 	if err != nil {
 		return nil, err
 	}
+	if !fromRepo && body.Manifest != nil {
+		// Written by whoever made the site; a repository's manifest is
+		// its authors', and what it asks of the machine waits.
+		s.ownerWrote(r, domain)
+	}
 	if pilot {
 		s.pilot.Created(domain)
 	}
@@ -304,8 +309,15 @@ func (s *Server) sitesPutManifest(w http.ResponseWriter, r *http.Request) (any, 
 		if err := s.checkDelegateManifest(r, domain, next); err != nil {
 			return nil, err
 		}
+		if err := s.checkPorts(r, domain, next); err != nil {
+			return nil, err
+		}
 	}
-	return m.Update(domain, &mf)
+	site, err := m.Update(domain, &mf)
+	if err == nil {
+		s.ownerWrote(r, domain)
+	}
+	return site, err
 }
 
 func (s *Server) sitesPatchManifest(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -321,7 +333,7 @@ func (s *Server) sitesPatchManifest(w http.ResponseWriter, r *http.Request) (any
 	if err := ReadJSON(r, &partial); err != nil {
 		return nil, err
 	}
-	if auth.FromContext(r.Context()).Delegate() {
+	if _, touches := partial["services"]; touches || auth.FromContext(r.Context()).Delegate() {
 		next, err := s.patchedManifest(domain, partial)
 		if err != nil {
 			return nil, err
@@ -329,8 +341,19 @@ func (s *Server) sitesPatchManifest(w http.ResponseWriter, r *http.Request) (any
 		if err := s.checkDelegateManifest(r, domain, next); err != nil {
 			return nil, err
 		}
+		if err := s.checkPorts(r, domain, next); err != nil {
+			return nil, err
+		}
 	}
-	return m.Patch(domain, partial)
+	site, err := m.Patch(domain, partial)
+	if _, touches := partial["services"]; err == nil && touches {
+		// Only a patch of the services is the owner's word on their
+		// ports: the panel patches one key at a time (access, hold…),
+		// and saving the access form must not approve what the site's
+		// agent wrote into the file a minute before.
+		s.ownerWrote(r, domain)
+	}
+	return site, err
 }
 
 func (s *Server) sitesDelete(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -552,7 +575,11 @@ func (s *Server) historyRestore(w http.ResponseWriter, r *http.Request) (any, er
 			return nil, err
 		}
 	}
-	return m.RestoreVersion(domain, r.PathValue("id"))
+	site, err := m.RestoreVersion(domain, r.PathValue("id"))
+	if err == nil {
+		s.ownerWrote(r, domain)
+	}
+	return site, err
 }
 
 func (s *Server) workerRestart(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -767,9 +794,15 @@ func (s *Server) sitesWriteFile(w http.ResponseWriter, r *http.Request) (any, er
 		if err := s.checkDelegateManifest(r, domain, data); err != nil {
 			return nil, err
 		}
+		if err := s.checkPorts(r, domain, data); err != nil {
+			return nil, err
+		}
 	}
 	if err := m.WriteFile(domain, p, data); err != nil {
 		return nil, err
+	}
+	if isManifestPath(p) {
+		s.ownerWrote(r, domain)
 	}
 	return OK, nil
 }

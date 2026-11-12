@@ -36,6 +36,7 @@ var TurnCommands = []TurnCommand{
 	{"site tasks <domain> stop <task>", "stop a task that is running"},
 	{"site tasks <domain> rm <task>", "remove one of its tasks"},
 	{"site backups <domain> [log <name> | run <name> | restore <name> <copy>]", "its database copies as the manifest's backups describe them"},
+	{"site ports <domain>", "the public ports its services ask for (services.<name>.ports), which of them the owner has approved, this node's public address and what else holds one; approving is the owner's"},
 	{"site restart <domain> [--service <name>]", "a new generation, handed over without dropping requests"},
 	{"site security <domain> [seen | blocks | catalog]", "who calls (countries, robots, browsers, unknown User-Agents), the last requests the manifest's `security` refused, and the families and browsers it may name: keeping out a crawler, a User-Agent, a browser or a country is the manifest's `security`, never code in the app"},
 	{"site deploy <domain>", "run the manifest's deploy recipe"},

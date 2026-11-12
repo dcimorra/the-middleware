@@ -26,7 +26,10 @@ has. If the supervisor is compromised, the attacker is your user, not root.
 It listens on `/run/middleware/helper.sock` (`root:middleware`, `0660`) and
 answers a **closed list of operations**: `firewall.apply`, `firewall.block`,
 `firewall.unblock`, `vpn.apply`, `vpn.up`, `vpn.down`, `sysctl.reserve_ports`,
-`update.install`, `update.confirm`, `requirements.install`. `requirements.install` takes one
+`update.install`, `update.confirm`, `requirements.install`, `ports.open`. `ports.open`
+takes the whole list of the sites' approved public ports (numbers and
+`tcp`/`udp`, nothing else) and makes a chain of its own in iptables say
+exactly that. `requirements.install` takes one
 boolean (add a headless Chromium) and nothing else: what runs is the
 helper's own binary's `install --requirements`, for the user, root and
 binary the installed `middleware.service` names (written by root; a unit

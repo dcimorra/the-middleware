@@ -43,6 +43,16 @@ type Service struct {
 	// so it is stopped and started again instead.
 	Handover *bool  `json:"handover,omitempty"`
 	Note     string `json:"note,omitempty"`
+	// Ports are the ones the service answers on the machine's own
+	// addresses, with no proxy of the house in between: "3478/udp",
+	// "3478/tcp", "49160-49400/udp" (ports.go). The owner's to grant.
+	Ports []string `json:"ports,omitempty"`
+	// Network "host" runs the service's container on the machine's
+	// network instead of the site's: what a relay that hands out hundreds
+	// of UDP ports needs, since docker starts a proxy per published port.
+	// Such a container sees the machine's loopback, every other site's
+	// ports on it included, which is why it is the owner's to grant.
+	Network string `json:"network,omitempty"`
 
 	// The rules that are the site's when the service does not say:
 	// access and security narrow the site's, the rest replace it.
@@ -61,6 +71,9 @@ type Service struct {
 func (s *Service) HandsOver() bool {
 	if s.Run != nil && s.Run.Port != 0 {
 		return false // a written port holds one generation
+	}
+	if s.Public() {
+		return false // and so does a port on the machine
 	}
 	if s.Handover != nil {
 		return *s.Handover
@@ -228,6 +241,7 @@ func (m *Manifest) validServices() error {
 	}
 	owner := map[string]string{}
 	byVar := map[string]string{}
+	var public []ServicePort
 	for _, name := range m.ServiceNames() {
 		sv := m.Services[name]
 		field := "services." + name
@@ -251,6 +265,9 @@ func (m *Manifest) validServices() error {
 		}
 		if sv.Handover != nil && *sv.Handover && sv.Run.Port != 0 {
 			return fmt.Errorf("%s: a written run.port holds one generation, it cannot hand over", field)
+		}
+		if err := m.validPublic(name, sv, &public); err != nil {
+			return err
 		}
 		byVar[strings.ReplaceAll(name, "-", "_")] = name
 		for _, d := range sv.Domains {
@@ -298,6 +315,11 @@ func (m *Manifest) validServices() error {
 			target, ok := byVar[ref]
 			if !ok {
 				return fmt.Errorf("%s.run: $SERVICE_%s_… names no service", field, ref)
+			}
+			// Neither way: a container on the machine's network is not on
+			// the site's, where the names are.
+			if sv.HostNetwork() || m.Services[target].HostNetwork() {
+				return fmt.Errorf("%s.run: names services.%s, and one of the two is on the host's network (network: host), where the site's names do not resolve; reach it by the site's public name and its port", field, target)
 			}
 			// A process reaches a service on its port on the machine,
 			// which changes with every generation of one that hands over:

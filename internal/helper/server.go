@@ -90,7 +90,7 @@ func (s *Server) init() {
 			s.Socket = DefaultSocket
 		}
 		if s.Exec == nil {
-			s.Exec = &SystemExec{}
+			s.Exec = &SystemExec{LockDir: filepath.Dir(s.Socket)}
 		}
 		if s.Credentials == nil {
 			s.Credentials = peerCredentials
@@ -122,6 +122,7 @@ func (s *Server) init() {
 			OpUpdateConfirm:   s.updateConfirm,
 			OpMeshFirewall:    s.meshFirewall,
 			OpInstallRun:      s.installRun,
+			OpPortsOpen:       s.portsOpen,
 		}
 	})
 }

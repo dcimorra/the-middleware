@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -24,11 +26,14 @@ type Exec interface {
 // Binaries the helper may run. A name outside this list is refused by
 // SystemExec even if an operation asked for it, so a bug in an operation
 // cannot widen what the helper executes.
-var Binaries = []string{"nft", "wg", "wg-quick", "sysctl", "systemd-run", "systemctl"}
+var Binaries = []string{"nft", "wg", "wg-quick", "sysctl", "systemd-run", "systemctl", "iptables", "ip6tables"}
 
 // SystemExec runs the real binaries with a timeout.
 type SystemExec struct {
 	Timeout time.Duration
+	// LockDir is a folder the helper can write, for iptables' lock when
+	// its own place cannot be (see Run); empty never moves it.
+	LockDir string
 	paths   map[string]string
 	missing map[string]error
 	once    sync.Once
@@ -67,14 +72,27 @@ func (e *SystemExec) Run(ctx context.Context, name string, args []string, stdin 
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, path, args...)
-	if stdin != "" {
-		cmd.Stdin = strings.NewReader(stdin)
-	}
 	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	err := cmd.Run()
+	run := func(env []string) error {
+		out.Reset()
+		cmd := exec.CommandContext(ctx, path, args...)
+		if stdin != "" {
+			cmd.Stdin = strings.NewReader(stdin)
+		}
+		cmd.Env = env
+		cmd.Stdout = &out
+		cmd.Stderr = &out
+		return cmd.Run()
+	}
+	err := run(nil)
+	// The legacy iptables takes a lock in /run, which the helper's unit
+	// mounts read-only (every unit installed before ports.open has no
+	// line for it, and an update does not rewrite units). Its lock is
+	// then one of the helper's own: two rules of the helper's never race,
+	// and the kernel swaps a table whole either way.
+	if err != nil && ctx.Err() == nil && e.LockDir != "" && (name == "iptables" || name == "ip6tables") && strings.Contains(out.String(), "xtables.lock") {
+		err = run(append(os.Environ(), "XTABLES_LOCKFILE="+filepath.Join(e.LockDir, "xtables.lock")))
+	}
 	if ctx.Err() != nil {
 		return out.String(), fmt.Errorf("%s timed out after %s", name, timeout)
 	}

@@ -22,7 +22,7 @@ import (
 // (data/resources) and nothing is lost by asking.
 var named = []string{
 	"homes", "history", "chat", "deploys", "resources", "status", "seen",
-	"visits", "webvitals", "canary", "audit",
+	"visits", "webvitals", "canary", "audit", "ports",
 	filepath.Join("agents", "cost"), filepath.Join("agents", "config"),
 }
 

@@ -134,6 +134,7 @@ In `run.command`, `run.env` values, `upstream` and `workers.*.command`:
 | `$PORT` | the port the instance must listen on (assigned by the engine) |
 | `$DOMAIN` | the site's domain |
 | `$SITE_DIR` | absolute path of the site folder |
+| `$MIDDLEWARE_PUBLIC_IP` | in a service's command and env only: this node's public address (see "Public ports" under Services) |
 
 The process also receives `PORT`, `HOST=127.0.0.1`, `MIDDLEWARE_DOMAIN`,
 `MIDDLEWARE_SITE_DIR` and `HOME` (a per-site home under `data/homes/`).
@@ -556,6 +557,13 @@ the names it answers, and the order it starts in:
   few seconds, as a site's) and `false` for one without, which is stopped
   and started again on the same port: a database cannot run twice on one
   volume. A written `run.port` never hands over.
+- `ports` are the service's **public ports**: the ones it answers on the
+  machine's own addresses, straight from the internet, with no proxy of
+  the house in between (a TURN relay, a game server, an MQTT broker).
+  `"3478/udp"`, `"3478/tcp"` (or `"3478"`), a range `"49160-49400/udp"`.
+  `network: "host"` puts the service's container on the machine's network
+  instead of the site's. Both are the owner's to give, and both are
+  described below ("Public ports").
 
 Each service has its own revision, build, health check, backoff, log
 (`logs/<domain>/<service>.log`) and state file. One that fails to build or
@@ -585,6 +593,74 @@ that only containers reach is on the site's network and nowhere else
 (the loopback is every site's). The house cannot dial such a service, so
 its health is `health.command`, run inside it (exit 0 is healthy), or,
 without one, that the container stays up; `health.path` there is refused.
+
+**Public ports.** Everything else a site has is HTTP behind the house.
+A service that speaks something else to the internet declares it:
+
+```json
+"turn": {
+  "run": {
+    "runtime": "docker",
+    "docker": { "image": "coturn/coturn:4.6.3" },
+    "command": ["-n", "--listening-port=3478", "--min-port=49160", "--max-port=49400",
+                "--external-ip=$MIDDLEWARE_PUBLIC_IP", "--realm=$DOMAIN",
+                "--use-auth-secret", "--static-auth-secret=$TURN_SECRET"],
+    "env_files": [".env"]
+  },
+  "network": "host",
+  "ports": ["3478/udp", "3478/tcp", "49160-49400/udp"],
+  "health": { "command": ["turnutils_stunclient", "-p", "3478", "127.0.0.1"] }
+}
+```
+
+- Without `network`, a container's ports are published by docker on
+  every address of the machine (`-p 3478:3478/udp`), the same number
+  inside and outside, and the service stays on the site's network: the
+  others reach it by name. Docker starts a proxy per published port, so
+  more than 512 of them is refused with the advice to use the host's
+  network. This is the only way to a port below 1024.
+- `network: "host"` is for a relay with a range: the container is on the
+  machine's network, binds what it likes there, and `ports` says what
+  that is (it is required: the firewall, the next site that wants the
+  port and the node the site moves to all read it). Such a service has no
+  names, is not on the site's network (the others reach it on the site's
+  public name, or `127.0.0.1` from a process) and neither it nor the
+  others may name it with `$SERVICE_…`. Its health is `health.command`.
+- A process service (no docker) may declare ports from 1024 up; it binds
+  them itself.
+- `$MIDDLEWARE_PUBLIC_IP` is this node's public address, expanded in the
+  service's command and env and set in its environment. It is found by
+  the house, not written: after a move it is the new node's, and a
+  service that reads it is restarted when it changes. A service that
+  names it waits, with that as its error, until the house knows it.
+- A service with public ports never hands over (two generations cannot
+  hold one port): it is stopped and started again, like a database.
+- Refused when the manifest is checked: 22, 80, 443 and 33000-47000 (the
+  house's doors, SSH and the loopback range of the sites' processes), two
+  entries that share a port, a port another site of the machine declares,
+  and one the house holds on this installation (the panel's, the VPN's).
+- **Only the owner opens a port.** A delegate cannot change `ports` or
+  `network`. And since the manifest is a file the site's agent can write,
+  a port that reaches it any other way than the owner's own save *waits*:
+  the service does not start (state `waiting for the owner`, event
+  `ports.pending`), the rest of the site is not touched, and the owner
+  approves it in the panel (the site's services) or with `middleware site
+  ports <domain> approve`. Approving covers exactly what the manifest
+  asks then; a port taken out and put back waits again.
+- The house opens the approved ports in the machine's firewall (a chain
+  of its own, `MIDDLEWARE-PORTS`, in iptables and ip6tables; event
+  `ports.opened`, or `ports.failed` with the reason) and closes them when
+  the service goes. **A firewall outside the machine** (a cloud's
+  security list, a provider's panel) is not the house's to open: `site
+  ports` and the panel list what has to be open there.
+- The container keeps the house's walls (`--cap-drop ALL`,
+  `no-new-privileges`) plus one capability, `NET_BIND_SERVICE`: images
+  like coturn's mark their binary with it and would not even start
+  without.
+- A move carries the service, its approval and its ports: the target is
+  asked first whether they are free there, and opens them when the site
+  arrives. On a replica of a clustered site a service with public ports
+  does not run: it answers at the primary's address.
 
 **Images.** An `image` in a service names its version: a tag other than
 `latest`, or a digest. A `build` is made with BuildKit (`docker buildx

@@ -700,7 +700,8 @@ function overviewTab(domain) {
       const def = m.services[name] || {};
       const run = def.run || {};
       let state;
-      if (v.stopped === "disabled") state = h("span", { class: "status" }, h("span", { class: "dot" }), t("status.stopped"));
+      if (v.stopped === "approval") state = h("span", { class: "status" }, h("span", { class: "dot warn" }), t("site.servicePortsPending"));
+      else if (v.stopped === "disabled") state = h("span", { class: "status" }, h("span", { class: "dot" }), t("status.stopped"));
       else if (v.stopped === "hold") state = h("span", { class: "status" }, h("span", { class: "dot warn" }), t("site.serviceHeld"));
       else if (v.alive) state = h("span", { class: "status" }, h("span", { class: "dot ok" }), t("status.up"));
       else if (v.starting || v.waiting) state = h("span", { class: "status", title: v.waiting ? t("site.serviceWaiting", { names: v.waiting }) : "" }, h("span", { class: "dot warn" }), t("site.serviceStarting"));
@@ -714,8 +715,16 @@ function overviewTab(domain) {
             def.optional ? h("span", { class: "badge" }, t("site.serviceOptional")) : null),
           (def.domains || []).length ? h("div", { class: "small" }, ...def.domains.map((d) => h("code", { class: "site-service-name" }, d)))
             : h("div", { class: "small muted" }, t("site.serviceInternal")),
+          // Ports of the machine itself, open to the internet: said
+          // apart from the names, which go through the house.
+          (def.ports || []).length || def.network ? h("div", { class: "small" },
+            h("span", { class: "muted" }, t("site.servicePorts") + " "),
+            ...(def.ports || []).map((p) => h("code", { class: "site-service-name" }, p)),
+            v.public_ip ? h("span", { class: "muted" }, " " + t("site.servicePortsOn", { ip: v.public_ip })) : null,
+            def.network === "host" ? h("span", { class: "badge", title: t("site.serviceHostNetHint") }, t("site.serviceHostNet")) : null) : null,
           what ? h("code", { class: "site-worker-cmd", title: what }, what) : null,
-          v.waiting && !v.alive ? h("div", { class: "small muted" }, t("site.serviceWaiting", { names: v.waiting })) : null,
+          v.stopped === "approval" ? h("div", { class: "small level-warn" }, t("site.servicePortsWait", { ports: v.pending || "" }) + (delegate() ? " " + t("site.servicePortsOwner") : "")) : null,
+          v.waiting && !v.alive && v.stopped !== "approval" ? h("div", { class: "small muted" }, t("site.serviceWaiting", { names: v.waiting })) : null,
           v.error ? h("div", { class: "small level-error" }, v.error) : null),
         serviceActions(name, def, v));
     });
@@ -746,6 +755,16 @@ function overviewTab(domain) {
       h("a", { class: "btn sm ghost", href: `${tabs}/logs?service=${enc(name)}` }, icon("list"), t("site.workerLogs")),
       run.runtime === "docker" && run.docker && run.docker.build
         ? h("a", { class: "btn sm ghost", href: `${tabs}/logs?service=${enc(name)}&build=1` }, icon("list"), t("site.serviceBuildLog")) : null);
+    // The owner's alone: a delegate sees that it waits, not the button.
+    if (v.stopped === "approval" && !delegate()) {
+      box.append(btn(t("site.portsApprove"), "unlock", async () => {
+        if (!(await confirm({ title: t("site.portsApproveQ", { name }), body: t("site.portsApproveBody", { ports: v.pending || "" }), confirmLabel: t("site.portsApprove") }))) return;
+        await api.post(`/sites/${enc(domain)}/ports/approve`);
+        const r = await api.get(`/sites/${enc(domain)}`);
+        if (r && r.domain) store.putSite(r);
+        toast(t("site.portsApproved", { name }), "ok");
+      }, "sm"));
+    }
     if (!can(domain, "operate")) return box;
     const path = `/sites/${enc(domain)}/services/${enc(name)}`;
     if (def.disabled) {

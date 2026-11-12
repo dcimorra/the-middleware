@@ -185,3 +185,80 @@ func (c *dockerInstance) Check(ctx context.Context, argv []string) error {
 
 // ErrNoCheck says an instance cannot be checked from inside.
 var ErrNoCheck = errors.New("this instance cannot be checked from inside")
+
+// Foreign is a container on this machine that belongs with a site and is
+// not the house's: started by hand from a compose file in the site's
+// folder, or with a folder of the site mounted in it.
+type Foreign struct {
+	Name  string `json:"name"`
+	Image string `json:"image"`
+	// Ports are the ones it publishes or, on the host's network, nothing:
+	// docker does not know what such a container listens on.
+	Ports string `json:"ports,omitempty"`
+	// Why is how it was tied to the site.
+	Why string `json:"why"`
+}
+
+// String is the container as a warning names it.
+func (f Foreign) String() string {
+	s := f.Name + " (" + f.Image
+	if f.Ports != "" {
+		s += ", " + f.Ports
+	}
+	return s + ")"
+}
+
+// ForeignContainers are the running containers tied to siteDir that this
+// house did not start: those of a compose project whose folder is inside
+// it, and those with a path inside it mounted. A daemon that does not
+// answer has none.
+func (d Docker) ForeignContainers(ctx context.Context, siteDir string) []Foreign {
+	out, err := exec.CommandContext(ctx, d.bin(), "ps", "--no-trunc", "--format",
+		`{{.ID}}|{{.Names}}|{{.Image}}|{{.Ports}}|{{.Label "`+domainLabel+`"}}|{{.Label "com.docker.compose.project.working_dir"}}`).Output()
+	if err != nil {
+		return nil
+	}
+	roots := []string{filepath.Clean(siteDir)}
+	if real, err := filepath.EvalSymlinks(siteDir); err == nil && real != roots[0] {
+		roots = append(roots, real)
+	}
+	inside := func(p string) bool {
+		if p == "" {
+			return false
+		}
+		p = filepath.Clean(p)
+		for _, r := range roots {
+			if p == r || strings.HasPrefix(p, r+string(filepath.Separator)) {
+				return true
+			}
+		}
+		return false
+	}
+	var found []Foreign
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		f := strings.SplitN(line, "|", 6)
+		if len(f) < 6 || f[4] != "" {
+			continue // not a container line, or one of the house's own
+		}
+		c := Foreign{Name: f[1], Image: f[2], Ports: f[3]}
+		switch {
+		case inside(f[5]):
+			c.Why = "compose project in " + f[5]
+		default:
+			mounts, err := exec.CommandContext(ctx, d.bin(), "inspect", "-f", "{{range .Mounts}}{{.Source}}\n{{end}}", f[0]).Output()
+			if err != nil {
+				continue
+			}
+			for _, m := range strings.Split(string(mounts), "\n") {
+				if inside(strings.TrimSpace(m)) {
+					c.Why = "mounts " + strings.TrimSpace(m)
+					break
+				}
+			}
+		}
+		if c.Why != "" {
+			found = append(found, c)
+		}
+	}
+	return found
+}

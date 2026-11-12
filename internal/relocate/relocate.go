@@ -37,6 +37,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/archive"
 	"github.com/dcimorra/the-middleware/internal/fsx"
 	"github.com/dcimorra/the-middleware/internal/manifest"
+	"github.com/dcimorra/the-middleware/internal/pubports"
 	"github.com/dcimorra/the-middleware/internal/runtime"
 	"github.com/dcimorra/the-middleware/internal/tasks"
 )
@@ -174,6 +175,11 @@ func Parts(root, domain string) []archive.Part {
 		{Name: "data/agents/cost/" + domain + ".json", Path: filepath.Join(data, "agents", "cost", domain+".json")},
 		{Name: "data/history/" + domain, Path: filepath.Join(data, "history", domain)},
 		{Name: "data/deploys/" + domain + ".json", Path: filepath.Join(data, "deploys", domain+".json")},
+		// The owner's approval of its public ports: given once for the
+		// site, not for the node it happened to be on. Without it the
+		// site arrived with its relay waiting for a yes nobody knew was
+		// being asked again.
+		{Name: "data/" + pubports.Dir + "/" + domain + ".json", Path: filepath.Join(data, pubports.Dir, domain+".json")},
 	}
 }
 

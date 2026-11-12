@@ -84,9 +84,57 @@ The plan for a site that is today one image with a router inside
    `POST /manifest/history/{id}/restore`): the same handover, the other
    way.
 
+## A site needs a port that is not HTTP
+
+A TURN relay beside a WebRTC app, a game server, a broker: something that
+answers the internet on a port of its own, often UDP. The way is a
+service with `ports` ([manifest.md](manifest.md), "Public ports"), never
+a container started by hand next to the site. p2p-webrtc had its coturn
+in an `infra/docker-compose.yml` brought up from a shell: the house did
+not know it existed, the site moved to another node without it, its
+`--external-ip` still named the node it had left, and the first to find
+out was a visitor behind a symmetric NAT.
+
+1. Add the service to the manifest's `services`, with its `ports` and,
+   for a relay with a range of ports, `network: "host"`. Write the
+   address as `$MIDDLEWARE_PUBLIC_IP`, never as a number, and keep
+   secrets in an env file (`run.env_files`), not in the command.
+2. Give it a `health.command` that asks the service itself
+   (`turnutils_stunclient -p 3478 127.0.0.1` for coturn).
+3. The owner approves the ports: saving the manifest from the panel or
+   with their own token does it; a manifest written by the site's agent
+   waits for `middleware site ports <domain> approve` or the button in the
+   site's services.
+4. `middleware site show <domain>` says how the service is and
+   `middleware site logs <domain> --service <name>` is its output; `site
+   ports <domain>` says what is asked, what is approved, the node's public
+   address and whether the firewall took it.
+5. If the machine sits behind a provider's firewall, open the same ports
+   there. That is the one step the house cannot do.
+6. Stop what was started by hand (`docker compose down` where it was
+   brought up): it holds the ports, and the house says so
+   (`ports.conflict`, or "address already in use" in the service's log).
+
+After that the relay is the site's: it starts with it, is watched and
+restarted, is in its logs and limits, and moves with it to another node
+with nothing to edit there.
+
+**What a move says about the rest.** A compose file in a site's folder
+is not read by the house, and containers started from it stay behind. The
+plan of a move lists both as warnings (the containers by name, image and
+ports), the move records them (`relocate.incomplete`), and the node the
+site arrives at says it again in its own events.
+
 ## Security
 
 Services are as strict as a site, and in places stricter:
+
+- Public ports and the host's network are the owner's to give, by
+  account and by file: a delegate's save that changes them is refused,
+  and one written into `site.json` by the site's agent does not start
+  until the owner approves it. A container on the host's network sees
+  the machine's loopback, where every site's process listens: approve it
+  for an image you would run on the machine yourself.
 
 - A service is a run section with the same rules: a delegate cannot change
   a service's names, runtime, docker section or env files, as for a site's
@@ -106,10 +154,15 @@ Services are as strict as a site, and in places stricter:
   on the machine is refused there, since it would run as the supervisor,
   outside the turn's jail.
 - There is no import of a compose file. If one is added later it will be
-  declarative only, and `privileged`, `cap_add`, `network_mode`, mounts
+  declarative only, and `privileged`, `cap_add`, `network_mode` (the
+  host's network is `services.<name>.network`, with its approval), mounts
   outside the site's folder, `devices`, `pid` and `ipc` will be errors.
 
 ## Limits, for now
+
+- A service's public port is the same number inside and outside, on every
+  address of the machine; there is no mapping and no choice of address.
+- A firewall outside the machine is opened by hand.
 
 - A service's container cannot reach a process service on the machine;
   run both in containers, or make the process the one that calls.

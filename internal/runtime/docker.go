@@ -128,6 +128,7 @@ func (d Docker) Start(ctx context.Context, spec *manifest.Spec, port int, logFil
 	if !spec.Unpublished {
 		args = append(args, "-p", fmt.Sprintf("127.0.0.1:%d:%d", port, inside))
 	}
+	args = append(args, publicArgs(spec)...)
 	if spec.Network != "" {
 		if err := d.ensureNetwork(ctx, spec.Network, siteOf(spec.Domain)); err != nil {
 			return nil, err
@@ -179,6 +180,38 @@ func (d Docker) Start(ctx context.Context, spec *manifest.Spec, port int, logFil
 	go inst.watch()
 	go inst.tailLogs("")
 	return inst, nil
+}
+
+// publicArgs are the flags of a service's public ports: the machine's
+// network when it asked for it, else each port published on every
+// address, the same number inside and out (a relay tells its peers the
+// port it listens on; one that differed outside would be a port nobody
+// answers).
+//
+// One capability comes back for such a service, and only that one:
+// NET_BIND_SERVICE. Not to bind low ports (no-new-privileges keeps a
+// process from gaining it) but because images of network daemons mark
+// their binary with it, and the kernel refuses to exec a binary whose
+// file capabilities are outside what the container may ever hold: the
+// official coturn image, behind the walls as they were, died with
+// "turnserver: Operation not permitted" before its first line. Found by
+// running it (TestARealRelayAnswersSTUN), not by reading.
+func publicArgs(spec *manifest.Spec) []string {
+	if len(spec.PublicPorts) == 0 && !spec.HostNetwork {
+		return nil
+	}
+	args := []string{"--cap-add", "NET_BIND_SERVICE"}
+	if spec.HostNetwork {
+		return append(args, "--network", "host")
+	}
+	for _, p := range spec.PublicPorts {
+		r := strconv.Itoa(p.From)
+		if p.To != p.From {
+			r += "-" + strconv.Itoa(p.To)
+		}
+		args = append(args, "-p", r+":"+r+"/"+p.Proto)
+	}
+	return args
 }
 
 // ContainerName is unique per domain and port, so two generations of a

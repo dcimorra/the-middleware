@@ -127,6 +127,8 @@ type Server struct {
 	// publisher, when set, publishes sites on creation and unpublishes
 	// them on deletion (RegisterInbound sets it).
 	publisher *publish.Publisher
+	// ports, when set, is the sites' public ports (ports.go).
+	ports *PortsOptions
 	// crew is the operator's crew (RegisterCrew sets it).
 	crew *crew.Crew
 	// pilot is the autonomous agent (RegisterAutopilot sets it).
