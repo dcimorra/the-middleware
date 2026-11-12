@@ -279,6 +279,8 @@ const siteUsage = `usage: middleware site <command> [flags]
   publish <domain> [--door tunnel|ports]
                               put every name of the site on the internet
   unpublish <domain>          take its tunnel rules and records away
+  key <domain> on|off         hide the site behind a key in its address
+                              (?access-token=KEY): on prints a new one
   published                   every name the house published, with its state
   restart <domain> [--service s] | --all    force a handover (of one service only with --service)
   stop | start <domain>       write disabled into the manifest
@@ -463,6 +465,28 @@ func (e *Env) site(args []string) error {
 			return err
 		}
 		return e.printLines(out.Lines)
+	case "key":
+		if err := need(); err != nil {
+			return err
+		}
+		if len(pos) != 2 || (pos[1] != "on" && pos[1] != "off") {
+			return fmt.Errorf("usage: middleware site key <domain> on|off")
+		}
+		if pos[1] == "off" {
+			if err := cl.Do("DELETE", "/api/v1/sites/"+domain+"/access/key", nil, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(e.Stdout, "%s answers at its address again.\n", domain)
+			return nil
+		}
+		var out struct {
+			URL string `json:"url"`
+		}
+		if err := cl.Do("POST", "/api/v1/sites/"+domain+"/access/key", map[string]any{}, &out); err != nil {
+			return err
+		}
+		fmt.Fprintf(e.Stdout, "%s now answers only with its key. It is shown this once:\n\n  %s\n\nAny earlier key no longer works. `middleware site key %s off` ends it.\n", domain, out.URL, domain)
+		return nil
 	case "unpublish":
 		if err := need(); err != nil {
 			return err

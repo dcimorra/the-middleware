@@ -162,6 +162,11 @@ func (a *Access) Wrap(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// The key first: every other answer of this door says the site
+		// is there.
+		if a.keyGate(w, r, site, []*manifest.Access{site.Access, site.More}) {
+			return
+		}
 		ip := a.clientIP(r)
 		clean := CleanPath(r.URL.Path)
 		var doors []door
@@ -595,5 +600,5 @@ func ClosedRequest(lookup func(r *http.Request, urlPath string) (Site, bool)) fu
 }
 
 func guarded(ac *manifest.Access) bool {
-	return ac != nil && (ac.Password != "" || len(ac.Allow) > 0 || len(ac.Deny) > 0 || len(ac.DenyCountries) > 0 || len(ac.Routes) > 0)
+	return ac != nil && (ac.Password != "" || ac.Key != "" || len(ac.Allow) > 0 || len(ac.Deny) > 0 || len(ac.DenyCountries) > 0 || len(ac.Routes) > 0)
 }

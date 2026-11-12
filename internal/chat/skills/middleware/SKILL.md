@@ -63,6 +63,7 @@ manifest and take the code out.
 | never serve `/wp-login.php`, `/xmlrpc.php`, an old `/admin` | `security.paths` (404 before the site); `.env`, `.git/`, `.ssh/`, keys and `/etc/passwd` are already cut on every site | § 8 |
 | a password for the site or for `/admin` | `access.password`, `access.routes` (set from the panel: it hashes) | § 8 |
 | only some networks, or ban some addresses | `access.allow`, `access.deny`, per path in `access.routes` | § 8 |
+| the site invisible except to who has a link | `access.key` (the hash; the operator makes the key in the panel's Access tab or with `middleware site key <domain> on`, never you) | § 8 |
 | a part of the site reachable only through the VPN | `vpn.paths` (operator only, needs the VPN module) | docs/manifest.md |
 | too many requests, uploads too large | `waf.rate`, `waf.max_body` | § 8 |
 | a flood, "we are under attack" | `attack` (proof of work, with an `until`) | § 8 |
@@ -874,6 +875,14 @@ site's own conversation (it writes `site.json`).
 **Only some people, by network** → `access.allow`, CIDRs. Who is not in the
 list sees "Access restricted" with their own address, which is what they
 need to ask for access.
+
+**Invisible to everyone without a link** → `access.key`. Without
+`?access-token=<key>` once in the address, every name of the site answers
+like a domain the house does not have (404), before any other rule. It
+holds the key's hash (`sha256:` and 64 hex), never the key: the key is made
+by the house and shown once to the operator (the site's Access tab, or
+`middleware site key <domain> on`). Do not write one yourself; a hand-made
+value is refused or locks everyone out. To remove it, delete the field.
 
 **Only part of the site** → `access.routes`: zones by path prefix, the
 longest matching one wins, matched by path segment (`/admin` covers

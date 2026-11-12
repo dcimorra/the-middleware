@@ -28,6 +28,7 @@ func (s *Server) registerSites() {
 	s.registerStaging()
 	s.registerCanary()
 	s.registerPreviews()
+	s.registerSiteKey()
 	p := Prefix + "/sites"
 	s.Handle("GET", p, "List every site folder, unmanaged ones included", s.sitesList)
 	s.Handle("POST", p, "Create a site from a manifest or a template (static, node, go, docker, fastapi, django, php, astro)", s.sitesCreate)

@@ -2,12 +2,13 @@
 // sections, saved with a PATCH that only touches those two keys so a
 // concurrent edit to run or deploy is never overwritten by this form.
 
-import { h } from "../lib/dom.js";
+import { h, clear, copy } from "../lib/dom.js";
 import { icon } from "../lib/icons.js";
 import { t } from "../lib/i18n.js";
 import { api, enc } from "../lib/api.js";
 import { store } from "../lib/store.js";
-import { field, toggle } from "../components/dialog.js";
+import { field, toggle, confirm } from "../components/dialog.js";
+import { notice } from "../components/page.js";
 import { toast, toastError } from "../components/toast.js";
 import { vpnSiteCard } from "./vpn.js";
 
@@ -89,6 +90,10 @@ export function accessTab(domain) {
     // Not on this form, so carried as it was: the PATCH replaces the
     // whole access section and would drop it.
     if (access.message) newAccess.message = access.message;
+    // The key has its own card; the form carries what the store holds,
+    // which that card keeps current.
+    const key = ((store.site(domain).manifest || {}).access || {}).key;
+    if (key) newAccess.key = key;
     const al = parseLines(allow.value); if (al.length) newAccess.allow = al;
     const di = parseLines(denyIPs.value); if (di.length) newAccess.deny = di;
     const dc = parseLines(deny.value).map((x) => x.toUpperCase()); if (dc.length) newAccess.deny_countries = dc;
@@ -117,7 +122,64 @@ export function accessTab(domain) {
 
   // The VPN choice saves on its own: it writes another key of the
   // manifest, and one form must not carry the other's half-typed values.
-  return { el: h("div", { class: "cards" }, form, vpnSiteCard(domain)), destroy() {} };
+  return { el: h("div", { class: "cards" }, keyCard(domain), form, vpnSiteCard(domain)), destroy() {} };
+}
+
+// keyCard hides the site behind a key in its address: without it once,
+// its names answer like a name the house does not serve. The key is made
+// by the house and shown once here; the manifest keeps its hash.
+function keyCard(domain) {
+  const el = h("div", { class: "card" });
+  let shown = null;
+  const refresh = async () => {
+    try { store.putSite(await api.get(`/sites/${enc(domain)}`)); } catch { /* the next load shows it */ }
+    paint();
+  };
+  const turnOn = async (again) => {
+    if (!(await confirm({ title: again ? t("siteKey.newQ") : t("siteKey.onQ"), body: t("siteKey.onBody"), confirmLabel: again ? t("siteKey.new") : t("siteKey.on") }))) return;
+    try {
+      const r = await api.post(`/sites/${enc(domain)}/access/key`, {});
+      shown = r.url;
+      await refresh();
+    } catch (e) { toastError(e); }
+  };
+  function paint() {
+    const on = Boolean(((store.site(domain).manifest || {}).access || {}).key);
+    const actions = [];
+    if (on) {
+      const again = h("button", { type: "button", class: "btn sm" }, icon("refresh"), t("siteKey.new"));
+      again.addEventListener("click", () => turnOn(true));
+      const off = h("button", { type: "button", class: "btn sm danger ghost" }, t("siteKey.off"));
+      off.addEventListener("click", async () => {
+        if (!(await confirm({ title: t("siteKey.offQ"), body: t("siteKey.offBody"), confirmLabel: t("siteKey.off"), danger: true }))) return;
+        try { await api.del(`/sites/${enc(domain)}/access/key`); shown = null; toast(t("siteKey.offDone"), "ok"); await refresh(); } catch (e) { toastError(e); }
+      });
+      actions.push(again, off);
+    } else {
+      const btn = h("button", { type: "button", class: "btn sm primary" }, icon("lock"), t("siteKey.on"));
+      btn.addEventListener("click", () => turnOn(false));
+      actions.push(btn);
+    }
+    const body = [];
+    if (on) body.push(notice("ok", t("siteKey.isOn")));
+    if (shown) {
+      const url = shown;
+      const box = h("textarea", { class: "mono code-box", rows: "2", readonly: true }, url);
+      const cp = h("button", { type: "button", class: "btn sm" }, icon("copy"), t("common.copy"));
+      cp.addEventListener("click", async () => {
+        if (await copy(url)) { toast(t("common.copied"), "ok"); return; }
+        box.select();
+        toast(t("common.copyFailed"), "bad");
+      });
+      body.push(h("p", { class: "small" }, t("siteKey.once")), box, h("div", { class: "row" }, cp));
+    }
+    clear(el).append(
+      h("div", { class: "row" }, h("h2", { class: "grow" }, t("siteKey.title")), ...actions),
+      h("p", { class: "small muted" }, t("siteKey.hint")),
+      ...body);
+  }
+  paint();
+  return el;
 }
 
 // zonesEditor edits access.routes as rows: path, password, message, allowed

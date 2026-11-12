@@ -619,6 +619,8 @@ need not point here yet) and DNS only after it; the A record uses
 | POST | `/publish/takeover` | `{names}` → `{lines}`; the operator's yes: names in `conflict` are published on their site's door over what the zone had (`publish.takeover` event) |
 | POST | `/publish/retry` | → `{ok}`; every name not published is tried on the next pass, manual and conflict ones included (a conflict that is still there comes back as one) |
 | POST | `/sites/{domain}/publish` | `{door?, over?}` → `{lines, vulnerable?}`; every name of the site (its domain, aliases and the implicit `www.` of every apex among them) on that door, kept there from now on. `over` takes names that point elsewhere: only for a node moving the site here, or the site's own import token |
+| POST | `/sites/{domain}/access/key` | → `{key, param, url}`; hides the site behind a new key (`access.key` gets its hash; an earlier key and its passes stop working). The key is in this answer only. Needs `code` |
+| DELETE | `/sites/{domain}/access/key` | → `{ok}`; the site answers at its address again |
 | POST | `/sites/{domain}/unpublish` | → `{lines}`; tunnel rules and the records that point at this house are removed, nothing else |
 
 `POST /sites` publishes the new site on the door for new sites when a DNS
