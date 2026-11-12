@@ -14,6 +14,7 @@ import (
 
 	"github.com/dcimorra/the-middleware/internal/fsx"
 	"github.com/dcimorra/the-middleware/internal/manifest"
+	"github.com/dcimorra/the-middleware/internal/pubports"
 	"github.com/dcimorra/the-middleware/internal/runtime"
 )
 
@@ -84,6 +85,13 @@ func (r Receiver) CheckNeeds(ctx context.Context, need Needs) error {
 			return fmt.Errorf("port %d, which a worker of the site has written in its manifest, is taken on this node: free it here, or take the port out of the manifest (one is then given to the worker)", port)
 		}
 		l.Close()
+	}
+	public, err := pubports.Parse(need.Public)
+	if err != nil {
+		return err
+	}
+	if bound := pubports.Bound(public); len(bound) > 0 {
+		return fmt.Errorf("%s, which a service of the site answers on, is in use on this node by something that is not the house's: free it here before moving the site", strings.Join(bound, ", "))
 	}
 	return nil
 }

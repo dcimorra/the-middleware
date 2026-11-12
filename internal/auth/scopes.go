@@ -25,6 +25,7 @@ var scopeRoutes = map[string][]string{
 		"GET /api/v1/sites/{domain}/logs",
 		"POST /api/v1/sites/{domain}/validate",
 		"GET /api/v1/sites/{domain}/routes",
+		"GET /api/v1/sites/{domain}/ports",
 		"GET /api/v1/events",
 		// Who calls and what the manifest's security refused: what a
 		// security rule is written from, and the only way to see what it

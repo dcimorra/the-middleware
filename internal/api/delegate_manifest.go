@@ -78,6 +78,10 @@ func lockedKeys(m *manifest.Manifest) map[string]any {
 			continue
 		}
 		out["services."+name+".domains"] = sv.Domains
+		// A port of the machine open to the internet, and a container on
+		// the machine's network: the owner's, as the container itself is.
+		out["services."+name+".ports"] = sv.Ports
+		out["services."+name+".network"] = sv.Network
 		if sv.Run == nil {
 			out["services."+name+".run.runtime"] = runtimeOf("")
 			continue

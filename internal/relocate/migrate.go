@@ -76,6 +76,13 @@ func UsesDocker(m *manifest.Manifest) bool {
 			return true
 		}
 	}
+	// A service's container too: a site with services has no run, and
+	// was moved to a node without docker as if it needed none.
+	for _, sv := range m.Services {
+		if sv != nil && !sv.Disabled && sv.Run != nil && sv.Run.Runtime == "docker" {
+			return true
+		}
+	}
 	return false
 }
 

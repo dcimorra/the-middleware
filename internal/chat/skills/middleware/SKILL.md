@@ -80,6 +80,7 @@ manifest and take the code out.
 | look at what is in the database, from the panel | site → Database: the databases `backups` names and the SQLite files of the folder, read-only | nothing to write; name a PostgreSQL/MySQL one in `backups` |
 | something every so often | a task | § 9 |
 | a process always up, or several processes | `workers`, `services` | § 3 |
+| a port that is not HTTP, open to the internet (a TURN/STUN relay, a game server, a broker; UDP or TCP, a range) | a service with `ports` (and `network: "host"` for a relay with a range), its address as `$MIDDLEWARE_PUBLIC_IP`. Never `docker compose up` beside the site: the house does not see it, watch it or move it. You may write it in the manifest; it starts when the owner approves the ports (`middleware site ports <domain>` says what waits) | docs/services.md, "A site needs a port that is not HTTP" |
 | an AI in the site's code | `claude_api` (the AI gateway) | § 8 |
 | deploy on push | `deploy.github` | § 4 |
 | memory and CPU budget | `limits` (operator only) | § 3 |
@@ -184,6 +185,7 @@ middleware site restart shop.example.com [--service web]
 middleware site deploy shop.example.com
 middleware site validate shop.example.com [--file draft.json]
 middleware site routes shop.example.com
+middleware site ports shop.example.com   # public (non-HTTP) ports its services ask for, and which the owner approved
 middleware exec shop.example.com [--service db] -- <command>
 curl -s -o /dev/null -w '%{http_code}\n' -H "Host: shop.example.com" http://127.0.0.1:46100/
 ```

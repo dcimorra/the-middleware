@@ -85,6 +85,8 @@ func (e *Env) siteRoutes(c common, cl *Client, site string) error {
 
 func serviceState(alive, starting bool, stopped, waiting, errText string) string {
 	switch {
+	case stopped == "approval":
+		return "waits for the owner to approve its public ports (" + waiting + ")"
 	case stopped != "":
 		return stopped
 	case starting:

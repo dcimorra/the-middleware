@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"github.com/dcimorra/the-middleware/internal/pubports"
 	"net"
 	"net/http"
 	"os"
@@ -40,6 +41,7 @@ func turnServer(t *testing.T, site string) (root string, cl *Client) {
 	srv.RegisterTasks(api.TasksOptions{Scheduler: tasks.NewScheduler(tasks.Options{Root: root, Bus: bus}), Root: root})
 	srv.RegisterBackups(backups.New(backups.Options{Root: root, Bus: bus}))
 	srv.RegisterSecurity(api.SecurityOptions{Door: security.New(security.Options{Lookup: func(string) (security.Site, bool) { return security.Site{}, false }})})
+	srv.RegisterPublicPorts(api.PortsOptions{Book: &pubports.Book{Root: root}})
 	srv.RegisterSeen(seen.New(filepath.Join(root, "data", "seen")))
 	ln, err := api.ListenSocket(api.SocketPath(root))
 	if err != nil {
@@ -82,6 +84,7 @@ func TestEveryCommandASiteConversationIsToldAboutIsOpenToItsTurn(t *testing.T) {
 		{"site deploy <domain>", "", []string{"site", "deploy", "a.test"}},
 		{"site validate <domain> [--file <draft>]", "", []string{"site", "validate", "a.test"}},
 		{"site routes <domain>", "", []string{"site", "routes", "a.test"}},
+		{"site ports <domain>", "", []string{"site", "ports", "a.test"}},
 	}
 	// exec is cmd/middleware's own command, not this package's: it checks
 	// the turn's site itself (cmd/middleware/exec_test.go) and goes to the
@@ -115,6 +118,9 @@ func TestEveryCommandASiteConversationIsToldAboutIsOpenToItsTurn(t *testing.T) {
 		{"site", "list"},
 		{"site", "security", "other.test"},
 		{"site", "security", "other.test", "blocks"},
+		{"site", "ports", "other.test"},
+		// Its own site's ports it may read; opening them is the owner's.
+		{"site", "ports", "a.test", "approve"},
 	} {
 		_, err := run(t, cl, try...)
 		var apiErr *APIError

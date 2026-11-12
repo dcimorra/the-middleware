@@ -75,6 +75,17 @@ func (s *Server) registerRelocateTarget() {
 		if err := rc.CheckNeeds(r.Context(), body); err != nil {
 			return nil, Errorf(http.StatusConflict, "%v", err)
 		}
+		if len(body.Public) > 0 {
+			// Asked before anything moves: found at the start there, the
+			// site would be stopped here with its relay refused.
+			if s.portsOptions() == nil {
+				return nil, Errorf(http.StatusConflict, "this node does not handle public ports and the site has services with them (%s)", strings.Join(body.Public, ", "))
+			}
+			asked := &manifest.Manifest{Services: map[string]*manifest.Service{"moving": {Ports: body.Public}}}
+			if c := s.portConflicts(domain, asked, false); len(c) > 0 {
+				return nil, Errorf(http.StatusConflict, "a public port of the site is taken on this node: %s", strings.TrimPrefix(c[0], "services.moving.ports: "))
+			}
+		}
 		if len(body.Names) == 0 {
 			return OK, nil
 		}
@@ -144,7 +155,33 @@ func (s *Server) registerRelocateTarget() {
 			return nil, bad(err)
 		}
 		_ = relocate.MarkArrived(s.opts.Root, domain, time.Now())
+		if o := s.portsOptions(); o != nil {
+			// Its approval came with it, placed under the book's feet.
+			o.Book.Release(domain)
+		}
 		s.emitMove("relocate.arrived", domain, "", "arrived from another node", nil)
+		return OK, nil
+	})
+	s.Handle("POST", Prefix+"/relocate/{domain}/notes", "What the node a site came from says did not travel with it (body: warnings): said here, where the site now is and where whoever looks after it will read it", func(w http.ResponseWriter, r *http.Request) (any, error) {
+		domain := r.PathValue("domain")
+		if !manifest.ValidName(domain) {
+			return nil, Errorf(http.StatusBadRequest, "%v", relocate.ErrBadName)
+		}
+		var body struct {
+			Warnings []string `json:"warnings"`
+		}
+		if err := ReadJSON(r, &body); err != nil {
+			return nil, err
+		}
+		if len(body.Warnings) > 8 {
+			body.Warnings = body.Warnings[:8]
+		}
+		for _, w := range body.Warnings {
+			if len(w) > 2000 {
+				w = w[:2000]
+			}
+			s.emitMove("relocate.incomplete", domain, "warn", "arrived without something it had where it was: "+w, nil)
+		}
 		return OK, nil
 	})
 	s.Handle("GET", Prefix+"/relocate/leftovers", "What moves left on this node: receptions that never finished, earlier copies a commit set aside (.before-…), sites placed here that were not taken out, and records of moves that never said how they ended; the largest first", func(w http.ResponseWriter, r *http.Request) (any, error) {
@@ -455,6 +492,15 @@ func (s *Server) registerRelocateSource(m *nodes.Mesh) {
 		if install {
 			mover.Install, mover.Parts = true, relocate.MoveParts
 		}
+		// Read now, with the site still here: what runs next to it that
+		// the move will not carry.
+		var left []string
+		if cur, err := mgr.Get(domain); err == nil {
+			left = s.unmanaged(r.Context(), mgr.Dir(domain), cur.Manifest)
+		}
+		for _, w := range left {
+			s.emitMove("relocate.incomplete", domain, "warn", w, map[string]any{"node": x.Name, "id": job.ID})
+		}
 		go func() {
 			// A move outlives the request that asked for it, for as long as
 			// its steps may take by the site's manifest (Budget): a fixed
@@ -468,6 +514,13 @@ func (s *Server) registerRelocateSource(m *nodes.Mesh) {
 			s.finish(job, rep, err)
 			if err != nil {
 				s.emitMove("relocate.failed", domain, "error", err.Error(), map[string]any{"node": x.Name, "id": job.ID})
+			} else if len(left) > 0 {
+				// Said there too, where the site and its agent now are.
+				// A node from before this route answers 404, and the
+				// warning stays the one said here.
+				nctx, ncancel := context.WithTimeout(context.Background(), 30*time.Second)
+				_ = meshTarget{m: m, x: x}.do(nctx, "POST", "/relocate/"+domain+"/notes", map[string]any{"warnings": left}, nil)
+				ncancel()
 			}
 		}()
 		s.moves.mu.Lock()
@@ -500,6 +553,9 @@ func (s *Server) registerRelocateSource(m *nodes.Mesh) {
 			names = src.Names(domain)
 		}
 		a := relocate.Analyze(dir, relocate.Excluding(parts(s.opts.Root, domain), dir, site.Manifest), install, names)
+		if cs := foreignContainers(r.Context(), dir); len(cs) > 0 {
+			a.Warnings = append(a.Warnings, relocate.Unmanaged(dir, site.Manifest, cs)...)
+		}
 		out := map[string]any{"analysis": a}
 		if install && a.Node == "" {
 			if v := siteNodeMajor(r.Context(), dir, site.Manifest.Run.Command); v != "" {
@@ -642,7 +698,14 @@ func (src siteSource) ReleaseTasks(names []string) error {
 }
 
 func (src siteSource) Archive(ctx context.Context, domain string, m []byte) (string, error) {
-	return src.mgr.ArchiveMoved(ctx, domain, m)
+	path, err := src.mgr.ArchiveMoved(ctx, domain, m)
+	// What the owner approved went with the site. Left here it would be
+	// waiting for whatever is next created under the name, which may ask
+	// the same ports without anybody having said yes to it.
+	if o := src.s.ports; err == nil && o != nil && o.Book != nil {
+		_ = o.Book.Revoke(domain)
+	}
+	return path, err
 }
 
 // RemoveVolumes implements relocate.Volumer: the volumes of a site that
@@ -871,4 +934,19 @@ func dockerAnswers(ctx context.Context) error {
 		return fmt.Errorf("the daemon does not answer: %s", strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// foreignContainers are the containers running on this node that go with
+// the site in dir and are not the house's; var so a test without docker
+// can say what it finds.
+var foreignContainers = func(ctx context.Context, dir string) []goruntime.Foreign {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return goruntime.Docker{}.ForeignContainers(ctx, dir)
+}
+
+// unmanaged are a move's warnings about what runs next to the site and
+// will stay here (relocate.Unmanaged).
+func (s *Server) unmanaged(ctx context.Context, dir string, mf *manifest.Manifest) []string {
+	return relocate.Unmanaged(dir, mf, foreignContainers(ctx, dir))
 }

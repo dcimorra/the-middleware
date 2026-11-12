@@ -64,6 +64,14 @@ type Engine struct {
 	kick chan struct{}
 	// loaded is set once the first pass has read every folder (Loaded).
 	loaded atomic.Bool
+	// public answers for the sites' public ports (public.go); publicKey
+	// is the set last opened on the machine, publicNext when a failed
+	// open is tried again, publicErr the failure last said.
+	public       atomic.Pointer[PublicHost]
+	publicSynced bool
+	publicKey    string
+	publicNext   time.Time
+	publicErr    string
 }
 
 // Site is the engine's view of one folder.
@@ -424,6 +432,7 @@ func (e *Engine) tick(ctx context.Context) {
 		e.emit("site.removed", domain, "", "folder removed, instance stopped", nil)
 	}
 	e.mu.Unlock()
+	e.syncPublic(ctx)
 }
 
 func (e *Engine) reconcile(ctx context.Context, domain, dir string) {

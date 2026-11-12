@@ -134,6 +134,10 @@ does not change.
 
 ## Sites with services
 
+A service with public ports (`services.<name>.ports`) runs on the primary
+only, kept or not: its clients dial the site's address, which is the
+primary's, and a second relay on a replica would answer nobody.
+
 A site with `services` is clustered service by service. The ones with data
 are **kept** on the primary: every service whose container has `volumes`,
 and the ones `cluster.keep` names (a database run as a process, a queue, a

@@ -295,6 +295,9 @@ func buildWire(a *app.App) app.Hook {
 			if theStatus != nil {
 				theStatus.Release(domain)
 			}
+			if thePorts != nil {
+				thePorts.Release(domain)
+			}
 		}
 	}
 	// An automatic update waits while a site moves between nodes: the
@@ -355,6 +358,7 @@ func buildWire(a *app.App) app.Hook {
 	if chatManager != nil {
 		wireSiteDoor(a, srv, set)
 	}
+	wirePublicPorts(a, srv)
 	srv.RegisterContainerize(api.ContainOptions{Chat: chatManager})
 	srv.RegisterRepair(api.RepairOptions{Chat: chatManager})
 	srv.RegisterDoctor(func() ([]installer.Check, bool) {

@@ -41,11 +41,14 @@ type OutsideLink struct {
 
 // Analysis is a move's plan for one site.
 type Analysis struct {
-	Bytes    int64         `json:"bytes"`
-	Files    int           `json:"files"`
-	Installs []Install     `json:"installs"`
-	Node     string        `json:"node,omitempty"`
-	Docker   bool          `json:"docker,omitempty"`
+	Bytes    int64     `json:"bytes"`
+	Files    int       `json:"files"`
+	Installs []Install `json:"installs"`
+	Node     string    `json:"node,omitempty"`
+	Docker   bool      `json:"docker,omitempty"`
+	// Ports are the public ports its services answer on, which the
+	// target must have free and reachable.
+	Ports    []string      `json:"ports,omitempty"`
 	Names    []string      `json:"names,omitempty"`
 	Links    []OutsideLink `json:"outside_links,omitempty"`
 	Warnings []string      `json:"warnings"`
@@ -105,7 +108,14 @@ func Analyze(siteDir string, parts []archive.Part, install bool, names []string)
 	}
 	if mf, err := manifest.Load(siteDir); err == nil {
 		a.Node = mf.Node
-		a.Docker = mf.Run != nil && mf.Run.Runtime == "docker"
+		a.Docker = UsesDocker(mf)
+		for _, p := range mf.PublicPorts() {
+			a.Ports = append(a.Ports, p.PublicPort.String())
+		}
+		if len(a.Ports) > 0 {
+			a.Warnings = append(a.Warnings, fmt.Sprintf("its services answer on public ports (%s): the house opens them in the target's own firewall, but a firewall of the provider's in front of that node (a security list, a cloud firewall) is yours to open there", strings.Join(a.Ports, ", ")))
+		}
+		a.Warnings = append(a.Warnings, Unmanaged(siteDir, mf, nil)...)
 	}
 	real, err := filepath.EvalSymlinks(siteDir)
 	if err != nil {

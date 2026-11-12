@@ -281,6 +281,9 @@ const siteUsage = `usage: middleware site <command> [flags]
   unpublish <domain>          take its tunnel rules and records away
   key <domain> on|off         hide the site behind a key in its address
                               (?access-token=KEY): on prints a new one
+  ports <domain> [approve|revoke]
+                              the public ports its services ask for
+                              (services.<name>.ports); approve is the owner's
   published                   every name the house published, with its state
   restart <domain> [--service s] | --all    force a handover (of one service only with --service)
   stop | start <domain>       write disabled into the manifest
@@ -486,6 +489,64 @@ func (e *Env) site(args []string) error {
 			return err
 		}
 		fmt.Fprintf(e.Stdout, "%s now answers only with its key. It is shown this once:\n\n  %s\n\nAny earlier key no longer works. `middleware site key %s off` ends it.\n", domain, out.URL, domain)
+		return nil
+	case "ports":
+		if err := need(); err != nil {
+			return err
+		}
+		if len(pos) > 2 || (len(pos) == 2 && pos[1] != "approve" && pos[1] != "revoke") {
+			return fmt.Errorf("usage: middleware site ports <domain> [approve|revoke]")
+		}
+		method, path := "GET", "/api/v1/sites/"+domain+"/ports"
+		var body any
+		if len(pos) == 2 {
+			method, path, body = "POST", path+"/"+pos[1], map[string]any{}
+		}
+		var raw []byte
+		if err := cl.Do(method, path, body, &raw); err != nil {
+			return err
+		}
+		if c.json {
+			e.printJSON(raw)
+			return nil
+		}
+		var out struct {
+			PublicIP string `json:"public_ip"`
+			Asked    []struct {
+				Line     string `json:"line"`
+				Approved bool   `json:"approved"`
+			} `json:"asked"`
+			Conflicts []string `json:"conflicts"`
+		}
+		if err := json.Unmarshal(raw, &out); err != nil {
+			return err
+		}
+		if len(out.Asked) == 0 {
+			fmt.Fprintf(e.Stdout, "%s asks for no public ports (services.<name>.ports in its manifest).\n", domain)
+			return nil
+		}
+		ip := out.PublicIP
+		if ip == "" {
+			ip = "not found yet"
+		}
+		fmt.Fprintf(e.Stdout, "This node's public address: %s\n\n", ip)
+		rows := [][]string{}
+		waiting := false
+		for _, a := range out.Asked {
+			svc, what, _ := strings.Cut(a.Line, " ")
+			state := "approved"
+			if !a.Approved {
+				state, waiting = "waits for the owner", true
+			}
+			rows = append(rows, []string{svc, what, state})
+		}
+		Table(e.Stdout, []string{"SERVICE", "ASKS", "STATE"}, rows)
+		for _, taken := range out.Conflicts {
+			fmt.Fprintf(e.Stdout, "taken: %s\n", taken)
+		}
+		if waiting {
+			fmt.Fprintf(e.Stdout, "\nThe owner approves them in the panel (the site's services) or with `middleware site ports %s approve`.\n", domain)
+		}
 		return nil
 	case "unpublish":
 		if err := need(); err != nil {
@@ -755,8 +816,17 @@ func (e *Env) showSite(c common, raw []byte, only string) error {
 			if v.Port != 0 {
 				port = strconv.Itoa(v.Port)
 			}
-			if !v.Published {
+			switch {
+			case v.Network == "host":
+				port = "host network"
+			case !v.Published:
 				port += " (site network only)"
+			}
+			if len(v.Ports) > 0 {
+				port = strings.TrimSpace(port + " public " + strings.Join(v.Ports, ","))
+				if v.PublicIP != "" {
+					port += " on " + v.PublicIP
+				}
 			}
 			state := serviceState(v.Alive, v.Starting, v.Stopped, v.Waiting, v.Error)
 			rows = append(rows, []string{name, strings.Join(v.Domains, " "), v.Runtime, yesNo(v.Alive), strings.TrimSpace(port), v.Revision, state, oneLine(v.Error)})

@@ -40,6 +40,14 @@ jobs:
               "$RUNNER_TEMP/$pkg.test" -test.run Cgroup -test.v -test.count=5 \
               || { sudo dmesg | grep -iE "oom|killed process" | tail -40; exit 1; }
           done
+      # A service with public ports is tested with what it exists for: a
+      # real TURN relay, started by the house's own runtime behind its
+      # walls, has to answer STUN over UDP. Reading the flags did not find
+      # that the image's binary would not even exec behind them.
+      - name: public ports, live
+        run: |
+          docker pull coturn/coturn:4.6.3-alpine || docker pull coturn/coturn:4.6.3-alpine
+          DOCKER=1 go test ./internal/runtime -run TestARealRelayAnswersSTUN -v
       - name: build
         run: go build -o middleware ./cmd/middleware
       - name: no third-party dependencies in the core

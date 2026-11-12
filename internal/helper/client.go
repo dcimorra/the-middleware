@@ -164,3 +164,11 @@ func (c *Client) ReservePorts(ctx context.Context, from, to int) error {
 func (c *Client) MeshFirewall(ctx context.Context, a MeshFirewallArgs) error {
 	return c.Call(ctx, OpMeshFirewall, a, nil)
 }
+
+// PortsOpen opens the sites' public ports in the machine's INPUT chain,
+// replacing what it opened before (PortsChain).
+func (c *Client) PortsOpen(ctx context.Context, ports []PortRule) (PortsResult, error) {
+	var res PortsResult
+	err := c.Call(ctx, OpPortsOpen, PortsArgs{Ports: ports}, &res)
+	return res, err
+}

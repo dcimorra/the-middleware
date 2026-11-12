@@ -38,6 +38,7 @@ var permRoutes = map[string][]string{
 		"GET " + siteBase + "/logs",
 		"POST " + siteBase + "/validate",
 		"GET " + siteBase + "/routes",
+		"GET " + siteBase + "/ports",
 		"GET " + siteBase + "/manifest/history",
 		"GET " + siteBase + "/manifest/history/{id}",
 		"GET " + siteBase + "/files",
@@ -176,6 +177,9 @@ var ownerOnly = []string{
 	"POST " + siteBase + "/staging/promote",
 	"POST " + siteBase + "/staging/undo",
 	"POST " + siteBase + "/staging/refresh",
+	// A port of the machine open to the internet is the owner's to give.
+	"POST " + siteBase + "/ports/approve",
+	"POST " + siteBase + "/ports/revoke",
 }
 
 // userRoutes are the routes outside a site a delegate reaches: the

@@ -114,6 +114,10 @@ type Needs struct {
 	// Ports are the ones its workers have written (FixedPorts): each must
 	// be free there.
 	Ports []int `json:"ports,omitempty"`
+	// Public are its services' public ports, as its manifest writes them
+	// ("3478/udp", "49160-49400/udp"): none may be the target's own or
+	// another site's there, nor bound by something else on that machine.
+	Public []string `json:"public,omitempty"`
 }
 
 // Steps of a move, in order.
@@ -614,6 +618,9 @@ func (m *Mover) NeedsFor(domain string, t Target) (Needs, []string, error) {
 	// Found at the check, not at the import: there, the site was already
 	// stopped here and its last copy sent.
 	need.Volumes, need.Ports = MoveVolumes(domain, planned, moving), FixedPorts(planned)
+	for _, p := range planned.PublicPorts() {
+		need.Public = append(need.Public, p.PublicPort.String())
+	}
 	if tasker, ok := m.Source.(Tasker); ok {
 		ts, err := tasker.Tasks(domain)
 		if err != nil {
