@@ -276,6 +276,17 @@ func buildWire(a *app.App) app.Hook {
 	if theWebVitals != nil {
 		srv.RegisterWebVitals(theWebVitals)
 	}
+	if theNetUse != nil {
+		srv.RegisterNetUse(theNetUse, func() []string {
+			var out []string
+			for _, sn := range a.Engine.Sites() {
+				if sn.Mode != manifest.ModeProject && !manifest.IsProject(sn.Domain) {
+					out = append(out, sn.Domain)
+				}
+			}
+			return out
+		})
+	}
 	if theStatus != nil {
 		srv.RegisterStatus(theStatus)
 	}
@@ -297,6 +308,9 @@ func buildWire(a *app.App) app.Hook {
 			}
 			if thePorts != nil {
 				thePorts.Release(domain)
+			}
+			if theNetUse != nil {
+				theNetUse.Release(domain)
 			}
 		}
 	}

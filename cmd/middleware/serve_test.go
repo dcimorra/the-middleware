@@ -86,6 +86,12 @@ func TestServeAnswersEverySectionOfTheAPI(t *testing.T) {
 	os.MkdirAll(measured, 0o755)
 	os.WriteFile(filepath.Join(measured, "index.html"), []byte("<html><head><title>m</title></head><body>m</body></html>"), 0o644)
 	os.WriteFile(filepath.Join(measured, "site.json"), []byte(`{"version":2,"web_vitals":true,"status_page":{"title":"Measured"}}`), 0o644)
+	// A site with a transfer budget it will spend in two pages, and the
+	// word to close when it does.
+	metered := filepath.Join(root, "sites", "metered.example")
+	os.MkdirAll(metered, 0o755)
+	os.WriteFile(filepath.Join(metered, "index.html"), []byte("<p>"+strings.Repeat("m", 1500)+"</p>"), 0o644)
+	os.WriteFile(filepath.Join(metered, "site.json"), []byte(`{"version":2,"limits":{"network":{"daily":"2k","warn_at":50,"cut":true}}}`), 0o644)
 	ai := filepath.Join(root, "sites", "ai.example")
 	os.MkdirAll(ai, 0o755)
 	os.WriteFile(filepath.Join(ai, "index.html"), []byte("<p>ai</p>"), 0o644)
@@ -220,6 +226,66 @@ func TestServeAnswersEverySectionOfTheAPI(t *testing.T) {
 		if moved != (proto == "http") {
 			t.Fatalf("force_https over %s: %d %q", proto, up.StatusCode, up.Header.Get("Location"))
 		}
+	}
+
+	// The network use of a site is counted on the way through the whole
+	// chain, its budget is judged within seconds, and once spent with cut
+	// on the site answers 509 from the hook, not from the site.
+	meteredPage := func() (int, string) {
+		t.Helper()
+		req, _ := http.NewRequest("GET", "http://"+s.Listen+"/", nil)
+		req.Host = "metered.example"
+		// What is counted is what is sent: compressed, 1500 times the
+		// same letter is forty bytes.
+		req.Header.Set("Accept-Encoding", "identity")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		body, _ := io.ReadAll(res.Body)
+		return res.StatusCode, string(body)
+	}
+	for i := 0; i < 2; i++ {
+		if code, body := meteredPage(); code != 200 || !strings.Contains(body, "mmm") {
+			t.Fatalf("metered.example inside its budget: %d %.80s", code, body)
+		}
+	}
+	var use struct {
+		State string `json:"state"`
+		Today struct {
+			In  int64 `json:"in"`
+			Out int64 `json:"out"`
+		} `json:"today"`
+		Limits struct {
+			Daily int64 `json:"daily"`
+			Cut   bool  `json:"cut"`
+		} `json:"limits"`
+	}
+	for wait := time.Now().Add(10 * time.Second); ; {
+		_, body := get("/sites/metered.example/network")
+		if err := json.Unmarshal([]byte(body), &use); err != nil {
+			t.Fatalf("network use: %v\n%s", err, body)
+		}
+		if use.State == "cut" {
+			break
+		}
+		if time.Now().After(wait) {
+			t.Fatalf("two pages of 1500 bytes did not spend a budget of 2k: %s", body)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if use.Today.Out < 3000 || use.Today.In < 28 || use.Limits.Daily != 2048 || !use.Limits.Cut {
+		t.Fatalf("network use: %+v", use)
+	}
+	if code, body := meteredPage(); code != 509 || strings.Contains(body, "mmm") {
+		t.Fatalf("metered.example past its budget: %d %.80s", code, body)
+	}
+	if _, body := get("/network"); !strings.Contains(body, `"domain": "metered.example"`) || !strings.Contains(body, `"state": "cut"`) {
+		t.Fatalf("the house's summary: %s", body)
+	}
+	if _, body := get("/events?type=site.network"); !strings.Contains(body, "site.network.limit") || !strings.Contains(body, "is closed until the day ends") {
+		t.Fatalf("the budget was reached and nothing said so: %s", body)
 	}
 
 	// The site's task gets the site's token at launch, the door answers

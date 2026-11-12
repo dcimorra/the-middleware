@@ -284,6 +284,51 @@ ceiling unless the operator sets one). Commands run for the site
 cgroup (a unit from an old install, a container) the block is read and
 validated and has no effect.
 
+### Network budget: `limits.network`
+
+The house counts what every site moves over the network, with nothing to
+turn on: bytes in and bytes out, as a rate now and by hour, day and
+month (the site's «Red» tab, `middleware site network <domain>`,
+[api.md](api.md) `GET /sites/{domain}/network`). The block says how much
+the site may move and what happens then:
+
+```json
+"limits": { "network": { "monthly": "500g", "daily": "40g", "warn_at": 80, "cut": true } }
+```
+
+`monthly` and `daily` are budgets for the calendar month and the day, in
+and out added, sizes as `memory` writes them (`"500g"`, `"2t"`); either
+may be left out. At `warn_at` percent of one (80 when left out) the house
+says so once (`site.network.warn`, and a notification on the operator's
+devices); at the budget it says so again (`site.network.limit`). What
+happens next is `cut`:
+
+- without it, nothing: the site keeps serving, and its tab shows it over;
+- with `"cut": true`, the site is closed until the day or the month
+  ends, or until the budget is raised or `cut` taken out, which is in
+  force within five seconds. Visitors get a 509 page ("This site has used
+  up its data transfer for now") with a `Retry-After`; its services'
+  public ports stop taking packets from the internet; the site's
+  processes keep running, its tasks run, and its certificate renews.
+
+Like the rest of `limits`, only the owner changes it, and
+`sites.default_limits.network` in the settings is every site's budget
+where its manifest has none (the block is taken whole, not field by
+field).
+
+What is counted: every request and response of the site's names as HTTP
+on the way through the house, headers included, a WebSocket for as long
+as it lives, and the pages the house answers for the site (a password
+page, a refusal); and what the public ports of its services
+(`services.<name>.ports`) move with the internet, read from the firewall
+every five seconds. What is not: the TLS and TCP/IP framing around HTTP,
+so a provider's bill reads a few percent higher; connections the site's
+own code opens outwards (an API it calls); and traffic with loopback and
+private networks. A range of public ports that overlaps the machine's
+ephemeral ports (32768 to 60999) also counts the machine's own outgoing
+connections that happen to leave from a port in it. Each node counts
+what crosses it: a clustered site's use is the sum of its nodes'.
+
 ## Node
 
 A command that wants Node (`node`, `npm`, `npx`, `pnpm`, `yarn`,

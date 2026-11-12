@@ -264,7 +264,12 @@ var SiteCatalog = map[string]SiteEntry{
 	"hold-410":  {410, Nothing, "Gone", "This site is no longer here.", 0, 0, "noindex, nofollow"},
 	"hold-500":  {500, Broken, "Error", "Something went wrong on this site.", 0, 0, ""},
 	"forbidden": {403, Locked, "Restricted", "This address is not allowed to see this site.", 0, 0, ""},
-	"password":  {401, Locked, "Private", "This site is private. Enter its password to continue.", 0, 0, "noindex, nofollow"},
+	// The site reached its transfer budget and its owner chose to close
+	// it there (limits.network.cut). 509 is nobody's standard and every
+	// host's habit for exactly this; it is a 5xx, so a crawler keeps
+	// what it had and comes back.
+	"overbudget": {509, Paused, "Paused", "This site has used up its data transfer for now. It will be back later.", 3600, 0, ""},
+	"password":   {401, Locked, "Private", "This site is private. Enter its password to continue.", 0, 0, "noindex, nofollow"},
 	// The security door's. A probe for /.env is told there is nothing,
 	// the same page a static site gives for a missing file. The refusals
 	// say why in a way the visitor can act on ("not from your country"

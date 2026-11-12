@@ -47,3 +47,34 @@ func TestASitesLimitsGoOverTheHouseDefaults(t *testing.T) {
 		t.Fatalf("nothing = %+v", g)
 	}
 }
+
+// A network budget is sizes, a percent and a word; a cut with nothing to
+// cut at, or a day's budget above the month's, is a manifest nobody meant.
+func TestANetworkBudgetIsHeldToItsRules(t *testing.T) {
+	ok := &Limits{Network: &NetworkLimits{Monthly: "500g", Daily: "40g", WarnAt: 90, Cut: true}}
+	if err := ok.Validate("limits"); err != nil {
+		t.Fatal(err)
+	}
+	if m, d := ok.Network.Bytes(); m != 500<<30 || d != 40<<30 {
+		t.Fatalf("bytes %d, %d", m, d)
+	}
+	for name, bad := range map[string]*NetworkLimits{
+		"not a size":           {Monthly: "lots"},
+		"a day over the month": {Monthly: "1g", Daily: "2g"},
+		"a share over 99":      {Monthly: "1g", WarnAt: 100},
+		"a cut with no budget": {Cut: true},
+	} {
+		if err := (&Limits{Network: bad}).Validate("limits"); err == nil || !strings.Contains(err.Error(), "limits.network") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	// The site's block replaces the house's whole.
+	def := &Limits{Network: &NetworkLimits{Monthly: "1t", Cut: true}}
+	if got := (&Limits{Network: &NetworkLimits{Daily: "5g"}}).Over(def).Network; got.Monthly != "" || got.Cut || got.Daily != "5g" {
+		t.Fatalf("over = %+v", got)
+	}
+	var none *Limits
+	if got := none.Over(def).Network; got == nil || got.Monthly != "1t" {
+		t.Fatalf("defaults alone = %+v", got)
+	}
+}

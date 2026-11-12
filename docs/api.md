@@ -500,7 +500,13 @@ The settings object (`data/settings.json`):
 has a memory ceiling it did not ask for. A change applies to every site
 within seconds, without a restart. When the kernel kills inside a site's
 group at its ceiling, a `site.oom` event (warn) carries `kills`, `limit`
-and `held` (the most the site held, in bytes).
+and `held` (the most the site held, in bytes). The block's `network`
+is a default transfer budget for every site that sets none; a site that
+passes the warning share of a budget emits `site.network.warn`, one that
+reaches it `site.network.limit` (error when it was closed for it, with
+`period`, `used`, `limit` and `cut`), and one that serves again
+`site.network.resumed`. `network.unmetered` (warn) says the helper could
+not count the sites' public ports.
 
 `update` is the self-update: `every_minutes` (1 to 10080, an hour when
 absent) is how often a new release is looked for, and `auto` whether one
@@ -597,6 +603,8 @@ The external programs the modules run (the agent CLIs), installed under
 | GET | `/sites/{domain}/uptime` | the site's availability as the house counted it, minute by minute → `{state: "up"\|"down"\|"maintenance"\|"", since, reason?, uptime: {"1","7","30","90"}, days: [{date, up, down, maintenance, uptime}], incidents: [{from, to?, reason?}]}`. Minutes in maintenance (a hold, a stop, disabled) do not count against `uptime`, which is -1 when nothing was counted; an outage is two minutes down in a row or more. Every site is counted, with or without a status page |
 | GET | `/sites/{domain}/webvitals` | how the site's pages feel in visitors' browsers, when the manifest has `web_vitals` on → `{from, to, metrics: [{metric, n, p75, rating, good, poor}], devices: {mobile, desktop}, days: [{date, n, p75: {lcp, inp, cls, fcp, ttfb}}], paths: [{path, metrics}], months}`. `metric` is `lcp`, `inp`, `cls`, `fcp` or `ttfb`, in milliseconds except `cls`, in thousandths; `rating` is `good`, `needs-improvement` or `poor` for the p75; `good`/`poor` are shares of samples. `?month=YYYY-MM` or `?days=N` (1–366, 30 by default). Paths are the most measured pages, slowest LCP first |
 | GET | `/sites/{domain}/visits` | the site's audience → `{from, to, days: [{date, visitors, pageviews}], visits, pageviews, unique?, countries, regions, devices, browsers, os, referrers, hosts, pages: [{key, count}], hours: [24], months: [{month, unique, visits, pageviews}]}`. `?month=YYYY-MM` for a calendar month (then `unique` is people once each that month) or `?days=N` (1–366, 30 by default). Only a browser's navigation answered with a page counts; robots, headless browsers and programs that wear a browser's name do not. Visitors are hashes of address, User-Agent and day or month with a key of this machine, thrown away when the day or month ends; tables count visitors, `pages` and `hours` count page views |
+| GET | `/sites/{domain}/network` | what the site moves over the network → `{from, to, rate_in, rate_out, seconds_in: [60], seconds_out: [60], today, month, period: {in, out, ports_in, ports_out}, days: [{date, in, out}], hours_in: [24], hours_out: [24], limits?: {monthly?, daily?, warn_at, cut}, state: "ok"\|"warn"\|"over"\|"cut"}`. Everything is bytes; the rates are bytes per second over the last five seconds, and `seconds_*` the last minute, oldest first. `in` is what visitors sent and `out` what they were sent, counted as HTTP on the way through the house (request and response, headers included, WebSockets while they live; not the TLS and TCP/IP framing), plus what its services' public ports moved, read from the firewall every five seconds and also given apart as `ports_*`. `?days=N` (30 by default) or `?month=YYYY-MM` choose the days. `limits` is the budget in force ([manifest.md](manifest.md#network-budget-limitsnetwork)); `over` is a budget reached by a site that only warns, `cut` one that closed |
+| GET | `/network` | → `{sites: [{domain, rate_in, rate_out, today, month, limits?, state}]}`: every site's use on this node, the one that moved most this month first |
 | POST | `/inbound/migration` | `{domains, to}` → 202 the migration: moves them in the background one at a time (certificate, door, DNS each); 409 while one runs. Progress on `inbound.migration.*` events |
 | GET | `/inbound/migration` | → `{id, to, domains, done, current, lines, started, finished, running, cancelled, failed}`, the running one or the last |
 | POST | `/inbound/migration/cancel` | → `{ok}`; stops after the domain it is on |

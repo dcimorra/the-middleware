@@ -84,6 +84,7 @@ manifest and take the code out.
 | an AI in the site's code | `claude_api` (the AI gateway) | § 8 |
 | deploy on push | `deploy.github` | § 4 |
 | memory and CPU budget | `limits` (operator only) | § 3 |
+| how much network a site uses (bytes in/out, MB/s now, per day and month), a transfer cap, "cut the site at 500 GB" | the house already counts it: site → Red in the panel (the operator also has `middleware site network <domain>`). The cap is `limits.network: {monthly, daily, warn_at, cut}` (operator only): a warning at `warn_at` %, and with `cut: true` a 509 for visitors and closed public ports until the period ends | docs/manifest.md, "Network budget" |
 | how many people visit, from where | the house already counts it: site → Visits | nothing to write |
 | a preview per branch / per pull request | `previews: {branches: ["feature/*"]}` beside `deploy.github` (operator only): each pushed branch gets `<branch>-preview.<domain>`, a password-protected copy deploying that branch, removed with the branch or after `keep` (7 days) | docs/manifest.md, "Previews" |
 | canary / progressive deploys, "try the new version on some visitors first", automatic rollback | `run.canary: {percent, for}` (not with `run.port` or services): a new generation gets that share of visitors, is rolled back on errors and takes over otherwise; `GET /api/v1/sites/<domain>/canary`, promote/rollback buttons on the site page | docs/manifest.md, "Canary deploys" |
