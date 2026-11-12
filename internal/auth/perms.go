@@ -181,6 +181,9 @@ var ownerOnly = []string{
 	// A port of the machine open to the internet is the owner's to give.
 	"POST " + siteBase + "/ports/approve",
 	"POST " + siteBase + "/ports/revoke",
+	// A file left in its HOME from another node comes from the operator
+	// or from a node, never from who was let into one site.
+	"PUT " + siteBase + "/inbox/{name}",
 }
 
 // userRoutes are the routes outside a site a delegate reaches: the
