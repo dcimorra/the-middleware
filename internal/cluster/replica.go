@@ -396,11 +396,17 @@ func (m *Manager) Status(from nodes.Member, req StatusRequest) Status {
 }
 
 func (m *Manager) placedRecently(domain string) bool {
+	// placed is read under the lock it is written under: the job is
+	// shared with the goroutine putting a copy in place (replica.go
+	// place), and reading it after Unlock was a race the detector caught.
 	m.mu.Lock()
-	j := m.jobs[domain]
+	var placed time.Time
+	if j := m.jobs[domain]; j != nil {
+		placed = j.placed
+	}
 	m.mu.Unlock()
-	if j != nil && !j.placed.IsZero() {
-		return m.now().Sub(j.placed) < keepGrace
+	if !placed.IsZero() {
+		return m.now().Sub(placed) < keepGrace
 	}
 	info, err := os.Stat(filepath.Join(m.siteDir(domain), manifest.FileName))
 	return err == nil && m.now().Sub(info.ModTime()) < keepGrace
