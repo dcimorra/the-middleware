@@ -79,6 +79,10 @@ const PATHS = {
   timer: "M12 6a7 7 0 1 0 0 14 7 7 0 0 0 0-14Zm0 3.5V13l2.5 1.5M9 3h6",
   gauge: "M4 15a8 8 0 1 1 16 0M12 15l4-5m-4 5h.01",
   history: "M4 12a8 8 0 1 0 2.3-5.6L4 8.7M4 4v4.7h4.7M12 8v4l3 2",
+  // a list of steps: to do, being done, done
+  circle: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z",
+  circleDot: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 6.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z",
+  circleCheck: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-3.5 9.2 2.5 2.5 4.5-5",
 };
 
 // icon returns a 20px (by default) inline SVG for a name in the table. An

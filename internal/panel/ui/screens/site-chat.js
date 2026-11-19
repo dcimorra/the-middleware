@@ -116,7 +116,7 @@ export function chatTab(domain) {
     const curID = idOf(cur);
     if (!list.some((c) => c.id === curID)) picker.append(h("option", { value: curID, "data-origin": cur.origin }, t("chat.newDraft")));
     for (const c of list) {
-      const label = (c.origin === "site" ? t("chat.fromSite") + " · " : "") + (c.title || t("chat.untitled")) + (c.running ? " ●" : "");
+      const label = (c.origin === "site" ? t("chat.fromSite") + " · " : "") + (c.title || t("chat.untitled")) + (c.running ? " · " + t("chat.pickerRunning") : "");
       picker.append(h("option", { value: c.id, "data-origin": c.origin, title: c.updated ? new Date(c.updated).toLocaleString() : "" }, label));
     }
     picker.value = curID;
@@ -286,7 +286,7 @@ export function chatTab(domain) {
         ...String(input.old_string || "").split("\n").map((l) => h("span", { class: "del" }, "- " + l + "\n")),
         ...String(input.new_string || "").split("\n").map((l) => h("span", { class: "add" }, "+ " + l + "\n"))));
     } else if (tool.name === "TodoWrite" && Array.isArray(input.todos)) {
-      parts.push(h("ul", { class: "todos" }, ...input.todos.map((td) => h("li", { class: td.status }, (td.status === "completed" ? "☑ " : td.status === "in_progress" ? "◐ " : "☐ ") + (td.content || td.activeForm || "")))));
+      parts.push(h("ul", { class: "todos" }, ...input.todos.map((td) => h("li", { class: td.status }, icon(td.status === "completed" ? "circleCheck" : td.status === "in_progress" ? "circleDot" : "circle", { size: 15 }), h("span", null, td.content || td.activeForm || "")))));
     } else if (tool.name === "Write" && input.content) {
       parts.push(h("pre", null, input.content));
     } else if (Object.keys(input).length && !["Task", "Agent"].includes(tool.name)) {
@@ -982,7 +982,7 @@ export function chatTab(domain) {
     if (seq !== uploadsSeq) return;
     drop();
     for (const u of ups) {
-      const x = h("button", { type: "button", class: "btn sm ghost", "aria-label": t("chat.removeFile", { name: u.name }) }, "×");
+      const x = h("button", { type: "button", class: "btn sm ghost", "aria-label": t("chat.removeFile", { name: u.name }) }, icon("x"));
       x.addEventListener("click", async () => { try { await api.del(`${cur.path}/files/${enc(u.name)}`); showUploads(); } catch (e) { toastError(e); } });
       chips.append(h("span", { class: "badge" }, u.name, " ", x));
     }

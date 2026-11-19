@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -488,5 +489,47 @@ func TestThisBuildsFilesAreKeptForGoodUnderItsOwnPrefix(t *testing.T) {
 		if rec := get(t, h, p); rec.Code != 404 {
 			t.Errorf("%s: %d", p, rec.Code)
 		}
+	}
+}
+
+// TestThePanelDrawsNoSystemIcons holds the panel to the rule its agents
+// are given (chat.InterfaceRule): an icon is a path in lib/icons.js,
+// never an emoji or a Unicode symbol. A padlock emoji marked private
+// repositories and ballot boxes an agent's list of steps, each drawn
+// differently by every system and out of the theme's reach. Arrows and
+// the multiplication sign in prose are typography and are not looked for.
+func TestThePanelDrawsNoSystemIcons(t *testing.T) {
+	system := func(r rune) bool {
+		return r >= 0x1F000 && r <= 0x1FAFF || // emoji and pictographs
+			r >= 0x2600 && r <= 0x27BF || // miscellaneous symbols, dingbats
+			r >= 0x25A0 && r <= 0x25FF || // geometric shapes
+			r >= 0x2B00 && r <= 0x2BFF || // stars and heavy arrows
+			r >= 0x2300 && r <= 0x23FF || // technical: watches, keyboards
+			r == 0xFE0F // the selector that asks for the emoji drawing
+	}
+	err := fs.WalkDir(FS, ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		switch path.Ext(p) {
+		case ".js", ".css", ".html", ".json", ".svg", ".webmanifest":
+		default:
+			return nil
+		}
+		data, err := fs.ReadFile(FS, p)
+		if err != nil {
+			return err
+		}
+		for i, line := range strings.Split(string(data), "\n") {
+			for _, r := range line {
+				if system(r) {
+					t.Errorf("%s:%d draws %q (U+%04X): use an icon from lib/icons.js", p, i+1, r, r)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
