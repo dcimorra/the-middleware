@@ -1528,6 +1528,7 @@ func Preamble(domain, workdir string, j agent.Jail) string {
 	var b strings.Builder
 	if cid, ok := CrewID(domain); ok {
 		b.WriteString(crewPreamble(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(workdir)))), cid, workdir, j))
+		b.WriteString(InterfaceRule)
 		return b.String()
 	} else if domain == Autopilot {
 		b.WriteString(autopilotPreamble(workdir, j))
@@ -1579,6 +1580,7 @@ func Preamble(domain, workdir string, j agent.Jail) string {
 	b.WriteString("When you need the operator to decide something, ask with a fenced block the panel turns into buttons; two to four short options, the one you would pick as recommended, or an empty options list for a free-text answer:\n")
 	b.WriteString("```question\n{\"question\": \"Which database?\", \"options\": [\"SQLite\", \"Postgres\"], \"recommended\": \"SQLite\"}\n```\n")
 	b.WriteString("Ask one thing at a time, then end your turn; the answer arrives as the next message.\n")
+	b.WriteString(InterfaceRule)
 	if names := siteServices(workdir); len(names) > 0 {
 		b.WriteString("This site runs as services (" + strings.Join(names, ", ") + "), each with its own process or container, names and log. Run a command in one with `middleware exec " + domain + " --service <name> -- <command>` (an install, a migration: it is on the site's network, so it reaches the others by name); `middleware site show " + domain + "` and `middleware site routes " + domain + "` say how each is doing and which name goes where, `middleware site logs " + domain + " --service <name>` (with --build for its image's build) is its output, and `middleware site validate " + domain + " --file <draft>` checks a manifest before you write it.\n")
 	}

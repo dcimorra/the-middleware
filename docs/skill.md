@@ -27,3 +27,22 @@ keeps the task to its own site.
 To change what agents are told, edit the skill, run `go test ./internal/chat/`,
 and ship the binary. A site's own `AGENTS.md` (or `CLAUDE.md`) adds what is
 specific to that project; the skill is what is true for every site on every installation.
+
+## What every agent is told about interfaces
+
+Two rules are in the skill (§ 11, "Interfaces: icons and finish") and also
+in every preamble, as `chat.InterfaceRule`: a site's conversation, the
+house's, the network agent, each crew agent, and a site's own conversation
+when it can change files.
+
+- **No system icons.** Never an emoji or a Unicode symbol standing in for
+  an icon; an icon is an inline SVG line icon from one outline set (the
+  project's, otherwise Lucide), drawn with `currentColor`.
+- **No bare interfaces.** What a person looks at is finished: layout,
+  states, phone and wide screen, light and dark where the project has both.
+
+They are in the preamble because the skill is read when an agent thinks
+the question is about building the house's way, and a page is often drawn
+before that. The panel keeps to the same rule: its icons are the paths in
+`internal/panel/ui/lib/icons.js`, and a test fails on an emoji or a symbol
+anywhere in its files.

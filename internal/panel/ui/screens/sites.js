@@ -250,7 +250,7 @@ export function sitesScreen({ query }) {
       if (fromRepo && !repoList.childElementCount) {
         try {
           const r = await api.get("/modules/github/repos");
-          for (const x of r.repos || []) repoList.append(h("option", { value: x.full_name }, (x.private ? "🔒 " : "") + (x.description || "")));
+          for (const x of r.repos || []) repoList.append(h("option", { value: x.full_name }, [x.private ? t("sites.repoPrivate") : "", x.description || ""].filter(Boolean).join(" · ")));
           repoHint.textContent = r.error ? t("sites.repoNoToken") : t("sites.repoHint", { n: (r.repos || []).length });
         } catch (e) { repoHint.textContent = e.message; }
       }

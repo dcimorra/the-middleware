@@ -1305,6 +1305,10 @@ Every line here was paid for at least once. Run through it.
   write code that restarts sites, kills processes or blocks addresses on a
   model's say-so. Emit the recommendation; the person or a written rule
   acts.
+- **No system icons, no bare interface.** Anything a person looks at:
+  icons are inline SVG line icons from one set, never emoji or Unicode
+  symbols, and the interface is finished (states, phone and wide, light
+  and dark where the project has both). § 11, "Interfaces".
 - **Nothing is a 502 from here.** The house answers its own pages with
   503 and `Retry-After` so an edge that swallows 502 still shows the words.
   If your app returns its own errors, do not use 502/504 for anything you
@@ -1342,6 +1346,63 @@ Every line here was paid for at least once. Run through it.
 - **Bind `127.0.0.1`** on `$PORT` (`0.0.0.0` only inside the docker
   runtime). A site listening on all interfaces is a site reachable around
   the house.
+
+### Interfaces: icons and finish
+
+Two rules for anything a person looks at (a page, a component, a
+dashboard, a form, an email, a tool with a screen). They hold without
+being asked, and a request that does not mention them does not lift them.
+The operator used to add "no system icons" to every prompt by hand; this
+section is so nobody has to.
+
+**Icons are never system icons.**
+
+- No emoji and no Unicode symbol or dingbat standing in for an icon: a
+  padlock, a clock, a tick, a cross, a star, a gear, a warning sign, an
+  arrow used as a button. Not in markup, not in CSS `content`, not in a
+  button's text, not in a heading. Each system draws them in its own
+  shapes and colours and no stylesheet reaches them.
+- No icon left to a font the visitor's system happens to have.
+- An icon is an **inline SVG line icon from one consistent outline set**:
+  the set the project already uses, otherwise Lucide (`lucide`,
+  `lucide-react`, `lucide-vue-next`, or its SVG copied inline in a static
+  site). Heroicons outline, Tabler and Phosphor are of the same kind.
+  Never two sets in one project.
+- Drawn the same everywhere: 24-unit grid, `fill="none"`,
+  `stroke="currentColor"`, stroke 1.5 to 2, round caps and joins, sized
+  and coloured with the text beside it.
+- A decorative icon is `aria-hidden="true"`; one that stands alone gets an
+  `aria-label` on its button.
+
+```html
+<span class="item">
+  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor"
+       stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/>
+  </svg>
+  Deadline
+</span>
+```
+
+**An interface is finished work, never a bare one.** No unstyled browser
+defaults, no "simple version for now", no proof of concept handed over as
+the result.
+
+- A deliberate layout with a clear hierarchy, one spacing scale, a small
+  considered palette and typography chosen on purpose.
+- Every control with its hover, focus, active and disabled states.
+- The empty, loading and error states designed, not forgotten.
+- Laid out for a phone and for a wide screen.
+- Light and dark where the project has both.
+- Readable contrast and visible keyboard focus.
+- If the project has a design system or existing screens, match them; if
+  it has none, give it one (tokens in one place) and keep to it.
+- Look at it as a visitor would, at two widths, before saying it is done
+  (§ 6).
+
+A site already drawn the other way gets the rule in everything you touch
+or add; swapping its existing emoji for icons while you are in that screen
+is part of the work, redesigning screens nobody asked about is not.
 
 ### Spec-driven work: OpenSpec
 
