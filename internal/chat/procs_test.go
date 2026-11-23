@@ -89,12 +89,23 @@ func TestATurnIsCutAtItsLimit(t *testing.T) {
 	}
 }
 
-// A lent folder is readable and not writable: it leaves the deny list and
-// the adapter closes it to every writing tool.
-func TestALentFolderIsReadNotWritten(t *testing.T) {
+// A site that another takes in to read gets that one's folder lent: it
+// leaves the deny list and the adapter closes it to every writing tool.
+// One taken in to write gets it shared, open like its own. And what the
+// site writes in its own manifest (chat.reads, which once lent a folder
+// on the reader's word) opens nothing.
+func TestTheSitesThatTakeASiteInAreLentToItsTurn(t *testing.T) {
 	p := &fakeProvider{key: "fake", script: []agent.Event{{Kind: agent.KindResult, Text: "ok"}}}
 	m, root, bus := newManager(t, p)
-	os.WriteFile(root+"/sites/a.test/site.json", []byte(`{"version":2,"chat":{"reads":["b.test","missing.test"]}}`), 0o644)
+	for name, mf := range map[string]string{
+		"a.test": `{"version":2,"chat":{"reads":["d.test"]},"guests":{"a.test":"write"}}`,
+		"b.test": `{"version":2,"guests":{"a.test":"read"}}`,
+		"c.test": `{"version":2,"guests":{"a.test":"write"}}`,
+		"d.test": `{"version":2}`,
+	} {
+		os.MkdirAll(root+"/sites/"+name, 0o755)
+		os.WriteFile(root+"/sites/"+name+"/site.json", []byte(mf), 0o644)
+	}
 	ch, unsub := bus.Subscribe()
 	defer unsub()
 	if _, err := m.Send("a.test", "read b", ""); err != nil {
@@ -102,14 +113,31 @@ func TestALentFolderIsReadNotWritten(t *testing.T) {
 	}
 	waitFor(t, ch, "agent.done")
 	j := p.last().Jail
-	lent := root + "/sites/b.test"
+	lent, shared, closed := root+"/sites/b.test", root+"/sites/c.test", root+"/sites/d.test"
 	if len(j.Lent) != 1 || j.Lent[0] != lent {
 		t.Fatalf("lent: %v", j.Lent)
 	}
+	if len(j.Shared) != 1 || j.Shared[0] != shared {
+		t.Fatalf("shared: %v", j.Shared)
+	}
+	denied := false
 	for _, d := range j.Deny {
-		if d == lent {
-			t.Fatal("the lent folder is still denied")
+		if d == lent || d == shared {
+			t.Fatalf("%s is still denied", d)
 		}
+		denied = denied || d == closed
+	}
+	if !denied {
+		t.Fatal("a site lent itself another by writing chat.reads")
+	}
+	sys := p.last().System
+	for _, want := range []string{"b.test, to read", "c.test, to write", "middleware site backups b.test"} {
+		if !strings.Contains(sys, want) {
+			t.Errorf("the preamble does not say %q", want)
+		}
+	}
+	if strings.Contains(sys, "d.test, to") {
+		t.Error("the preamble names a site that does not take this one in")
 	}
 }
 

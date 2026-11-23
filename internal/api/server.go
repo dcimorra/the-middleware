@@ -25,6 +25,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/crew"
 	"github.com/dcimorra/the-middleware/internal/engine"
 	"github.com/dcimorra/the-middleware/internal/events"
+	"github.com/dcimorra/the-middleware/internal/guests"
 	"github.com/dcimorra/the-middleware/internal/gz"
 	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/nodes"
@@ -350,6 +351,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else if auth.IsSocket(r.Context()) {
 		caller = auth.SocketCaller(r.Context())
 	}
+	if caller.Turn != "" {
+		// A site another takes in reaches that one too, as far as its
+		// manifest says today: read at each request, so a pass taken back
+		// is gone at the turn's next command.
+		for _, g := range guests.Of(s.opts.Root, caller.Turn) {
+			if caller.Hosts == nil {
+				caller.Hosts = map[string]bool{}
+			}
+			caller.Hosts[g.Host] = g.Write
+			caller.Scopes = append(caller.Scopes, auth.GuestScopes(g.Host, g.Write)...)
+		}
+	}
 	r = r.WithContext(auth.WithCaller(r.Context(), caller))
 	_, pattern := s.mux.Handler(r)
 	if pattern == "" {
@@ -392,6 +405,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			// about: it is what a prompt injected into a site's turn does.
 			if s.opts.Bus != nil {
 				s.opts.Bus.Emit(events.Event{Type: "api.turn_refused", Subject: caller.Turn, Actor: "agent", Level: "warn", Message: "a turn of this site's conversation asked the socket for " + pattern, Data: map[string]any{"method": r.Method, "path": r.URL.Path}})
+			}
+			if site := siteIn(pattern, r.URL.Path); site != "" && site != caller.Turn {
+				if write, guest := caller.Hosts[site]; guest && !write {
+					s.writeError(w, r, Errorf(http.StatusForbidden, "%s takes %s in to read: how it is, its logs, its events and the copies of its database, and nothing that changes it. Its owner makes that \"write\" in its manifest's guests, or does this for you", site, caller.Turn))
+					return
+				}
+				s.writeError(w, r, Errorf(http.StatusForbidden, "%s is another site, and it does not take %s in: its owner names the sites that may enter it in its own manifest (guests), and a site cannot let itself in", site, caller.Turn))
+				return
 			}
 			s.writeError(w, r, Errorf(http.StatusForbidden, "a turn of %s's conversation may read, restart, deploy and exec in that site and manage its tasks and backups, and nothing else; %s is the operator's", caller.Turn, pattern))
 			return
@@ -503,9 +524,15 @@ func (g *gzipOK) Flush() {
 // turnReadsOwnEvents lets a site's turn list the events about its own
 // site, which the skill tells it to read (`middleware events --subject`):
 // the list is filtered by that subject, so nothing of another site's
-// comes back. The stream is not filtered and stays closed.
+// comes back. The stream is not filtered and stays closed. The events of
+// a site that takes it in are open the same way.
 func turnReadsOwnEvents(c auth.Caller, pattern string, r *http.Request) bool {
-	return c.Turn != "" && pattern == "GET "+Prefix+"/events" && r.URL.Query().Get("subject") == c.Turn
+	if c.Turn == "" || pattern != "GET "+Prefix+"/events" {
+		return false
+	}
+	subject := r.URL.Query().Get("subject")
+	_, guest := c.Hosts[subject]
+	return subject == c.Turn || guest
 }
 
 // siteIn is the {domain} of path under pattern, or "". The mux does not

@@ -311,7 +311,39 @@ func siteMounts(spec *manifest.Spec, home string) ([]string, error) {
 	for _, m := range spec.Mounts {
 		out = append(out, "-v", m+":"+m)
 	}
-	return out, nil
+	return append(out, guestMounts(siteOf(spec.Domain))...), nil
+}
+
+// guestMounts are the folders of the sites that take site in, each at
+// its own path as on the machine. One it may write gets its manifest
+// read-only over it, for the reason the site's own does: written from in
+// here, the host's `runtime: "process"` would be this container's way
+// out of its walls. A host whose manifest is not a plain file is lent
+// read-only whole.
+func guestMounts(site string) []string {
+	if Guests == nil {
+		return nil
+	}
+	var out []string
+	read, write := Guests(site)
+	for _, dir := range write {
+		real, err := filepath.EvalSymlinks(dir)
+		if err != nil {
+			continue
+		}
+		mf := filepath.Join(real, manifest.FileName)
+		if info, err := os.Lstat(mf); err != nil || !info.Mode().IsRegular() {
+			read = append(read, dir)
+			continue
+		}
+		out = append(out, "-v", real+":"+dir, "-v", mf+":"+filepath.Join(dir, manifest.FileName)+":ro")
+	}
+	for _, dir := range read {
+		if real, err := filepath.EvalSymlinks(dir); err == nil {
+			out = append(out, "-v", real+":"+dir+":ro")
+		}
+	}
+	return out
 }
 
 // containerEnv is buildEnv for inside a container: the image's PATH, not

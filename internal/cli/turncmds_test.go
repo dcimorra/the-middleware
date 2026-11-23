@@ -85,6 +85,7 @@ func TestEveryCommandASiteConversationIsToldAboutIsOpenToItsTurn(t *testing.T) {
 		{"site validate <domain> [--file <draft>]", "", []string{"site", "validate", "a.test"}},
 		{"site routes <domain>", "", []string{"site", "routes", "a.test"}},
 		{"site ports <domain>", "", []string{"site", "ports", "a.test"}},
+		{"site guests <domain>", "", []string{"site", "guests", "a.test"}},
 	}
 	// exec is cmd/middleware's own command, not this package's: it checks
 	// the turn's site itself (cmd/middleware/exec_test.go) and goes to the

@@ -50,7 +50,7 @@ never shell strings. Paths are relative to the site folder.
   "notice": { "theme": "card" },
   "claude_api": { "provider": "claude", "permissions": ["read"], "model": "", "daily_usd": 0, "daily_turns": 0, "max_chats": 20, "hide_chats": false },
   "claude": false,
-  "chat": { "reads": ["other.example.com"] },
+  "guests": { "new.example.com": "read", "tools.example.com": "write" },
   "needs": ["api.example.com", "worker@shop.example.com"],
 
   "access": {
@@ -196,12 +196,55 @@ the internet, and what an injected prompt can reach depends on them.
 environment (`CLAUDE_CODE_OAUTH_TOKEN`) for a site that runs the CLI itself.
 It reaches as far as the subscription does; prefer `claude_api`.
 
-## Loans: `chat.reads`
+## Sites that may enter this one: `guests`
 
-Other sites of this house whose folder this site's conversation may read,
-never write. The folder is lent whole, its `.env` included: closing the
-secrets and leaving the rest would be a wall with a hole in it, which is why
-each one is written by hand.
+Every site is a jail that holds its own folder and nothing of the others. A
+site that has to reach another (a new version being rebuilt from the old
+one, a tool that works on several) is let in **by the site it enters**:
+
+```json
+"guests": { "new.example.com": "read", "tools.example.com": "write" }
+```
+
+The names are other sites or projects of the same node. Nothing a site writes
+in its own manifest lets it into another; only the host's list counts.
+
+| Level | The guest gets |
+| --- | --- |
+| `read` | the host's whole folder, read-only, at its own path (`sites/<host>/`), in every jail of the guest: its conversations, its process, its workers, its tasks, a deploy's build, its containers. Its conversation can also ask the house about the host: `middleware site show`, `site logs`, `events --subject`, `site routes`, and `site backups <host>` with `download` for a copy of its database |
+| `write` | the folder writable, and every command the host's own conversation has on it: `site restart`, `site deploy`, `exec`, `site tasks`, `site backups … run` and `restore` |
+
+The folder is lent whole, its `.env` included: closing the secrets and
+leaving the rest would be a wall with a hole in it. `write` is the site
+itself handed over, its manifest included (a container guest gets the host's
+`site.json` read-only, as it gets its own). So each name is a decision, and
+`read` is enough to rebuild a site from another.
+
+- A conversation sees a change at its next message. A process, a worker or a
+  container keeps the folders it started with: it sees a new pass, or loses
+  one, at its next start.
+- It is one way: taking a site in does not let the host into its guest.
+- Only the folder and the house's commands are lent. The host's HOME, its
+  logs as files and its docker volumes are not; a database that listens on
+  the machine is reached as it always could be by whoever has its password,
+  which the guest can now read in the host's `.env`.
+- A pass is between sites of one node. A guest that is deleted, archived or
+  moved to another node is taken out of every list, so the next site made
+  with that name does not inherit it; a guest that is renamed keeps its
+  passes. A copy of the guest on another node (`cluster`) has the host's
+  folder only if the host has a copy there too.
+- A name that is no site of the node lends nothing until one is, and the
+  panel marks it.
+
+In the panel it is the first card under the site's Access tab; from a shell,
+`middleware site guests <domain> [add <site> [read|write] | rm <site>]`. A
+site's own agent may write the key: it gives away only what is its site's.
+
+`chat.reads`, which named in the *reader's* manifest the sites its
+conversation could read, lends nothing any more: a site's agent writes its
+own manifest, so any site could lend itself any other. It is still parsed,
+and at start the supervisor names (`guests.unanswered`) each loan that the
+other side has not given.
 
 ## Docker
 

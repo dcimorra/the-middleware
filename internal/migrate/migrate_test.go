@@ -224,9 +224,11 @@ func TestTheSiteDoorAndTheClaudeTokenAreCarried(t *testing.T) {
 	}
 }
 
-func TestLoansAreCarried(t *testing.T) {
+// V1 lent a folder on the reader's word. V2 does not, so the loan is not
+// written into the reader's manifest: a note says where it is given now.
+func TestALoanIsNotCarriedInTheReadersManifest(t *testing.T) {
 	r := Convert("a.example", []byte(`{"kind":"static","chat":{"reads":["b.example"]}}`))
-	if !r.Ready() || r.Manifest.Chat == nil || r.Manifest.Chat.Reads[0] != "b.example" {
+	if !r.Ready() || r.Manifest.Chat != nil || len(r.Notes) != 1 || !strings.Contains(r.Notes[0], "b.example") || !strings.Contains(r.Notes[0], "site guests") {
 		t.Fatalf("%+v", r)
 	}
 }

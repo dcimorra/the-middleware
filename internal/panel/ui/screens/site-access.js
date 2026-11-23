@@ -122,7 +122,7 @@ export function accessTab(domain) {
 
   // The VPN choice saves on its own: it writes another key of the
   // manifest, and one form must not carry the other's half-typed values.
-  return { el: h("div", { class: "cards" }, keyCard(domain), form, vpnSiteCard(domain)), destroy() {} };
+  return { el: h("div", { class: "cards" }, keyCard(domain), guestsCard(domain), form, vpnSiteCard(domain)), destroy() {} };
 }
 
 // keyCard hides the site behind a key in its address: without it once,
@@ -179,6 +179,96 @@ function keyCard(domain) {
       ...body);
   }
   paint();
+  return el;
+}
+
+// guestsCard is who this site takes in: other sites of its node that get
+// its folder in their own jail, to read or to write. It is drawn on the
+// site that is entered and nowhere else, because that is where it is
+// decided: the sites this one enters are listed below as a fact, with no
+// button, since only their owners can change them.
+function guestsCard(domain) {
+  const el = h("div", { class: "card guests-card" });
+  const base = `/sites/${enc(domain)}/guests`;
+  let view = null;
+  let failed = null;
+  const levelWord = (lv) => t(lv === "write" ? "guests.write" : "guests.read");
+  const apply = async (fn, done) => {
+    try { view = await fn(); failed = null; if (done) toast(done, "ok"); } catch (e) { toastError(e); }
+    paint();
+  };
+  const set = async (site, level, was) => {
+    if (level === "write" && was !== "write") {
+      const ok = await confirm({ title: t("guests.writeQ", { site }), body: t("guests.writeBody", { site, domain }), confirmLabel: t("guests.writeConfirm") });
+      if (!ok) { paint(); return; }
+    }
+    await apply(() => api.put(`${base}/${enc(site)}`, { level }), t(was ? "guests.changed" : "guests.added", { site }));
+  };
+  function levelSelect(value, label) {
+    const sel = h("select", { class: "auto", "aria-label": label },
+      h("option", { value: "read" }, t("guests.read")),
+      h("option", { value: "write" }, t("guests.write")));
+    sel.value = value;
+    return sel;
+  }
+  function paint() {
+    const head = [
+      h("h2", null, t("guests.title")),
+      h("p", { class: "small muted" }, t("guests.hint", { domain })),
+    ];
+    if (failed) { clear(el).append(...head, notice("bad", failed)); return; }
+    if (!view) { clear(el).append(...head, h("p", { class: "small muted" }, t("common.loading"))); return; }
+    const body = [];
+    if (view.guests.length) {
+      body.push(h("ul", { class: "site-addr-list guests-list" }, ...view.guests.map((g) => {
+        const sel = levelSelect(g.level, t("guests.levelOf", { site: g.site }));
+        sel.addEventListener("change", () => set(g.site, sel.value, g.level));
+        const rm = h("button", { type: "button", class: "icon-btn", "aria-label": t("guests.removeOf", { site: g.site }), title: t("guests.remove") }, icon("x", { size: 16 }));
+        rm.addEventListener("click", async () => {
+          if (!(await confirm({ title: t("guests.removeQ", { site: g.site }), body: t("guests.removeBody", { site: g.site, domain }), confirmLabel: t("guests.remove"), danger: true }))) return;
+          await apply(() => api.del(`${base}/${enc(g.site)}`), t("guests.removed", { site: g.site }));
+        });
+        return h("li", { class: "site-addr" },
+          icon(g.level === "write" ? "edit" : "eye", { size: 16 }),
+          h("code", { class: "grow" }, g.site),
+          g.here ? null : h("span", { class: "badge warn", title: t("guests.absentHint") }, t("guests.absent")),
+          sel, rm);
+      })));
+    } else {
+      body.push(h("div", { class: "empty guests-empty" }, icon("door"), h("strong", null, t("guests.none")), h("div", null, t("guests.noneHint"))));
+    }
+    if (view.candidates.length) {
+      const pick = h("select", { "aria-label": t("guests.pick") },
+        h("option", { value: "" }, t("guests.pick")),
+        ...view.candidates.map((c) => h("option", { value: c }, c)));
+      const level = levelSelect("read", t("guests.level"));
+      const add = h("button", { type: "submit", class: "btn primary", disabled: true }, icon("plus"), t("guests.add"));
+      pick.addEventListener("change", () => { add.disabled = !pick.value; });
+      const form = h("form", { class: "guests-add", novalidate: true }, pick, level, add);
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        if (pick.value) set(pick.value, level.value, "");
+      });
+      body.push(form);
+    } else if (!view.guests.length) {
+      body.push(h("p", { class: "small muted" }, t("guests.noCandidates")));
+    }
+    body.push(h("dl", { class: "guests-levels" },
+      h("dt", null, icon("eye", { size: 16 }), t("guests.read")), h("dd", null, t("guests.readHint")),
+      h("dt", null, icon("edit", { size: 16 }), t("guests.write")), h("dd", null, t("guests.writeHint"))));
+    if (view.hosts.length) {
+      body.push(
+        h("h3", null, t("guests.hostsTitle")),
+        h("p", { class: "small muted" }, t("guests.hostsHint")),
+        h("ul", { class: "site-addr-list guests-list" }, ...view.hosts.map((g) => h("li", { class: "site-addr" },
+          icon("door", { size: 16 }),
+          h("a", { class: "grow", href: `#/sites/${enc(g.site)}/access` }, h("code", null, g.site)),
+          h("span", { class: "badge " + (g.write ? "accent" : "info") }, levelWord(g.write ? "write" : "read"))))));
+    }
+    clear(el).append(...head, ...body);
+  }
+  paint();
+  api.get(base).then((v) => { view = v; paint(); }, (e) => { failed = e.message || String(e); paint(); });
   return el;
 }
 

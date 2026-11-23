@@ -22,3 +22,10 @@ func enclose(cmd *exec.Cmd, spec *manifest.Spec, home string) error {
 	}
 	return Enclose(cmd, spec, home)
 }
+
+// Guests, when set, answers which other sites' folders a site's container
+// sees, those to read and those to write: the sites that take it in
+// (internal/guests). Set by the wiring; asked when a container is
+// started, so a container keeps what it started with, as a process keeps
+// its jail's mounts.
+var Guests func(site string) (read, write []string)

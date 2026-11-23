@@ -35,6 +35,10 @@ type Caller struct {
 	// Turn is the site whose agent turn made this socket request; its
 	// Scopes are then TurnScopes(Turn).
 	Turn string
+	// Hosts are the sites that take Turn's site in as a guest (the hosts'
+	// manifests, `guests`), true where it may write: their GuestScopes
+	// are in Scopes too. The API fills it, since it knows the manifests.
+	Hosts map[string]bool
 	// Autopilot is a socket request made from a turn of the house's
 	// autonomous agent; its Scopes are then AutopilotScopes().
 	Autopilot bool

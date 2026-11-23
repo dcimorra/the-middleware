@@ -80,6 +80,7 @@ manifest and take the code out.
 | keep a service's data when the site moves to another node | already done: every named docker volume of the site (`volumes: ["db:/var/lib/…"]`) is copied with it and checked, and so are the `backups` copies; data in an anonymous volume or in a container's own layer is not, so name the volume | nothing to write |
 | a file from another node (a dump, an export the operator made there) | the operator sends it with `middleware nodes send <file> <node> <site>`; it is in your HOME, `~/inbox/<name>` | ask the operator; you cannot fetch it |
 | look at what is in the database, from the panel | site → Database: the databases `backups` names and the SQLite files of the folder, read-only | nothing to write; name a PostgreSQL/MySQL one in `backups` |
+| reach another site of this machine: read the old site to build the new one from it, copy its data, work on two sites at once | the *other* site lets you in: its owner adds your site to its `guests` (`"guests": {"new.example.com": "read"}` in **its** manifest, or its Access tab, or `middleware site guests <that site> add <your site>`). Nothing you write in your own manifest opens another site. To let a site into yours, write `guests` in yours | § 2, "Other sites" |
 | something every so often | a task | § 9 |
 | a process always up, or several processes | `workers`, `services` | § 3 |
 | a port that is not HTTP, open to the internet (a TURN/STUN relay, a game server, a broker; UDP or TCP, a range) | a service with `ports` (and `network: "host"` for a relay with a range), its address as `$MIDDLEWARE_PUBLIC_IP`. Never `docker compose up` beside the site: the house does not see it, watch it or move it. You may write it in the manifest; it starts when the owner approves the ports (`middleware site ports <domain>` says what waits) | docs/services.md, "A site needs a port that is not HTTP" |
@@ -112,6 +113,36 @@ appears in your transcript is reported as a violation. Your `HOME` is private
 to this site (`data/homes/<domain>`); the site's process gets the same one.
 Denied as files is not out of reach: your site's tasks, their logs, its
 events and its backups are read through the house's CLI (below).
+
+**Other sites.** One site enters another only when the one that is entered
+says so, in its own manifest:
+
+```json
+"guests": { "new.example.com": "read", "tools.example.com": "write" }
+```
+
+- If a site takes yours in, the house tells you so at the top of every turn,
+  by name and with its folder's path, and `middleware site guests <your
+  domain>` lists it. `read`: its whole folder is yours to read (in a jail,
+  with any tool), and `middleware site show|logs|routes|backups <that
+  site>` and `events --subject <that site>` answer you; `middleware site
+  backups <that site> download <name> <copy> [file]` brings you a copy of
+  its database. `write`: its folder is yours to edit and every command you
+  have on your own site takes its name.
+- If you need a site that does not take yours in, you cannot give yourself
+  the pass: `chat.reads` in your own manifest lends nothing, and adding
+  yourself to `guests` in yours does nothing. Say which site and which
+  level you need (`read` is enough to rebuild from it) and that its owner
+  gives it from that site's Access tab or with `middleware site guests
+  <that site> add <your domain>`. Then end the turn: the pass counts from
+  your next one.
+- Asked to let another site into yours, write `guests` in your manifest.
+  It gives away what is your site's: the folder whole, `.env` included, and
+  with `write` the site itself. Prefer `read`, and say what you gave.
+- Copy what you take into your own folder. Your process and your tasks see
+  the same folders, from their next start; do not make your site depend at
+  run time on a folder that is another site's unless that is what was
+  asked, since the pass ends when either site moves to another node.
 
 **The house conversation** (named `middleware`). `cwd` is the installation
 root (default `/srv/middleware`). You may edit the installation's own files,
@@ -166,7 +197,8 @@ house conversation.
 
 The CLI talks to the supervisor over its socket and is how you look at the
 house without opening `data/` or `tasks/` by path. From a site's
-conversation it needs no token and is confined to that site: another
+conversation it needs no token and is confined to that site (and, as far
+as each allows, to the sites that take it in: "Other sites" above): another
 site's name, the house's settings, tokens and the list of every site are
 refused. Everything below works on your own site:
 
@@ -189,6 +221,7 @@ middleware site deploy shop.example.com
 middleware site validate shop.example.com [--file draft.json]
 middleware site routes shop.example.com
 middleware site ports shop.example.com   # public (non-HTTP) ports its services ask for, and which the owner approved
+middleware site guests shop.example.com  # which sites it takes in, and which sites take it in (above, "Other sites")
 middleware exec shop.example.com [--service db] -- <command>
 curl -s -o /dev/null -w '%{http_code}\n' -H "Host: shop.example.com" http://127.0.0.1:46100/
 ```
