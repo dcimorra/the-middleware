@@ -207,7 +207,6 @@ func Convert(name string, data []byte) Result {
 		m.Autofix = &off
 	}
 	m.Claude = in.Claude
-	m.Chat = c.chat
 	if len(r.Blockers) > 0 {
 		return r
 	}
@@ -229,7 +228,6 @@ type converter struct {
 	autofixOff bool
 	cache      *manifest.Cache
 	vpn        *manifest.VPNOnly
-	chat       *manifest.ChatRules
 }
 
 // themeKeys maps V1's design names to V2's: the same seven designs.
@@ -315,7 +313,9 @@ func (c *converter) blockers(in *v1) {
 		if err := dec.Decode(&cr); err != nil {
 			c.block("chat: %v", err)
 		} else if len(cr.Reads) > 0 {
-			c.chat = &manifest.ChatRules{Reads: cr.Reads}
+			// The site that is read decides in V2 (its manifest's
+			// guests), so the loan cannot be carried in this one's.
+			c.note("chat.reads: not carried; in V2 each of %s takes this site in from its own manifest (`middleware site guests <that site> add <this site>`)", strings.Join(cr.Reads, ", "))
 		}
 	}
 	if present(in.ClaudeAPI) {

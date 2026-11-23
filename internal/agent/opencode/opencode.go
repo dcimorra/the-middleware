@@ -142,7 +142,7 @@ func Permissions(req agent.Request) map[string]any {
 		}
 	}
 	ext := map[string]any{"*": "deny"}
-	for _, d := range req.Jail.Lent {
+	for _, d := range append(append([]string(nil), req.Jail.Lent...), req.Jail.Shared...) {
 		ext[filepath.Join(d, "**")] = "allow"
 	}
 	perm["external_directory"] = ext

@@ -2571,3 +2571,22 @@ pre.pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px
 .proposal p.small { margin: 6px 0 0; }
 .proposal pre.pre-wrap { font-family: inherit; font-size: 13px; line-height: 1.5; }
 .canary-num { width: 5.5em; display: inline-block; }
+
+/* ---------- who a site takes in (Access tab) ---------- */
+.guests-card h3 { margin: 22px 0 2px; }
+.guests-list .site-addr select { flex: none; }
+.guests-list .site-addr a { min-width: 0; }
+.guests-empty { padding: 26px 16px; border: 1px dashed var(--border-strong); border-radius: 10px; margin-bottom: 12px; }
+.guests-empty > .ico { width: 30px; height: 30px; margin-bottom: 8px; }
+.guests-add { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; margin-bottom: 4px; }
+.guests-add select { min-width: 0; }
+.guests-levels { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; margin: 16px 0 0; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); font-size: 13px; line-height: 1.5; }
+.guests-levels dt { display: flex; align-items: center; align-self: start; min-height: 1.5em; gap: 8px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.guests-levels dt .ico { color: var(--text-3); }
+.guests-levels dd { margin: 0; color: var(--text-2); }
+@media (max-width: 560px) {
+  .guests-add { grid-template-columns: minmax(0, 1fr) auto; }
+  .guests-add select:first-child { grid-column: 1 / -1; }
+  .guests-levels { grid-template-columns: minmax(0, 1fr); gap: 2px 0; }
+  .guests-levels dd { margin-bottom: 8px; }
+}

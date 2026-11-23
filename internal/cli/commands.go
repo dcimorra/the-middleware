@@ -497,6 +497,11 @@ func (e *Env) site(args []string) error {
 		}
 		fmt.Fprintf(e.Stdout, "%s now answers only with its key. It is shown this once:\n\n  %s\n\nAny earlier key no longer works. `middleware site key %s off` ends it.\n", domain, out.URL, domain)
 		return nil
+	case "guests", "guest":
+		if err := need(); err != nil {
+			return err
+		}
+		return e.siteGuests(c, cl, domain, pos[1:])
 	case "ports":
 		if err := need(); err != nil {
 			return err

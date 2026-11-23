@@ -37,18 +37,32 @@ type Jail struct {
 	Secrets []string
 	// Lent are other folders the agent may read and not write.
 	Lent []string
+	// Shared are other sites' folders the agent may read and write: the
+	// sites that take this one in to write (internal/guests).
+	Shared []string
 }
 
 // Lend opens dirs for reading: they leave Deny (by both their names, the
 // link and the target) and are listed in Lent, which adapters close to
 // writing. A turn runs with permissions skipped, so a folder merely left
 // out of Deny would be a folder the agent can edit.
-func (j *Jail) Lend(dirs ...string) {
+func (j *Jail) Lend(dirs ...string) { j.open(false, dirs) }
+
+// Share opens dirs for reading and writing: they leave Deny as Lend's do
+// and are listed in Shared, which adapters open like the site's own
+// folder.
+func (j *Jail) Share(dirs ...string) { j.open(true, dirs) }
+
+func (j *Jail) open(write bool, dirs []string) {
 	drop := map[string]bool{}
 	for _, d := range dirs {
 		d = absolute(d)
 		drop[d], drop[resolved(d)] = true, true
-		j.Lent = append(j.Lent, d)
+		if write {
+			j.Shared = append(j.Shared, d)
+		} else {
+			j.Lent = append(j.Lent, d)
+		}
 	}
 	kept := j.Deny[:0]
 	for _, d := range j.Deny {

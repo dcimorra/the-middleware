@@ -26,6 +26,9 @@ var scopeRoutes = map[string][]string{
 		"POST /api/v1/sites/{domain}/validate",
 		"GET /api/v1/sites/{domain}/routes",
 		"GET /api/v1/sites/{domain}/ports",
+		// Who the site takes in and who takes it in: where its turn may
+		// go beyond its folder is something it has to be able to ask.
+		"GET /api/v1/sites/{domain}/guests",
 		"GET /api/v1/events",
 		// Who calls and what the manifest's security refused: what a
 		// security rule is written from, and the only way to see what it
@@ -77,6 +80,14 @@ var scopeRoutes = map[string][]string{
 		"GET /api/v1/sites/{domain}/backups/{name}/copies/{id}",
 		"DELETE /api/v1/sites/{domain}/backups/{name}/copies/{id}",
 		"POST /api/v1/sites/{domain}/backups/{name}/copies/{id}/restore",
+	},
+	// backups.read is the reading half of backups: what a site that
+	// another takes in to read gets of that site's database (GuestScopes).
+	// Taking a copy, deleting one and restoring one change the host.
+	"backups.read": {
+		"GET /api/v1/sites/{domain}/backups",
+		"GET /api/v1/sites/{domain}/backups/{name}/log",
+		"GET /api/v1/sites/{domain}/backups/{name}/copies/{id}",
 	},
 	// autopilot is the house's autonomous agent's own (AutopilotScopes):
 	// creating a site, which the API holds to its weekly allowance and
@@ -153,6 +164,20 @@ func Scopes() []string { return []string{"read", "restart", "deploy", "exec", "t
 // keep it to tasks that run there.
 func TurnScopes(site string) []string {
 	return []string{"read:" + site, "restart:" + site, "deploy:" + site, "exec:" + site, "tasks:" + site, "backups:" + site}
+}
+
+// GuestScopes are what a site's turn opens, beside TurnScopes for its
+// own site, for a site that takes it in (the host's manifest, `guests`):
+// to read, what the house tells about the host (how it is, its logs, its
+// events, the copies of its database, each of which it may download); to
+// write, everything the host's own conversation has. Asking for a site's
+// folder to be writable and then for the owner to restart it would make
+// the owner the courier, as the tasks once did.
+func GuestScopes(host string, write bool) []string {
+	if write {
+		return TurnScopes(host)
+	}
+	return []string{"read:" + host, "backups.read:" + host}
 }
 
 // AutopilotScopes are what a turn of the autonomous agent opens when it

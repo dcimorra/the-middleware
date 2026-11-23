@@ -98,7 +98,8 @@ The single-valued keys a repository may set for itself (husky writes
 such a site still deploys and its hooks still do not run on the host.
 
 **The jail for agents.** A conversation's agent may read and write the
-site's folder and nothing above it, and no other site. Two things outside
+site's folder and nothing above it, and no other site but those that take
+its site in (`guests`, below). Two things outside
 it are its own to read and not write: the house's guide in its HOME, named
 to it by its full path, and its logs (`data/logs/<domain>/`: the site's
 process, its workers, its moves, its requests); the other sites' logs and
@@ -218,6 +219,19 @@ else of the installation is there: not the other sites, not their
 homes, not `data/`. The command holds no capability and cannot gain one
 (empty bounding set, `no_new_privs`). The network is the machine's: a
 site still listens on its loopback port and reaches the internet.
+
+One site enters another only when the one that is entered says so: a site's
+manifest lists the sites of its node it takes in (`guests`, each `read` or
+`write`), and those get its folder in their jails, read-only or writable,
+and their conversations the house's commands about it, as far as the level
+goes ([manifest.md](manifest.md), "Sites that may enter this one"). The
+answer is read from the hosts' manifests each time a jail is built and at
+each request on the socket, never from the visitor's: `chat.reads`, which
+the reader wrote in its own manifest, lends nothing any more, since a
+site's agent writes that file. A guest that is deleted, archived or moved
+away leaves every list, so its name is not a pass for the next site that
+takes it. A guest to write holds the host as the host's own agent does;
+in a container it gets the host's `site.json` read-only, as its own.
 
 What is shared on purpose: the CLI logins the operator chose to share
 (a `claude` config folder set by hand, the Codex subscription's home) are

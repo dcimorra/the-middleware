@@ -17,7 +17,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -31,6 +30,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/agent"
 	"github.com/dcimorra/the-middleware/internal/events"
 	"github.com/dcimorra/the-middleware/internal/fsx"
+	"github.com/dcimorra/the-middleware/internal/guests"
 	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/settings"
 )
@@ -630,16 +630,13 @@ func (m *Manager) Resolve(name string) (Settings, error) {
 		s.Jail.Unattended(m.opts.Root)
 	}
 	if !IsHouse(domain) {
-		var dirs []string
-		for _, r := range lentTo(dir) {
-			other := filepath.Join(m.opts.Root, "sites", r)
-			if r != domain && manifest.ValidName(r) {
-				if st, err := os.Stat(other); err == nil && st.IsDir() {
-					dirs = append(dirs, other)
-				}
-			}
-		}
-		s.Jail.Lend(dirs...)
+		// The sites that take this one in, as their own manifests say
+		// now (internal/guests). Nothing this site's manifest says opens
+		// another's folder: chat.reads did, and a site's agent writes
+		// its own manifest.
+		read, write := guests.Folders(guests.Of(m.opts.Root, domain))
+		s.Jail.Lend(read...)
+		s.Jail.Share(write...)
 	}
 	return s, nil
 }
@@ -1574,6 +1571,7 @@ func Preamble(domain, workdir string, j agent.Jail) string {
 		}
 		b.WriteString("When the manifest names deploy.github.repository and the GitHub module has a token, `git push` to that repository works as it is: the house lends the credential through its own address, without showing it, and refuses any other repository and any deletion. Another GitHub repository the site keeps in its folder (a public copy in build/oss, say) is reached the same way once the manifest lists it under `repositories` as {\"repository\": \"owner/name\", \"path\": \"build/oss\"}; only the site's owner may add one, and it reaches `git push` from the next turn, since a turn's git settings are made when it starts. Do not ask for a token or write one to a file.\n")
 		b.WriteString(turnCommandsText(domain))
+		b.WriteString(hostsText(filepath.Dir(filepath.Dir(workdir)), domain))
 	}
 	b.WriteString("Do not start long-running processes: the middleware supervises the site's process from its manifest, and a change to the manifest or to a pointer file is how a deployment happens.\n")
 	b.WriteString("When this turn ends, its whole process group is killed. Anything that takes longer than a turn (a build, an install, a deployment) must be started detached, exactly like this: `setsid nohup <cmd> >/tmp/<name>.log 2>&1 </dev/null &`, and your reply must state the log's path so the next message can check how it went.\n")
@@ -1606,6 +1604,36 @@ func Preamble(domain, workdir string, j agent.Jail) string {
 	return b.String()
 }
 
+// hostsText is the preamble's block about the sites that take domain in
+// (internal/guests), or "" when none does. Said up front and by name:
+// the paragraph before it tells the agent every other site is off
+// limits, and an agent asked to rebuild a site from the old one would
+// answer that it cannot see the old one.
+func hostsText(root, domain string) string {
+	grants := guests.Of(root, domain)
+	if len(grants) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("Other sites of this machine take this one in: their owners wrote " + domain + " in their own manifests (`guests`), and that is the only way in (nothing in your manifest opens another site). They are the exception to \"other sites are off limits\":\n")
+	for _, g := range grants {
+		if g.Write {
+			b.WriteString("  - " + g.Host + ", to write: its folder " + g.Dir + " is yours to read and edit like your own, and every `middleware` command listed above takes its name in place of yours.\n")
+			continue
+		}
+		how := "read it with your file-reading tools, not with a shell command"
+		if agent.Enclose != nil {
+			how = "it is mounted read-only in your jail, so any tool reads it, shell commands included"
+		}
+		mw := func(args string) string { return "`middleware " + strings.ReplaceAll(args, "<host>", g.Host) + "`" }
+		b.WriteString("  - " + g.Host + ", to read: its folder " + g.Dir + " (" + how + "), and the house tells you about it with " +
+			mw("site show <host>") + ", " + mw("site logs <host>") + ", " + mw("events --subject <host>") + ", " + mw("site routes <host>") + " and " + mw("site backups <host>") +
+			" (the copies of its database; " + mw("site backups <host> download <name> <copy> [file]") + " brings one to you). Nothing that changes it: for that its owner makes your pass \"write\".\n")
+	}
+	b.WriteString("What you copy out of one of them (code, data, a database copy) goes into your own folder; your site's process and tasks see the same folders from their next start. `middleware site guests " + domain + "` lists these passes as they are now.\n")
+	return b.String()
+}
+
 // dockerImage is the image a site runs in, or "" when it runs as a process.
 // siteServices are the services of a site that has them, sorted.
 func siteServices(siteDir string) []string {
@@ -1625,25 +1653,6 @@ func dockerImage(siteDir string) string {
 		return m.Run.Docker.Image
 	}
 	return "built from " + m.Run.Docker.Build
-}
-
-// lentTo reads chat.reads straight from site.json, like the agent block:
-// a manifest the engine refuses (a typo elsewhere) must still let the
-// conversation open, since the conversation is how the typo gets fixed.
-func lentTo(siteDir string) []string {
-	data, err := os.ReadFile(filepath.Join(siteDir, manifest.FileName))
-	if err != nil {
-		return nil
-	}
-	var raw struct {
-		Chat struct {
-			Reads []string `json:"reads"`
-		} `json:"chat"`
-	}
-	if json.Unmarshal(data, &raw) != nil {
-		return nil
-	}
-	return raw.Chat.Reads
 }
 
 // runningFile is data/chat/running/<name>.json: a turn in progress, so a
