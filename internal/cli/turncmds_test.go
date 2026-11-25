@@ -14,6 +14,8 @@ import (
 	"github.com/dcimorra/the-middleware/internal/api"
 	"github.com/dcimorra/the-middleware/internal/auth"
 	"github.com/dcimorra/the-middleware/internal/backups"
+	"github.com/dcimorra/the-middleware/internal/browsers"
+	"github.com/dcimorra/the-middleware/internal/cgroups"
 	"github.com/dcimorra/the-middleware/internal/chat"
 	"github.com/dcimorra/the-middleware/internal/events"
 	"github.com/dcimorra/the-middleware/internal/security"
@@ -43,6 +45,12 @@ func turnServer(t *testing.T, site string) (root string, cl *Client) {
 	srv.RegisterSecurity(api.SecurityOptions{Door: security.New(security.Options{Lookup: func(string) (security.Site, bool) { return security.Site{}, false }})})
 	srv.RegisterPublicPorts(api.PortsOptions{Book: &pubports.Book{Root: root}})
 	srv.RegisterSeen(seen.New(filepath.Join(root, "data", "seen")))
+	pool, err := browsers.New(browsers.Options{Dir: filepath.Join(root, "data", "browsers"), Bus: bus, Binary: func() string { return "/bin/true" }, Count: func() int { return 1 }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	srv.RegisterBrowsers(pool, cgroups.Machine{CPUs: 4, Memory: 8 << 30})
 	ln, err := api.ListenSocket(api.SocketPath(root))
 	if err != nil {
 		t.Fatal(err)
@@ -86,6 +94,9 @@ func TestEveryCommandASiteConversationIsToldAboutIsOpenToItsTurn(t *testing.T) {
 		{"site routes <domain>", "", []string{"site", "routes", "a.test"}},
 		{"site ports <domain>", "", []string{"site", "ports", "a.test"}},
 		{"site guests <domain>", "", []string{"site", "guests", "a.test"}},
+		{`site browsers <domain> [take --for "<what>" | release]`, "", []string{"site", "browsers", "a.test"}},
+		{`site browsers <domain> [take --for "<what>" | release]`, "", []string{"site", "browsers", "a.test", "take", "--for", "its home page"}},
+		{`site browsers <domain> [take --for "<what>" | release]`, "", []string{"site", "browsers", "a.test", "release"}},
 	}
 	// exec is cmd/middleware's own command, not this package's: it checks
 	// the turn's site itself (cmd/middleware/exec_test.go) and goes to the
@@ -120,6 +131,7 @@ func TestEveryCommandASiteConversationIsToldAboutIsOpenToItsTurn(t *testing.T) {
 		{"site", "security", "other.test"},
 		{"site", "security", "other.test", "blocks"},
 		{"site", "ports", "other.test"},
+		{"site", "browsers", "other.test", "take"},
 		// Its own site's ports it may read; opening them is the owner's.
 		{"site", "ports", "a.test", "approve"},
 	} {

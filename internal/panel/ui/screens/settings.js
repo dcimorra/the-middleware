@@ -16,6 +16,7 @@ import { passkeysCard, panelAccessCard, panelKeyCard } from "./settings-access.j
 import { usersCard } from "./settings-users.js";
 import { pushCard } from "./settings-push.js";
 import { autofixCard, automationCard } from "./settings-autofix.js";
+import { browsersCard } from "./settings-browsers.js";
 import { cardHead, saveBar, savedNote, fold, quietEmpty } from "./settings-kit.js";
 
 // The screen's sections, in the order the nav shows them. Fifteen cards
@@ -26,6 +27,7 @@ const SECTIONS = [
   { key: "install", icon: "server" },
   { key: "notify", icon: "bell" },
   { key: "agents", icon: "sparkles" },
+  { key: "browsers", icon: "eye" },
   { key: "access", icon: "lock" },
   { key: "browser", icon: "monitor" },
 ];
@@ -44,6 +46,7 @@ export function settingsScreen({ query } = {}) {
     install: [general, pagesCard, cacheCard],
     notify: [pushCard()],
     agents: [agentsCard, rulesCard, automationCard(), autofixCard(), depsCard],
+    browsers: [browsersCard()],
     access: [passkeysCard(), panelAccessCard(), panelKeyCard(), usersCard(), tokensCard],
     browser: [localCard],
   };

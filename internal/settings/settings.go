@@ -61,6 +61,79 @@ type Settings struct {
 	Update Update `json:"update"`
 	// Sites is what every site gets that its manifest does not say.
 	Sites Sites `json:"sites"`
+	// Browsers is the node's pool of browsers the sites take in turn
+	// (internal/browsers).
+	Browsers Browsers `json:"browsers"`
+}
+
+// Browsers is how many browsers this node keeps for its sites, and how
+// long one taken and left unused stays with its site.
+type Browsers struct {
+	// Count is the pool's size: absent (null) is the number recommended
+	// for the machine (RecommendedBrowsers), 0 is none. A pointer
+	// because both are choices: the zero of an int would make "none"
+	// and "what the machine can hold" the same number.
+	Count *int `json:"count,omitempty"`
+	// IdleMinutes is how long a taken browser may go without a command
+	// before the house takes it back; 0 is DefaultBrowserIdle.
+	IdleMinutes int `json:"idle_minutes,omitempty"`
+}
+
+// MaxBrowsers is the ceiling of Browsers.Count.
+const MaxBrowsers = 32
+
+// BrowserMemory is what one browser of the pool is counted as holding
+// when the recommended number is computed: a Chromium with a page or two
+// open, which is 300 to 600 MB on the sites that are built here.
+const BrowserMemory = 512 << 20
+
+// DefaultBrowserIdle is how long a browser taken and forgotten stays
+// with its site.
+const DefaultBrowserIdle = 15 * time.Minute
+
+// RecommendedBrowsers is the pool the machine can hold beside its sites
+// and their agents: a quarter of the memory at BrowserMemory each, and
+// one for every two cores (a page that renders takes a core while it
+// does), the smaller of the two, from 1 to 8. A browser per two cores
+// left a 2-core VPS with one, which is the one the operator watches;
+// more than 8 nobody has asked for, and the operator may write more.
+// Unknown memory recommends 1.
+func RecommendedBrowsers(m cgroups.Machine) int {
+	if m.Memory <= 0 {
+		return 1
+	}
+	n := int(m.Memory / 4 / BrowserMemory)
+	if m.CPUs > 0 {
+		n = min(n, m.CPUs/2)
+	}
+	return min(max(n, 1), 8)
+}
+
+// In is the pool's size on m and whether it is the recommended one.
+func (b Browsers) In(m cgroups.Machine) (int, bool) {
+	if b.Count == nil {
+		return RecommendedBrowsers(m), true
+	}
+	return *b.Count, false
+}
+
+// Idle is IdleMinutes with its default.
+func (b Browsers) Idle() time.Duration {
+	if b.IdleMinutes <= 0 {
+		return DefaultBrowserIdle
+	}
+	return time.Duration(b.IdleMinutes) * time.Minute
+}
+
+// Validate refuses a pool the house cannot mean.
+func (b Browsers) Validate() error {
+	if b.Count != nil && (*b.Count < 0 || *b.Count > MaxBrowsers) {
+		return fmt.Errorf("browsers.count: want 0 to %d, or nothing for the recommended number", MaxBrowsers)
+	}
+	if b.IdleMinutes < 0 || b.IdleMinutes > 24*60 {
+		return fmt.Errorf("browsers.idle_minutes: want 1 to %d minutes, or 0 for %d", 24*60, int(DefaultBrowserIdle/time.Minute))
+	}
+	return nil
 }
 
 // Sites holds the house-wide defaults of the sites' budgets.

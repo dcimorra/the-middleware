@@ -307,6 +307,9 @@ const siteUsage = `usage: middleware site <command> [flags]
   security <domain> [seen | blocks | catalog]
                               who calls (countries, robots, browsers, User-Agents), the last
                               requests the manifest's security refused, and what it may name
+  browsers <domain> [take [--for what] | release]
+                              the node's browsers: which are free and who holds the rest;
+                              take one (its DevTools address) and give it back
   visits <domain> [--days 7]  people and pages by day, the top pages, links and countries
   network [<domain>] [--days 7]
                               bytes in and out: the rate now, today, the month, day by day,
@@ -340,6 +343,7 @@ func (e *Env) site(args []string) error {
 		noSafety = fs.Bool("no-safety-copy", false, "backups restore: skip the copy of the database as it is now")
 		name     = fs.String("name", "", "staging create: the copy's domain (default staging.<domain>)")
 		days     = fs.Int("days", 7, "visits: how many days back")
+		forWhat  = fs.String("for", "", "browsers take: what the browser is for, shown to whoever looks")
 	)
 	pos, err := parse(fs, args)
 	if err != nil {
@@ -497,6 +501,11 @@ func (e *Env) site(args []string) error {
 		}
 		fmt.Fprintf(e.Stdout, "%s now answers only with its key. It is shown this once:\n\n  %s\n\nAny earlier key no longer works. `middleware site key %s off` ends it.\n", domain, out.URL, domain)
 		return nil
+	case "browsers", "browser":
+		if err := need(); err != nil {
+			return err
+		}
+		return e.siteBrowsers(c, cl, domain, pos[1:], *forWhat)
 	case "guests", "guest":
 		if err := need(); err != nil {
 			return err

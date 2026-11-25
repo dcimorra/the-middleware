@@ -48,7 +48,7 @@ func TestTheTasksScopeOpensItsSitesTaskRoutesOnly(t *testing.T) {
 // it opens is what it opened before: no other site, no import.
 func TestATurnManagesItsOwnSitesTasks(t *testing.T) {
 	got := TurnScopes("a.test")
-	want := []string{"read:a.test", "restart:a.test", "deploy:a.test", "exec:a.test", "tasks:a.test", "backups:a.test"}
+	want := []string{"read:a.test", "restart:a.test", "deploy:a.test", "exec:a.test", "tasks:a.test", "backups:a.test", "browsers:a.test"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("TurnScopes: %v, want %v", got, want)
 	}

@@ -62,10 +62,14 @@ var permRoutes = map[string][]string{
 		"GET " + siteBase + "/backups",
 		"GET " + siteBase + "/backups/{name}/log",
 		"GET " + siteBase + "/guests",
+		"GET " + siteBase + "/browsers",
 	},
 	// operate changes the site's state, never what it runs.
 	PermOperate: {
 		"POST " + siteBase + "/restart",
+		// A browser of the node's pool, taken and given back for the site.
+		"POST " + siteBase + "/browsers",
+		"DELETE " + siteBase + "/browsers",
 		"POST " + siteBase + "/canary/promote",
 		"POST " + siteBase + "/canary/rollback",
 		"POST " + siteBase + "/stop",

@@ -81,6 +81,16 @@ var scopeRoutes = map[string][]string{
 		"DELETE /api/v1/sites/{domain}/backups/{name}/copies/{id}",
 		"POST /api/v1/sites/{domain}/backups/{name}/copies/{id}/restore",
 	},
+	// browsers is the node's pool of browsers as a site sees it: which
+	// there are and who holds them, taking a free one and giving it back.
+	// What the browser then opens is the internet, which the site's code
+	// already reaches; the pool holds no other site's page (each lease
+	// starts with an empty profile).
+	"browsers": {
+		"GET /api/v1/sites/{domain}/browsers",
+		"POST /api/v1/sites/{domain}/browsers",
+		"DELETE /api/v1/sites/{domain}/browsers",
+	},
 	// backups.read is the reading half of backups: what a site that
 	// another takes in to read gets of that site's database (GuestScopes).
 	// Taking a copy, deleting one and restoring one change the host.
@@ -151,7 +161,9 @@ var scopeRoutes = map[string][]string{
 // Scopes is the closed list, for the panel and for the message that
 // refuses a scope outside it. import is left out: it is made for one
 // site by POST /relocate/import-token, never picked from a list.
-func Scopes() []string { return []string{"read", "restart", "deploy", "exec", "tasks", "backups"} }
+func Scopes() []string {
+	return []string{"read", "restart", "deploy", "exec", "tasks", "backups", "browsers"}
+}
 
 // TurnScopes are what a site's agent turn opens when it calls the house
 // over the socket (the middleware CLI from one of its Bash calls): what a
@@ -163,7 +175,7 @@ func Scopes() []string { return []string{"read", "restart", "deploy", "exec", "t
 // runs in the folder the agent already writes and deploys. The routes
 // keep it to tasks that run there.
 func TurnScopes(site string) []string {
-	return []string{"read:" + site, "restart:" + site, "deploy:" + site, "exec:" + site, "tasks:" + site, "backups:" + site}
+	return []string{"read:" + site, "restart:" + site, "deploy:" + site, "exec:" + site, "tasks:" + site, "backups:" + site, "browsers:" + site}
 }
 
 // GuestScopes are what a site's turn opens, beside TurnScopes for its
