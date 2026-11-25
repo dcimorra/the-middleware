@@ -222,6 +222,7 @@ middleware site validate shop.example.com [--file draft.json]
 middleware site routes shop.example.com
 middleware site ports shop.example.com   # public (non-HTTP) ports its services ask for, and which the owner approved
 middleware site guests shop.example.com  # which sites it takes in, and which sites take it in (above, "Other sites")
+middleware site browsers shop.example.com [take --for "<what>" | release]   # the node's shared browsers (§ 6, "Looking at it in a browser")
 middleware exec shop.example.com [--service db] -- <command>
 curl -s -o /dev/null -w '%{http_code}\n' -H "Host: shop.example.com" http://127.0.0.1:46100/
 ```
@@ -758,6 +759,54 @@ tail), `instance.exited`, `handover.switched`, `handover.done`,
 A site that starts, serves and is wrong is the case to design for: before
 saying "done", load a page that proves the new code is the one serving
 (a version string, a changed title), not just a 200.
+
+### Looking at it in a browser
+
+What `curl` cannot tell (a page that renders blank, a script that throws,
+a layout that breaks, a form that does nothing) a browser can. The node
+keeps a few headless Chromiums for all its sites, as many as the operator
+chose for the machine, and a site holds one at a time:
+
+```sh
+middleware site browsers shop.example.com                      # which are free, which site holds each, since when, what for
+middleware site browsers shop.example.com take --for "check the checkout form"
+middleware site browsers shop.example.com release              # as soon as you are done
+```
+
+`take` prints the browser's DevTools address, `ws://127.0.0.1:<port>/browsers/<n>/<token>`.
+It is yours alone while you hold it; never write it into the site's code or
+its files. Connect to it with what the site already has:
+
+```js
+// Playwright (playwright-core is enough: it downloads no browser)
+const browser = await require("playwright-core").chromium.connectOverCDP(ADDRESS);
+const page = await (browser.contexts()[0] || await browser.newContext()).newPage();
+await page.goto("https://shop.example.com/");
+await page.screenshot({ path: "/tmp/home.png", fullPage: true });
+page.on("console", (m) => console.log(m.type(), m.text()));
+await browser.close();   // disconnects; the browser stays yours
+
+// Puppeteer: await puppeteer.connect({ browserWSEndpoint: ADDRESS })
+// Node 22 with nothing installed: new WebSocket(ADDRESS) and the protocol's JSON
+```
+
+- **Say what for, and give it back.** Other sites wait for it, and the
+  panel shows who holds each and for what. Taking again while you hold one
+  renews it, it does not give you a second. One nothing is sent to for a
+  while (15 minutes unless the operator changed it) is taken back, and the
+  `browser.expired` event says your site forgot it.
+- **Disconnecting is not giving it back.** The browser and its pages wait
+  for your next script; `release` ends it and its profile, so the next site
+  finds none of your cookies.
+- **Every one taken** (`take` answers 409 with who holds each): wait and try
+  again, or tell the person which site holds them. Never start a browser of
+  your own: that is what the pool is for, and one left running is a core
+  and half a gigabyte nobody sees.
+- **None on this node** (503): the operator sets how many in Settings,
+  Browsers. Say so; do not install one.
+- The browser is on this machine and reaches what it reaches: the public
+  address of the site, or, before it is published, `http://127.0.0.1:<port>/`
+  with the port `middleware site show` gives.
 
 ## 7. Publishing
 

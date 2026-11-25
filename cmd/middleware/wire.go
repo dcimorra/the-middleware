@@ -28,6 +28,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/autofix"
 	"github.com/dcimorra/the-middleware/internal/autopilot"
 	"github.com/dcimorra/the-middleware/internal/backups"
+	"github.com/dcimorra/the-middleware/internal/browsers"
 	"github.com/dcimorra/the-middleware/internal/cgroups"
 	"github.com/dcimorra/the-middleware/internal/chat"
 	"github.com/dcimorra/the-middleware/internal/crew"
@@ -175,6 +176,7 @@ type wireHook struct {
 	set       *moduleSet
 	publisher *publish.Publisher
 	shots     *shots.Shotter
+	browsers  *browsers.Pool
 	repos     *repos.Manager
 	notifier  *push.Notifier
 	auditor   *audit.Auditor
@@ -362,6 +364,7 @@ func buildWire(a *app.App) app.Hook {
 		},
 	})
 	srv.RegisterShots(w.shots)
+	w.browsers = wireBrowsers(a, srv)
 	pages.SetHouseTheme(a.Settings.VisitorTheme)
 	srv.OnSettingsSaved(func(st settings.Settings) { pages.SetHouseTheme(st.VisitorTheme) })
 	srv.RegisterAgents(api.AgentsOptions{Registry: providers(), Chat: chatManager, Usage: func(ctx context.Context, refresh bool, provider string) any {
@@ -640,6 +643,9 @@ func (w *wireHook) Run(ctx context.Context, a *app.App) error {
 	}
 	if w.shots != nil {
 		go w.shots.Run(ctx)
+	}
+	if w.browsers != nil {
+		go w.browsers.Run(ctx)
 	}
 	if w.repos != nil {
 		go w.repos.Run(ctx)

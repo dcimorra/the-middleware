@@ -56,7 +56,9 @@ site, its logs, the events, who calls at it and what its `security` refused), `r
 restart), `deploy` (a site's deploy), `exec` (a one-off command streamed
 into the site's container or a service's, never on the machine), `tasks` (a site's own tasks, the six
 `/sites/{domain}/tasks` routes below; never `/tasks`), `backups` (a site's
-database copies, the `/sites/{domain}/backups` routes below). Anything else answers
+database copies, the `/sites/{domain}/backups` routes below), `browsers` (the
+node's browsers as a site sees them, taking one and giving it back: the
+three `/sites/{domain}/browsers` routes below). Anything else answers
 403 and names the scopes. For a program that acts on the house from outside, an app that builds
 sites and restarts them, it is the narrowest door that works. A token
 without scopes is the operator's and opens everything. An `import:<site>` token
@@ -483,6 +485,7 @@ The settings object (`data/settings.json`):
   "pages": { "stopped": ["Title", "Message"] },
   "update": { "auto": false, "every_minutes": 60 },
   "sites": { "default_limits": { "memory": "2g", "pids": 2048 } },
+  "browsers": { "count": 2, "idle_minutes": 15 },
   "agents": {
     "max_concurrent": 0,
     "reserved_for_house": 1,
@@ -507,6 +510,13 @@ reaches it `site.network.limit` (error when it was closed for it, with
 `period`, `used`, `limit` and `cut`), and one that serves again
 `site.network.resumed`. `network.unmetered` (warn) says the helper could
 not count the sites' public ports.
+
+`browsers` is the node's pool of browsers for its sites (below, "Site
+browsers"): `count` how many (0 to 32; absent is the number recommended for
+the machine, one for every two cores and no more than a quarter of the
+memory at 512 MB each, from 1 to 8; 0 keeps none) and `idle_minutes` how
+long one taken and sent nothing stays with its site (1 to 1440, 15 when
+absent). Both apply at once.
 
 `update` is the self-update: `every_minutes` (1 to 10080, an hour when
 absent) is how often a new release is looked for, and `auto` whether one
@@ -769,6 +779,33 @@ kept on the turn as `questions`; the panel shows it as buttons (plus
 "Something else…" for a typed answer; an empty `options` list means only
 the text box) and the chosen text is sent as the next message. A block that
 is not valid JSON is left in the text and ignored.
+
+## Site browsers
+
+A node keeps a number of headless Chromiums for its sites
+(`settings.browsers`). A site takes a free one, saying what for, drives it
+over the Chrome DevTools Protocol, and gives it back; one site holds a
+browser at a time and holds one at most. The browser listens on nothing:
+it talks to the house over a pipe, and the house relays a websocket on a
+loopback port at an address that carries the lease's token
+(`ws://127.0.0.1:<port>/browsers/<n>/<token>`, with `/json/version` beside
+it for clients that start from an http address), so only the holder
+reaches it. It starts at the holder's first connection and ends, with its
+profile, when it is given back; a lease survives a restart of the
+supervisor (the browser does not, and the next connection starts a new
+one). Nothing sent to it for `idle_minutes` and the house takes it back.
+
+| method | path | body / result |
+| --- | --- | --- |
+| GET | `/browsers` | → `{count, recommended, configured, max, idle_minutes, available, free, cpus, memory, per_browser, slots: [{slot, free, site?, for?, since?, used?, expires?, running, connected, leaving?}]}`: `configured` is the operator's number or null for the recommended one; `available` false when the machine has no browser to start; `leaving` is a taken one above `count` after the pool was made smaller, gone when given back. The operator's |
+| DELETE | `/browsers/{slot}` | → the same: frees one a site holds (`browser.freed`). The operator's |
+| GET | `/sites/{domain}/browsers` | → the same as the site sees it, with `mine` (its own, with `endpoint`); another site's lease never carries its endpoint. Scope `browsers`, permission `read` |
+| POST | `/sites/{domain}/browsers` | `{for?}` → `{browser: {slot, endpoint, expires, …}, again, idle_minutes, free, count}`: takes a free one (`browser.taken`); `again` when the site already held one, which is renewed rather than a second given. 409 with who holds each when all are taken, 503 when the node keeps none or has no browser. Scope `browsers`, permission `operate` |
+| DELETE | `/sites/{domain}/browsers` | → `{ok, slot}`: gives back the one the site holds (`browser.released`); 404 when it holds none. Scope `browsers`, permission `operate` |
+
+Events: `browser.taken`, `browser.released`, `browser.freed` (by the
+operator), `browser.expired` (warn: taken back unused), `browser.started`,
+`browser.exited` (warn: it stopped by itself; the lease stays).
 
 ## Tasks
 
