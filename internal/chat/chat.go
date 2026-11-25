@@ -972,10 +972,20 @@ func (m *Manager) SendWith(name, text string, o SendOptions) (string, error) {
 			system = SkillHint + "\n\n" + system
 		}
 	}
-	req.System = system
 	m.mu.Lock()
 	turnEnv := m.opts.TurnEnv
+	rules := m.limits.Rules
 	m.mu.Unlock()
+	// Last, so they close whatever the provider's hints put first, and
+	// here rather than in Preamble so every provider and every kind of
+	// agent gets them from one place. A site's own conversation gets them
+	// only where it can change files: one that answers a program with a
+	// line of JSON has nothing to build, and would pay for the words on
+	// every call.
+	if c.Origin != OriginSite || Level(c.Tools).Writes {
+		system += OperatorRules(rules)
+	}
+	req.System = system
 	// The house's own conversation pushes with whatever the machine has;
 	// a site's code, which answers the internet, gets nothing here, and
 	// neither does a repair: it runs unattended on a prompt that quotes
@@ -1525,7 +1535,6 @@ func Preamble(domain, workdir string, j agent.Jail) string {
 	var b strings.Builder
 	if cid, ok := CrewID(domain); ok {
 		b.WriteString(crewPreamble(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(workdir)))), cid, workdir, j))
-		b.WriteString(InterfaceRule)
 		return b.String()
 	} else if domain == Autopilot {
 		b.WriteString(autopilotPreamble(workdir, j))
@@ -1578,7 +1587,6 @@ func Preamble(domain, workdir string, j agent.Jail) string {
 	b.WriteString("When you need the operator to decide something, ask with a fenced block the panel turns into buttons; two to four short options, the one you would pick as recommended, or an empty options list for a free-text answer:\n")
 	b.WriteString("```question\n{\"question\": \"Which database?\", \"options\": [\"SQLite\", \"Postgres\"], \"recommended\": \"SQLite\"}\n```\n")
 	b.WriteString("Ask one thing at a time, then end your turn; the answer arrives as the next message.\n")
-	b.WriteString(InterfaceRule)
 	if names := siteServices(workdir); len(names) > 0 {
 		b.WriteString("This site runs as services (" + strings.Join(names, ", ") + "), each with its own process or container, names and log. Run a command in one with `middleware exec " + domain + " --service <name> -- <command>` (an install, a migration: it is on the site's network, so it reaches the others by name); `middleware site show " + domain + "` and `middleware site routes " + domain + "` say how each is doing and which name goes where, `middleware site logs " + domain + " --service <name>` (with --build for its image's build) is its output, and `middleware site validate " + domain + " --file <draft>` checks a manifest before you write it.\n")
 	}

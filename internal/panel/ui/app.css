@@ -2554,6 +2554,14 @@ details.site-env[open] > summary { margin-bottom: 10px; }
    journal are text to read whole, wrapped, never a line off the screen. */
 pre.pre-wrap { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflow: auto; margin: .5rem 0 0; }
 .set-card textarea.mono { width: 100%; box-sizing: border-box; }
+.set-card textarea.set-rules { width: 100%; box-sizing: border-box; min-height: 180px; padding: 12px 14px; font-size: 14px; line-height: 1.55; }
+.set-rules-foot { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 8px 0 14px; }
+.set-rules-foot .hint { display: flex; align-items: flex-start; gap: 6px; margin: 0; }
+.set-rules-foot .hint .ico { flex: none; margin-top: 2px; }
+.set-rules-count { flex: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.set-rules-count.over { color: var(--bad); font-weight: 600; }
+.set-card form > .check { margin-bottom: 14px; }
+@media (max-width: 640px) { .set-rules-foot { flex-direction: column; gap: 4px; } }
 /* Its proposals: one finding each, read whole before deciding, and the
    two decisions under it, never pushed to the far edge like a list row's
    last item. */

@@ -524,6 +524,9 @@ cap in force) only the `middleware` conversation may take once the rest are busy
 `default_provider` runs a site whose manifest names none. A `PUT` without
 the section keeps the defaults; one that breaks the rules is a 400 naming
 the field. The new limits apply to the next message, not the next restart.
+`rules` is the operator's own text for every agent the house runs, up to
+8000 bytes, said at the end of every preamble whatever the provider (see
+[skill.md](skill.md), "The operator's own rules"); empty is none.
 `cpu_cores` and `memory_max` (a size as docker writes it, `"8g"`, at least
 `256m`) replace the agents' cgroup ceiling, which is otherwise computed:
 every core but a quarter of them (at least one is always left to the

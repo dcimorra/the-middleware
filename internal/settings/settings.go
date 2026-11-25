@@ -10,7 +10,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dcimorra/the-middleware/internal/cgroups"
 	"github.com/dcimorra/the-middleware/internal/fsx"
@@ -282,7 +284,20 @@ type Agents struct {
 	// are computed. MemoryMax is a size as docker writes it ("8g").
 	CPUCores  int    `json:"cpu_cores,omitempty"`
 	MemoryMax string `json:"memory_max,omitempty"`
+	// Rules are the operator's own rules for every agent this house
+	// runs, in their words and whatever the provider or the model: how
+	// they want interfaces drawn, which stack, which tone. They are said
+	// at the end of every preamble (chat.OperatorRules). They live here
+	// and not in the embedded guide because the guide is the same in
+	// every installation and these are one person's taste: a rule about
+	// icons was once written into the guide and reached everybody who
+	// installed the house.
+	Rules string `json:"rules,omitempty"`
 }
+
+// MaxRules is the size of Agents.Rules: they are sent with every turn of
+// every conversation, and a page of them is a rule book nobody follows.
+const MaxRules = 8000
 
 // SiteDaily is SiteDailyUSD with its default.
 func (a Agents) SiteDaily() float64 {
@@ -390,6 +405,12 @@ func (a Agents) ValidateOn(m cgroups.Machine) error {
 	}
 	if a.CPUCores < 0 {
 		return errors.New("agents.cpu_cores: cannot be negative (0 is computed)")
+	}
+	if len(a.Rules) > MaxRules {
+		return fmt.Errorf("agents.rules: %d bytes, want at most %d (they are sent with every turn)", len(a.Rules), MaxRules)
+	}
+	if !utf8.ValidString(a.Rules) || strings.ContainsRune(a.Rules, 0) {
+		return errors.New("agents.rules: want text")
 	}
 	if a.MemoryMax != "" {
 		if v, err := cgroups.ParseBytes(a.MemoryMax); err != nil {

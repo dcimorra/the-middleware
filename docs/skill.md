@@ -28,21 +28,18 @@ To change what agents are told, edit the skill, run `go test ./internal/chat/`,
 and ship the binary. A site's own `AGENTS.md` (or `CLAUDE.md`) adds what is
 specific to that project; the skill is what is true for every site on every installation.
 
-## What every agent is told about interfaces
+## The operator's own rules
 
-Two rules are in the skill (§ 11, "Interfaces: icons and finish") and also
-in every preamble, as `chat.InterfaceRule`: a site's conversation, the
+The skill says what is true of the house in every installation. What one
+operator wants of every agent (no emoji as icons, a stack, a tone) is a
+setting, `agents.rules` in `data/settings.json`, written in Settings →
+Agents → "Rules for every agent" or with `PUT /settings`. It is free text,
+up to 8000 bytes, and `chat.OperatorRules` says it at the end of every
+preamble, inside an `<operator-rules>` block: a site's conversation, the
 house's, the network agent, each crew agent, and a site's own conversation
-when it can change files.
+when it can change files. It does not depend on the provider: the
+preamble is what every agent CLI is given as its system text.
 
-- **No system icons.** Never an emoji or a Unicode symbol standing in for
-  an icon; an icon is an inline SVG line icon from one outline set (the
-  project's, otherwise Lucide), drawn with `currentColor`.
-- **No bare interfaces.** What a person looks at is finished: layout,
-  states, phone and wide screen, light and dark where the project has both.
-
-They are in the preamble because the skill is read when an agent thinks
-the question is about building the house's way, and a page is often drawn
-before that. The panel keeps to the same rule: its icons are the paths in
-`internal/panel/ui/lib/icons.js`, and a test fails on an emoji or a symbol
-anywhere in its files.
+The rules take effect on the next turn of every conversation, with no
+restart. Settings are per node: the card offers to save the same rules on
+the other nodes of the network.
