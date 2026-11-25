@@ -492,8 +492,8 @@ func TestThisBuildsFilesAreKeptForGoodUnderItsOwnPrefix(t *testing.T) {
 	}
 }
 
-// TestThePanelDrawsNoSystemIcons holds the panel to the rule its agents
-// are given (chat.InterfaceRule): an icon is a path in lib/icons.js,
+// TestThePanelDrawsNoSystemIcons keeps the panel's own drawing in one
+// place: an icon is a path in lib/icons.js,
 // never an emoji or a Unicode symbol. A padlock emoji marked private
 // repositories and ballot boxes an agent's list of steps, each drawn
 // differently by every system and out of the theme's reach. Arrows and

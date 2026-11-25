@@ -6,6 +6,7 @@ import { icon } from "../lib/icons.js";
 import { h, clear, copy } from "../lib/dom.js";
 import { t, LANGUAGES, LANGUAGE_NAMES, currentLang } from "../lib/i18n.js";
 import { api, apiURL, enc } from "../lib/api.js";
+import { currentNode } from "../lib/node.js";
 import { page, load, table, cell } from "../components/page.js";
 import { open, confirm, field, toggle, checkbox } from "../components/dialog.js";
 import { toast, toastError } from "../components/toast.js";
@@ -35,13 +36,14 @@ export function settingsScreen({ query } = {}) {
   const pagesCard = h("div", { class: "card set-card" });
   const cacheCard = h("div", { class: "card set-card" });
   const agentsCard = h("div", { class: "card set-card" });
+  const rulesCard = h("div", { class: "card set-card" });
   const tokensCard = h("div", { class: "card pad0 set-card" });
   const depsCard = h("div", { class: "card set-card" });
   const localCard = h("div", { class: "card set-card" });
   const cards = {
     install: [general, pagesCard, cacheCard],
     notify: [pushCard()],
-    agents: [agentsCard, automationCard(), autofixCard(), depsCard],
+    agents: [agentsCard, rulesCard, automationCard(), autofixCard(), depsCard],
     access: [passkeysCard(), panelAccessCard(), panelKeyCard(), usersCard(), tokensCard],
     browser: [localCard],
   };
@@ -198,6 +200,68 @@ export function settingsScreen({ query } = {}) {
       finally { save.classList.remove("busy"); }
     });
     clear(agentsCard).append(cardHead(t("settings.agents"), t("settings.agentsHint")), form);
+    return null;
+  }
+
+  // The operator's own rules for every agent (agents.rules): what they
+  // would otherwise type into every prompt. Its own card and its own
+  // save, like the agents card, re-reading the file before it writes.
+  // Settings are each node's; the box below carries the same text to the
+  // others, since an agent on another node would otherwise not know them.
+  const RULES_MAX = 8000;
+  async function renderRules() {
+    const [s, net] = await Promise.all([api.get("/settings"), api.get("/nodes").catch(() => null)]);
+    let others = [];
+    if (net && net.network && net.self) {
+      const from = currentNode() || net.self.id;
+      others = [net.self, ...(net.members || [])].filter((x) => x.id !== from);
+    }
+    const text = h("textarea", { rows: "9", class: "set-rules", spellcheck: "true", maxlength: String(RULES_MAX), placeholder: t("settings.rulesPlaceholder"), "aria-label": t("settings.rules") }, (s.agents && s.agents.rules) || "");
+    const count = h("span", { class: "hint set-rules-count" });
+    const size = () => new TextEncoder().encode(text.value).length;
+    const showCount = () => {
+      const n = size();
+      count.textContent = t("settings.rulesCount", { n, max: RULES_MAX });
+      count.classList.toggle("over", n > RULES_MAX);
+    };
+    text.addEventListener("input", showCount);
+    showCount();
+    const all = checkbox(t("settings.rulesAllNodes", { n: others.length }), { checked: true });
+    const save = h("button", { type: "submit", class: "btn primary" }, t("common.save"));
+    const err = h("div", { class: "error-box", hidden: true });
+    const bar = saveBar(save);
+    const form = h("form", { novalidate: true },
+      text,
+      h("div", { class: "set-rules-foot" }, h("span", { class: "hint" }, icon("info", { size: 14 }), h("span", null, t("settings.rulesNote"))), count),
+      others.length ? all.el : null,
+      err,
+      bar.el,
+    );
+    bar.watch(form);
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      err.hidden = true;
+      if (size() > RULES_MAX) { err.textContent = t("settings.rulesTooLong", { max: RULES_MAX }); err.hidden = false; return; }
+      const rules = text.value.trim();
+      const put = async (client) => {
+        const cur = await client.get("/settings");
+        await client.put("/settings", { ...cur, agents: { ...(cur.agents || {}), rules } });
+      };
+      save.classList.add("busy");
+      try {
+        await put(api);
+        // Each node on its own: one that is down must not undo the save
+        // here, and is named so the operator knows where they are not.
+        const failed = [];
+        if (others.length && all.input.checked) {
+          await Promise.all(others.map((x) => put(api.at(x.id)).catch(() => failed.push(x.name || x.id))));
+        }
+        bar.saved(t("settings.rulesInForce"));
+        if (failed.length) { err.textContent = t("settings.rulesNodesFailed", { list: failed.join(", ") }); err.hidden = false; }
+      } catch (ex) { err.textContent = ex.message; err.hidden = false; }
+      finally { save.classList.remove("busy"); }
+    });
+    clear(rulesCard).append(cardHead(t("settings.rules"), t("settings.rulesHint")), form);
     return null;
   }
 
@@ -366,6 +430,7 @@ export function settingsScreen({ query } = {}) {
 
   load(general, renderServer);
   load(agentsCard, renderAgents);
+  load(rulesCard, renderRules);
   load(depsCard, renderDeps);
   load(tokensCard, renderTokens);
   return { el: p.el, destroy() {} };

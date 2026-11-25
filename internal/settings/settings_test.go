@@ -162,3 +162,23 @@ func TestTheSitesDefaultLimitsAreEmptyAndCheckedLikeAManifest(t *testing.T) {
 		t.Fatalf("high above max: %v", err)
 	}
 }
+
+func TestTheOperatorsRulesAreTextOfABoundedSize(t *testing.T) {
+	a := DefaultAgents()
+	a.Rules = "No emoji as icons.\nInterfaces are finished work."
+	if err := a.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	a.Rules = strings.Repeat("x", MaxRules+1)
+	if err := a.Validate(); err == nil {
+		t.Error("rules over the size are accepted")
+	}
+	a.Rules = "a\x00b"
+	if err := a.Validate(); err == nil {
+		t.Error("a NUL is accepted")
+	}
+	a.Rules = string([]byte{0xff, 0xfe})
+	if err := a.Validate(); err == nil {
+		t.Error("bytes that are not text are accepted")
+	}
+}

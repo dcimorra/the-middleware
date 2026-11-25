@@ -89,6 +89,7 @@ export const api = {
   at: (node) => ({
     get: (path, opts) => request("GET", path, undefined, { ...opts, node }),
     post: (path, body, opts) => request("POST", path, body ?? {}, { ...opts, node }),
+    put: (path, body, opts) => request("PUT", path, body, { ...opts, node }),
     del: (path, opts) => request("DELETE", path, undefined, { ...opts, node }),
   }),
   // stream opens a GET whose body keeps coming (logs with ?follow=1) and
