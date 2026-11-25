@@ -155,7 +155,7 @@ func (p *Provider) Args(req agent.Request, settingsFile, systemFile string) []st
 	if req.Jail.SiteDir != "" {
 		args = append(args, "--add-dir", req.Jail.SiteDir)
 	}
-	for _, d := range req.Jail.Lent {
+	for _, d := range append(append([]string(nil), req.Jail.Lent...), req.Jail.Shared...) {
 		args = append(args, "--add-dir", d)
 	}
 	if settingsFile != "" {

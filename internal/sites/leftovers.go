@@ -1,11 +1,14 @@
 package sites
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/dcimorra/the-middleware/internal/fsx"
+	"github.com/dcimorra/the-middleware/internal/guests"
+	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/tasks"
 )
 
@@ -128,4 +131,71 @@ func (m *Manager) carry(from, to string) {
 			m.emit("task.saved", name, "", "its site is now "+to, map[string]any{"schedule": t.Schedule, "site": to})
 		}
 	}
+}
+
+// reguest rewrites, in every other site's manifest, the pass it gave
+// from: taken out when to is "", carried to the new name otherwise. A
+// pass is given to a site, and the manifests can only say its name: left
+// in place after the site is deleted, archived or moved to another node,
+// it would be the pass of whatever site is next made with that name,
+// which its host never took in. A rename is the same site, and keeps it.
+func (m *Manager) reguest(from, to string) {
+	entries, _ := os.ReadDir(m.SitesDir())
+	for _, e := range entries {
+		host := e.Name()
+		if host == from || host == to || !manifest.ValidName(host) {
+			continue
+		}
+		in := guests.In(m.Dir(host))
+		level, ok := in[from]
+		if !ok {
+			continue
+		}
+		delete(in, from)
+		if to != "" && in[to] == "" {
+			in[to] = level
+		}
+		if err := m.writeGuests(host, in); err != nil {
+			m.emit("guests.stale", host, "", "this site still names "+from+" as a guest and its manifest could not be rewritten ("+err.Error()+"): take it out by hand, or the next site called "+from+" enters with it", map[string]any{"guest": from})
+			continue
+		}
+		if to == "" {
+			m.emit("guests.removed", host, "", from+" is no longer a site of this node, so it is no longer a guest of this one", map[string]any{"guest": from})
+		} else {
+			m.emit("guests.changed", host, "", "its guest "+from+" is now called "+to, map[string]any{"guest": to, "from": from, "level": level})
+		}
+	}
+}
+
+// writeGuests writes host's guests. Through Patch when the manifest
+// holds; straight into the file when it does not, since guests.In reads
+// a manifest the engine refuses and a pass must not outlive its guest
+// for a typo somewhere else in the file.
+func (m *Manager) writeGuests(host string, in map[string]string) error {
+	raw := json.RawMessage("null")
+	if len(in) > 0 {
+		raw, _ = json.Marshal(in)
+	}
+	if _, err := m.Patch(host, map[string]json.RawMessage{"guests": raw}); err == nil {
+		return nil
+	}
+	file := filepath.Join(m.Dir(host), manifest.FileName)
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	whole := map[string]json.RawMessage{}
+	if err := json.Unmarshal(data, &whole); err != nil {
+		return err
+	}
+	if len(in) > 0 {
+		whole["guests"] = raw
+	} else {
+		delete(whole, "guests")
+	}
+	out, err := json.MarshalIndent(whole, "", "  ")
+	if err != nil {
+		return err
+	}
+	return fsx.WriteAtomic(file, append(out, '\n'), 0o644)
 }

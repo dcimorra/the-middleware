@@ -10,6 +10,7 @@ import (
 	"github.com/dcimorra/the-middleware/internal/api"
 	"github.com/dcimorra/the-middleware/internal/app"
 	"github.com/dcimorra/the-middleware/internal/events"
+	"github.com/dcimorra/the-middleware/internal/guests"
 	"github.com/dcimorra/the-middleware/internal/jail"
 	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/runtime"
@@ -29,10 +30,51 @@ func wireJails(a *app.App) {
 	a.Bus.Emit(events.Event{Type: "jail.on", Actor: "engine", Message: "every site's processes, commands, builds and conversations run in a jail of the site's own"})
 }
 
+// wireGuests tells the containers which other sites' folders theirs sees.
+// Apart from the jails: a machine that cannot build one still runs
+// containers, and those have walls of their own.
+func wireGuests(root string) {
+	runtime.Guests = func(site string) (read, write []string) {
+		return guests.Folders(guests.Of(root, site))
+	}
+}
+
+// warnOldLoans says, once per start, which sites still ask to read
+// another in their own manifest (chat.reads) without that one taking
+// them in: the loan stopped counting when the pass became the host's,
+// and an operator who had written one would otherwise only find that
+// the site's conversation no longer sees the folder.
+func warnOldLoans(a *app.App) {
+	entries, _ := os.ReadDir(filepath.Join(a.Root, "sites"))
+	for _, e := range entries {
+		m, err := manifest.Load(filepath.Join(a.Root, "sites", e.Name()))
+		if err != nil || m.Chat == nil {
+			continue
+		}
+		hosts := map[string]bool{}
+		for _, g := range guests.Of(a.Root, e.Name()) {
+			hosts[g.Host] = true
+		}
+		for _, r := range m.Chat.Reads {
+			if !hosts[r] {
+				a.Bus.Emit(events.Event{Type: "guests.unanswered", Subject: e.Name(), Actor: "engine", Level: "warn",
+					Message: "its manifest's chat.reads names " + r + ", which no longer lends anything: the site that is read decides now. To keep the loan, `middleware site guests " + r + " add " + e.Name() + "` (or the Access tab of " + r + ")",
+					Data:    map[string]any{"host": r}})
+			}
+		}
+	}
+}
+
 // setJails points the runtimes at the jails of root's sites.
 func setJails(root string) {
 	runtime.Enclose = func(cmd *exec.Cmd, spec *manifest.Spec, home string) error {
 		plan := basePlan(root, spec.Domain).Write(spec.SiteDir, home)
+		// The sites that take this one in (internal/guests), as they do
+		// when this starts: a process keeps the mounts it was born with.
+		// A worker's or a service's spec is named "<site>/<name>".
+		site, _, _ := strings.Cut(spec.Domain, "/")
+		read, write := guests.Folders(guests.Of(root, site))
+		plan.Read(read...).Write(write...)
 		lendBinary(plan, root, cmd.Path)
 		return jail.Wrap(cmd, plan)
 	}
@@ -46,7 +88,7 @@ func setJails(root string) {
 				return err
 			}
 		}
-		plan := basePlan(root, domain).Write(j.SiteDir, j.Home, j.Config).Read(j.Lent...)
+		plan := basePlan(root, domain).Write(j.SiteDir, j.Home, j.Config).Read(j.Lent...).Write(j.Shared...)
 		// The CLIs' own state where the adapter put it (a login of the
 		// operator's, a vendor's home): the turn could not run without it.
 		for _, kv := range cmd.Env {

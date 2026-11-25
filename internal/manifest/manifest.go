@@ -126,6 +126,11 @@ type Manifest struct {
 	Claude bool `json:"claude,omitempty"`
 	// Chat is what this site's conversation may do beyond its folder.
 	Chat *ChatRules `json:"chat,omitempty"`
+	// Guests are the other sites of this node this one takes in, each
+	// "read" or "write" (guests.go, internal/guests). The site that is
+	// entered writes it, never the one that enters: who reaches a site
+	// is that site's to say.
+	Guests map[string]string `json:"guests,omitempty"`
 	// Backups are the site's databases the house copies, compressed, on
 	// a schedule or by hand (backups.go).
 	Backups map[string]*Backup `json:"backups,omitempty"`
@@ -336,12 +341,13 @@ type Hold struct {
 
 // ChatRules widen a site's conversation.
 type ChatRules struct {
-	// Reads are other sites of this house whose folder the conversation
-	// may read, never write: what is lent is understanding, not the
-	// ability to change someone else's project. The folder is lent whole,
-	// its .env included, and that is a decision: closing the secrets and
-	// leaving the rest would promise a wall with a hole in it. Which is why
-	// each one is written by hand.
+	// Reads lends nothing any more. It named, in the manifest of the
+	// site that reads, the sites whose folder its conversation could
+	// read: the reader decided, and a site's agent writes its own
+	// manifest, so any site could lend itself any other. The site that is
+	// read decides now, in its own `guests`. The key is still parsed so
+	// a manifest that has it keeps its site running, and the supervisor
+	// says at start which loans wait for the other side.
 	Reads []string `json:"reads,omitempty"`
 }
 
@@ -711,6 +717,9 @@ func (m *Manifest) Validate() error {
 		return err
 	}
 	if err := m.Limits.Validate("limits"); err != nil {
+		return err
+	}
+	if err := validGuests(m.Guests); err != nil {
 		return err
 	}
 	if m.Chat != nil {

@@ -67,7 +67,8 @@ Nothing left.
   `expect_status`, workers with an assigned port and re-adoption, zones
   with their own password, `deny`, `message`, projects without a domain,
   `group`, `needs`, `notice`, hold modes and `until`, `container`,
-  `claude_api`, `claude`, `chat.reads`.
+  `claude_api`, `claude`, `chat.reads` (since replaced by `guests`,
+  written by the site that is entered).
 - **§2 Cloudflare extras and domains**: edge purge, the zone's cache rules
   with their reach (site, zone, another domain), born scoped to the host and
   added one by one, a DNS records editor, the Access list, the token's

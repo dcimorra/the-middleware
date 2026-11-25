@@ -61,6 +61,7 @@ var permRoutes = map[string][]string{
 		"GET " + siteBase + "/tasks/{name}/log",
 		"GET " + siteBase + "/backups",
 		"GET " + siteBase + "/backups/{name}/log",
+		"GET " + siteBase + "/guests",
 	},
 	// operate changes the site's state, never what it runs.
 	PermOperate: {
@@ -97,6 +98,10 @@ var permRoutes = map[string][]string{
 		// The key is written to the manifest, as the access form is.
 		"POST " + siteBase + "/access/key",
 		"DELETE " + siteBase + "/access/key",
+		// Who the site takes in is written to its manifest too, and
+		// gives away only what is this site's.
+		"PUT " + siteBase + "/guests/{guest}",
+		"DELETE " + siteBase + "/guests/{guest}",
 		"POST " + siteBase + "/manifest/history/{id}/restore",
 		"PUT " + siteBase + "/file",
 		"POST " + siteBase + "/deploy",

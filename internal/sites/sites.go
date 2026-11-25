@@ -668,6 +668,7 @@ func (m *Manager) deleteWith(ctx context.Context, domain string, keep bool, befo
 			return "", err
 		}
 		m.forget(domain)
+		m.reguest(domain, "")
 		m.emit("site.deleted", domain, "", "folder deleted", nil)
 		return "", nil
 	}
@@ -685,6 +686,7 @@ func (m *Manager) deleteWith(ctx context.Context, domain string, keep bool, befo
 	if err := os.Rename(dir, packing); err != nil {
 		return "", fmt.Errorf("archive: taking the folder out of sites/: %w", err)
 	}
+	m.reguest(domain, "")
 	stopped, _ := os.ReadFile(filepath.Join(packing, manifest.FileName))
 	return m.pack(ctx, domain, packing, original, stopped)
 }
@@ -860,6 +862,7 @@ func (m *Manager) rename(ctx context.Context, from, to string, edit func([]byte)
 		return Site{}, err
 	}
 	m.carry(from, to)
+	m.reguest(from, to)
 	if final != nil {
 		_ = fsx.WriteAtomic(filepath.Join(m.Dir(to), manifest.FileName), final, 0o644)
 	}

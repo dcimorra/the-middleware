@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/dcimorra/the-middleware/internal/events"
+	"github.com/dcimorra/the-middleware/internal/guests"
 	"github.com/dcimorra/the-middleware/internal/inbound"
 	"github.com/dcimorra/the-middleware/internal/manifest"
 	"github.com/dcimorra/the-middleware/internal/nodes"
@@ -604,6 +605,19 @@ func (s *Server) registerRelocateSource(m *nodes.Mesh) {
 		} else if len(vols) > 0 {
 			a.Volumes = vols
 			a.Warnings = append(a.Warnings, fmt.Sprintf("its docker volumes (%s) are copied file for file with the site stopped, which adds their copy to the time it is down, and stay on this node, listed, until you remove them. A database's files are only good on a machine of the same kind of processor: to move between amd64 and arm64, take a copy of the database first (its backups go with the site) and restore it there if it does not start", strings.Join(vols, ", ")))
+		}
+		// A pass between sites is a folder mounted on the node both
+		// are on: said before the move, since afterwards the guest
+		// simply stops finding the folder.
+		if in := guests.In(dir); len(in) > 0 {
+			a.Warnings = append(a.Warnings, fmt.Sprintf("it takes other sites of this node in (%s): they stay here and will no longer reach it. The list travels in its manifest and counts again for whichever of them is on the node it moves to", strings.Join(manifest.GuestNames(in), ", ")))
+		}
+		if hosts := guests.Of(s.opts.Root, domain); len(hosts) > 0 {
+			var names []string
+			for _, g := range hosts {
+				names = append(names, g.Host)
+			}
+			a.Warnings = append(a.Warnings, fmt.Sprintf("it is a guest of sites that stay on this node (%s): it will no longer reach them, and they stop naming it once it has left. Copy what it needs from them first, or move them too and give it the pass again there", strings.Join(names, ", ")))
 		}
 		out := map[string]any{"analysis": a}
 		if install && a.Node == "" {

@@ -632,6 +632,9 @@ need not point here yet) and DNS only after it; the A record uses
 | POST | `/sites/{domain}/publish` | `{door?, over?}` → `{lines, vulnerable?}`; every name of the site (its domain, aliases and the implicit `www.` of every apex among them) on that door, kept there from now on. `over` takes names that point elsewhere: only for a node moving the site here, or the site's own import token |
 | POST | `/sites/{domain}/access/key` | → `{key, param, url}`; hides the site behind a new key (`access.key` gets its hash; an earlier key and its passes stop working). The key is in this answer only. Needs `code` |
 | DELETE | `/sites/{domain}/access/key` | → `{ok}`; the site answers at its address again |
+| GET | `/sites/{domain}/guests` | → `{guests: [{site, level, here}], hosts: [{site, write}], candidates}`; the sites this one takes in (`level` is `read` or `write`; `here` false when no site of the node has that name), the sites that take it in, and the sites the caller may add (every other site of the node for the operator, a delegate's own for a delegate, none for a turn) |
+| PUT | `/sites/{domain}/guests/{guest}` | `{level?}` → the same; `{guest}` enters `{domain}`: its folder in the guest's jails, and for the guest's conversation the house's commands about `{domain}` (manifest.md, "Sites that may enter this one"). Written to `{domain}`'s manifest. Needs `code`; a delegate names only sites that are theirs. Never open to a site's turn, its own site included |
+| DELETE | `/sites/{domain}/guests/{guest}` | → the same; the pass is gone at the guest's next turn and its processes' next start |
 | POST | `/sites/{domain}/unpublish` | → `{lines}`; tunnel rules and the records that point at this house are removed, nothing else |
 
 `POST /sites` publishes the new site on the door for new sites when a DNS

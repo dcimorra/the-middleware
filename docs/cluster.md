@@ -98,6 +98,11 @@ be clustered when (`manifest.Blockers`):
   of this machine), or talks to the site door from a container
   the copies would run (one kept on the primary, a database, is fine).
 
+A site that is another's guest (`guests` in that one's manifest) is not
+refused, and its copies have the host's folder only on a node where the
+host has a copy too: a site whose process reads another site's folder at
+run time is not one to cluster alone.
+
 A site with `claude_api` has copies: a copy's processes find
 `MIDDLEWARE_API` at an address of their own node's loopback, which goes
 through the mesh to the primary, and the primary serves the site door there
