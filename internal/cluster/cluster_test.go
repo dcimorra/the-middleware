@@ -111,6 +111,7 @@ func newHouse(t *testing.T, ctx context.Context, name string, port int) *house {
 	// requests and waits for the ones it has before its folder goes.
 	var loops sync.WaitGroup
 	var reqMu sync.Mutex
+	var h *house
 	stopped := false
 	track := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -137,6 +138,20 @@ func newHouse(t *testing.T, ctx context.Context, name string, port int) *house {
 		case <-time.After(10 * time.Second):
 			t.Error("the house's loops did not stop after the test")
 		}
+		// A copy committed just before the end is written by a goroutine
+		// of its own, after its request answered: waited for too.
+		placed := make(chan struct{})
+		go func() {
+			if h != nil && h.cl != nil {
+				h.cl.Placed()
+			}
+			close(placed)
+		}()
+		select {
+		case <-placed:
+		case <-time.After(10 * time.Second):
+			t.Error("a copy was still being put in place after the test")
+		}
 	})
 	loops.Add(1)
 	go func() { defer loops.Done(); eng.Run(ctx) }()
@@ -144,7 +159,7 @@ func newHouse(t *testing.T, ctx context.Context, name string, port int) *house {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := &house{root: root, eng: eng, mesh: m, load: &Load{PerCore: 0.1, Cores: 2}, loadM: &sync.Mutex{}}
+	h = &house{root: root, eng: eng, mesh: m, load: &Load{PerCore: 0.1, Cores: 2}, loadM: &sync.Mutex{}}
 	h.cl = New(Options{Root: root, Sites: eng, Tick: 100 * time.Millisecond, Settle: time.Millisecond, Gap: 200 * time.Millisecond,
 		Load: func() Load { h.loadM.Lock(); defer h.loadM.Unlock(); return *h.load }})
 	h.cl.SetMesh(m)

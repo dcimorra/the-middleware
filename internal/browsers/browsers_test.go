@@ -295,6 +295,14 @@ func TestARealBrowserOfThePoolOpensASitesPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// What the browser said, beside a failure: three times it gave no
+	// answer in fifteen seconds on a CI runner and nothing told why.
+	t.Cleanup(func() {
+		if t.Failed() {
+			b, _ := os.ReadFile(filepath.Join(p.slotDir(s.Slot), "browser.log"))
+			t.Logf("%s, its log:\n%s", bin, b)
+		}
+	})
 	call := func(id int, session, method string, params any) map[string]any {
 		t.Helper()
 		m := map[string]any{"id": id, "method": method, "params": params}
@@ -316,6 +324,17 @@ func TestARealBrowserOfThePoolOpensASitesPage(t *testing.T) {
 			}
 		}
 	}
+	// The browser starts at the first connection, and its first answer
+	// comes once it is up. On a CI runner busy with every package's tests
+	// under -race, that first answer did not come within the fifteen
+	// seconds every read was given (the release build of 2026-11-26
+	// twice, main's CI once), and the test failed while the browser was
+	// most likely still starting. Starting is what is slow there, so the
+	// first answer is given a minute and a half and every later one stays
+	// at fifteen seconds; the log printed on a failure says the rest.
+	c.wait = 90 * time.Second
+	call(0, "", "Browser.getVersion", map[string]any{})
+	c.wait = 0
 	tgt := call(1, "", "Target.createTarget", map[string]any{"url": "about:blank"})
 	att := call(2, "", "Target.attachToTarget", map[string]any{"targetId": tgt["targetId"], "flatten": true})
 	sess, _ := att["sessionId"].(string)
@@ -347,6 +366,8 @@ func alive(pid int) bool {
 type client struct {
 	c  net.Conn
 	br *bufio.Reader
+	// wait is how long a read waits for a frame; 15 seconds when zero.
+	wait time.Duration
 }
 
 func dial(endpoint string) (*client, error) {
@@ -399,7 +420,11 @@ func (c *client) send(t *testing.T, msg string) {
 }
 
 func (c *client) read() (string, error) {
-	_ = c.c.SetReadDeadline(time.Now().Add(15 * time.Second))
+	wait := c.wait
+	if wait == 0 {
+		wait = 15 * time.Second
+	}
+	_ = c.c.SetReadDeadline(time.Now().Add(wait))
 	var h [2]byte
 	if _, err := io.ReadFull(c.br, h[:]); err != nil {
 		return "", err

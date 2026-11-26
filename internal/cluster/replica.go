@@ -172,8 +172,10 @@ func (m *Manager) Commit(from nodes.Member, domain string, req CommitRequest) er
 	}
 	j := &job{revision: req.Revision, running: true}
 	m.jobs[domain] = j
+	m.placing.Add(1)
 	m.mu.Unlock()
 	go func() {
+		defer m.placing.Done()
 		err := m.place1(domain, site, man, dirs)
 		m.mu.Lock()
 		j.running = false
