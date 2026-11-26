@@ -1,9 +1,11 @@
 package guard
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -53,6 +55,17 @@ const (
 	memoryLine     = int64(2 << 30)
 	persistEvery   = 5 * time.Minute
 	ticksPerSecond = 100
+	// liveEvery is the window of what a site takes now. The minute samples
+	// are the history; on the dashboard, a site that started burning a
+	// core half a minute ago is the answer to "why is the node at 84%"
+	// and a minute late it is not. Shorter than ten seconds and one
+	// request finishing inside the window reads as a spike: the guard
+	// sweeps every three, so it is about four sweeps.
+	liveEvery = 10 * time.Second
+	// liveStale is when a reading no longer says "now": a site that left
+	// the house is no longer swept, and its last one must not stay on the
+	// dashboard as if it were still burning.
+	liveStale = time.Minute
 )
 
 type siteMeter struct {
@@ -63,6 +76,10 @@ type siteMeter struct {
 	below     map[string]int
 	open      map[string]*Episode
 	persisted time.Time
+	// The reading of now, over liveEvery (see Usage).
+	live      Sample
+	liveAt    time.Time
+	liveTicks int64
 }
 
 type meters struct {
@@ -171,6 +188,12 @@ func (g *Guard) measure(key, site string, tree []*Process) {
 	m := g.meter(key)
 	g.res.mu.Lock()
 	defer g.res.mu.Unlock()
+	if m.liveAt.IsZero() {
+		m.liveAt, m.liveTicks = now, ticks
+	} else if el := now.Sub(m.liveAt); el >= liveEvery {
+		m.live = Sample{At: now.UTC(), CPU: rate(ticks-m.liveTicks, el), RSS: rss}
+		m.liveAt, m.liveTicks = now, ticks
+	}
 	if m.lastAt.IsZero() {
 		m.lastAt, m.lastTicks = now, ticks
 		return
@@ -179,13 +202,8 @@ func (g *Guard) measure(key, site string, tree []*Process) {
 	if elapsed < sampleEvery {
 		return
 	}
-	delta := ticks - m.lastTicks
-	if delta < 0 {
-		delta = 0 // processes ended: their ticks left the sum
-	}
-	cpu := float64(delta) / ticksPerSecond / elapsed.Seconds() * 100
+	s := Sample{At: now.UTC(), CPU: rate(ticks-m.lastTicks, elapsed), RSS: rss}
 	m.lastAt, m.lastTicks = now, ticks
-	s := Sample{At: now.UTC(), CPU: float64(int(cpu*10)) / 10, RSS: rss}
 	m.res.Samples = append(m.res.Samples, s)
 	if len(m.res.Samples) > keepSamples {
 		m.res.Samples = m.res.Samples[len(m.res.Samples)-keepSamples:]
@@ -196,6 +214,16 @@ func (g *Guard) measure(key, site string, tree []*Process) {
 		m.persisted = now
 		g.persist(key, m.res)
 	}
+}
+
+// rate is CPU ticks over a stretch as percent of one core, to a tenth. A
+// negative delta is processes that ended: their ticks left the sum.
+func rate(delta int64, over time.Duration) float64 {
+	if delta < 0 || over <= 0 {
+		return 0
+	}
+	cpu := float64(delta) / ticksPerSecond / over.Seconds() * 100
+	return float64(int(cpu*10)) / 10
 }
 
 // persist writes a meter's history; a worker's goes in its site's folder.
@@ -269,5 +297,38 @@ func (g *Guard) Resources(domain string) Resources {
 			}
 		}
 	}
+	return out
+}
+
+// SiteUse is what a site takes now: CPU as percent of one core (a site on
+// two full cores is 200) and resident memory, its workers included.
+type SiteUse struct {
+	Domain string  `json:"domain"`
+	CPU    float64 `json:"cpu"`
+	RSS    int64   `json:"rss"`
+}
+
+// Usage is what every site takes now, the hungriest first, for the
+// dashboard's "which site is the node's CPU": the reading over the last
+// liveEvery, not the minute's sample. A site that takes nothing (a static
+// one, a stopped one) is left out, so the list is the sites that weigh;
+// one not swept for liveStale has left the house.
+func (g *Guard) Usage() []SiteUse {
+	now := g.now()
+	g.res.mu.Lock()
+	out := []SiteUse{}
+	for key, m := range g.res.sites {
+		if strings.Contains(key, "/") || m.live.At.IsZero() || now.Sub(m.live.At) > liveStale {
+			continue
+		}
+		if m.live.CPU == 0 && m.live.RSS == 0 {
+			continue
+		}
+		out = append(out, SiteUse{Domain: key, CPU: m.live.CPU, RSS: m.live.RSS})
+	}
+	g.res.mu.Unlock()
+	slices.SortFunc(out, func(a, b SiteUse) int {
+		return cmp.Or(cmp.Compare(b.CPU, a.CPU), cmp.Compare(b.RSS, a.RSS), strings.Compare(a.Domain, b.Domain))
+	})
 	return out
 }

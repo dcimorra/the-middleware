@@ -72,6 +72,79 @@ function vital(label, value, detail, minutes, k) {
     h("div", { class: "np-vital-foot" }, [detail, peak].filter(Boolean).join(" · ")));
 }
 
+// usageList is which sites the machine's numbers are made of, under them:
+// the few that take the most now, each a thin bar of its share of the
+// node, so an 84% processor has names beside it. A site's CPU comes as
+// percent of one core and is drawn as its part of the whole machine, the
+// scale the processor tile above uses, so the rows add up to it; what no
+// site accounts for (the system, the house, an agent at work for none of
+// them) is one quiet row at the end, or the list would seem to lie when
+// it does not reach the tile's number. Sorted by processor or by memory;
+// the choice and the fold survive the redraw every ten seconds.
+const USAGE_TOP = 5;
+
+function usageList(node, sites, now, prefs) {
+  const p = prefs.get(node.id) || { by: "cpu", open: false };
+  prefs.set(node.id, p);
+  const cores = Math.max(1, Number(now.cores) || 1);
+  const memTotal = Number(now.mem_total) || 0;
+  const share = (x) => (p.by === "cpu" ? x.cpu / cores : memTotal ? (100 * x.rss) / memTotal : 0);
+  const rows = sites.slice().sort((a, b) => share(b) - share(a) || a.domain.localeCompare(b.domain));
+  const shown = p.open ? rows : rows.slice(0, USAGE_TOP);
+  const el = h("section", { class: "np-use" });
+  const tab = (by, label) => {
+    const b = h("button", { type: "button", class: "np-use-tab" + (p.by === by ? " on" : ""), "aria-pressed": String(p.by === by) }, label);
+    b.addEventListener("click", () => { if (p.by !== by) { p.by = by; el.replaceWith(usageList(node, sites, now, prefs)); } });
+    return b;
+  };
+  el.append(h("div", { class: "np-use-head" },
+    h("h3", null, t("dash.useTitle")),
+    h("div", { class: "np-use-tabs", role: "group", "aria-label": t("dash.useSort") }, tab("cpu", t("vitals.cpu")), tab("mem", t("vitals.memory")))));
+  if (!rows.length) {
+    el.append(h("p", { class: "np-use-empty" }, t("dash.useNone")));
+    return el;
+  }
+  const fmtPct = (v) => (v > 0 && v < 1 ? "<1%" : pct(v));
+  const line = (name, x, opts = {}) => {
+    const v = Math.min(100, Math.max(0, opts.share));
+    const fill = h("span", { class: "np-use-fill " + (opts.rest ? "rest" : levelOf(v)) });
+    fill.style.width = (v > 0 ? Math.max(v, 1.5) : 0).toFixed(1) + "%";
+    const main = p.by === "cpu" ? fmtPct(v) : fmtBytes(x.rss);
+    const other = p.by === "cpu" ? fmtBytes(x.rss) : fmtPct(x.cpu / cores);
+    const title = opts.rest ? t("dash.useRestHint") : t("dash.useRowHint", { cores: (x.cpu / 100).toFixed(2), mem: fmtBytes(x.rss) });
+    const body = [
+      h("span", { class: "np-use-name" }, name),
+      h("span", { class: "np-use-track", "aria-hidden": "true" }, fill),
+      h("span", { class: "np-use-val" }, main),
+      h("span", { class: "np-use-alt" }, other),
+    ];
+    return h("li", null, opts.onClick
+      ? h("button", { type: "button", class: "np-use-row", title, onClick: opts.onClick }, ...body)
+      : h("div", { class: "np-use-row rest", title }, ...body));
+  };
+  const list = h("ul", { class: "np-use-list" });
+  for (const x of shown) {
+    list.append(line(x.domain, x, { share: share(x), onClick: () => go(node, `/sites/${encodeURIComponent(x.domain)}/activity`) }));
+  }
+  // The rest is the tile's number less every site's, not only the shown
+  // ones: folded sites are still sites. The two are read seconds apart,
+  // so a small difference is noise, not a hidden process.
+  const sumCPU = rows.reduce((n, x) => n + x.cpu / cores, 0);
+  const sumRSS = rows.reduce((n, x) => n + x.rss, 0);
+  const restCPU = Math.max(0, Number(now.cpu || 0) - sumCPU);
+  const restRSS = Math.max(0, Number(now.mem_used || 0) - sumRSS);
+  const rest = { cpu: restCPU * cores, rss: restRSS };
+  const restShare = p.by === "cpu" ? restCPU : memTotal ? (100 * restRSS) / memTotal : 0;
+  if (restShare >= 1) list.append(line(t("dash.useRest"), rest, { share: restShare, rest: true }));
+  el.append(list);
+  if (rows.length > USAGE_TOP) {
+    const more = h("button", { type: "button", class: "np-use-more" }, p.open ? t("dash.useLess") : t("dash.useAll", { n: rows.length }));
+    more.addEventListener("click", () => { p.open = !p.open; el.replaceWith(usageList(node, sites, now, prefs)); });
+    el.append(more);
+  }
+  return el;
+}
+
 function stat(value, label, kind) {
   return h("div", { class: "dash-stat " + (kind || "") }, h("strong", null, String(value)), h("span", null, label));
 }
@@ -91,7 +164,7 @@ function menu(items) {
   return el;
 }
 
-function nodeCard(node, acts, member, myVersion, openEvents) {
+function nodeCard(node, acts, member, myVersion, openEvents, usePrefs) {
   const s = node.summary || {};
   const viewing = (!node.self && currentNode() === node.id) || (node.self && !currentNode());
   const head = h("div", { class: "dash-node-head" },
@@ -128,6 +201,8 @@ function nodeCard(node, acts, member, myVersion, openEvents) {
       vital(t("vitals.cpu"), n.cpu, t("dash.cores", { n: n.cores || 0, load: Number(n.load1 || 0).toFixed(2) }), mins, 1),
       vital(t("vitals.memory"), n.mem_pct, `${fmtBytes(n.mem_used)} / ${fmtBytes(n.mem_total)}`, mins, 2),
       vital(t("vitals.disk"), n.disk_pct, `${fmtBytes(n.disk_used)} / ${fmtBytes(n.disk_total)}`)));
+    // A node on an older version has no usage in its summary: nothing.
+    if (Array.isArray(s.usage)) card.append(usageList(node, s.usage, n, usePrefs));
   }
   const sc = s.sites;
   if (sc) {
@@ -236,6 +311,7 @@ export function dashboardScreen() {
   let info = null;
   let alive = true;
   const openEvents = new Set();
+  const usePrefs = new Map();
 
   function paint() {
     const inNet = Boolean(info && info.network);
@@ -269,7 +345,7 @@ export function dashboardScreen() {
       }
       if (c.self) { if (inNet) acts.push({ icon: "logout", label: t("dash.leave"), danger: true, onClick: leave }); }
       else acts.push({ icon: "trash", label: t("dash.expel"), danger: true, onClick: () => expel(c) });
-      grid.append(nodeCard(c, acts, byID.get(c.id), mine, openEvents));
+      grid.append(nodeCard(c, acts, byID.get(c.id), mine, openEvents, usePrefs));
     }
   }
 

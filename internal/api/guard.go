@@ -18,6 +18,12 @@ type GuardOptions struct {
 // not apply.
 func (s *Server) RegisterGuard(o GuardOptions) {
 	p := Prefix + "/guard"
+	// What each site takes now rides in the node's summary, so the
+	// dashboard shows it for every node of a network in the request it
+	// already makes, and an older node that lacks it just shows nothing.
+	if o.Guard != nil {
+		s.AddSummary("usage", func() any { return o.Guard.Usage() })
+	}
 	s.Handle("GET", p, "The rules and the incidents not yet dismissed", func(w http.ResponseWriter, r *http.Request) (any, error) {
 		if o.Guard == nil {
 			return nil, Errorf(http.StatusServiceUnavailable, "the guard is not running")
