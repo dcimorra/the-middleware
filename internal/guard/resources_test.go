@@ -107,3 +107,45 @@ func TestAContainerWorkerIsMeasuredByItsCgroupAndApart(t *testing.T) {
 		t.Fatalf("the worker's last sample beside the site's: %+v", all.Workers)
 	}
 }
+
+// The dashboard asks which site is behind a busy node: what every site
+// takes now, over seconds rather than the minute's sample, hungriest
+// first; a site that takes nothing is left out, and one that stopped
+// being swept (it left the house) goes once its reading is stale.
+func TestUsageIsWhatEachSiteTakesNowHungriestFirst(t *testing.T) {
+	fp := newFakeProc(t)
+	h := newHouse(t)
+	a := h.site("a.example", 100, 33001)
+	b := h.site("b.example", 200, 33002)
+	h.site("idle.example", 300, 33003)
+	pa := procSpec{pid: 100, ppid: 1, comm: "server", cmdline: []string{"./server"}, cwd: a.Dir, startSec: 10, listen: []int{33001}}
+	pb := procSpec{pid: 200, ppid: 1, comm: "server", cmdline: []string{"./server"}, cwd: b.Dir, startSec: 10, listen: []int{33002}}
+	fp.add(pa)
+	fp.add(pb)
+	now := time.Unix(fp.bootUnix+600, 0)
+	g, _ := newGuard(t, fp, h, &killLog{}, now)
+	g.now = func() time.Time { return now }
+	g.Sweep()
+	if u := g.Usage(); len(u) != 0 {
+		t.Fatalf("a reading before any window has passed: %+v", u)
+	}
+	fp.setUsage(pa, 10*25, 1000)  // a quarter of a core over ten seconds
+	fp.setUsage(pb, 10*150, 2000) // a core and a half
+	now = now.Add(10 * time.Second)
+	g.Sweep()
+	u := g.Usage()
+	if len(u) != 2 || u[0].Domain != "b.example" || u[0].CPU != 150 || u[1].Domain != "a.example" || u[1].CPU != 25 {
+		t.Fatalf("usage: %+v", u)
+	}
+	if u[0].RSS == 0 {
+		t.Fatalf("no memory: %+v", u[0])
+	}
+	if r := g.Resources("b.example"); len(r.Samples) != 0 {
+		t.Fatalf("the reading of now wrote a minute sample: %+v", r.Samples)
+	}
+	// Nothing swept for more than a minute: nothing is "now" any more.
+	now = now.Add(2 * time.Minute)
+	if u := g.Usage(); len(u) != 0 {
+		t.Fatalf("stale readings: %+v", u)
+	}
+}

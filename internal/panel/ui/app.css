@@ -1989,6 +1989,38 @@ svg.np-spark.warn .line { stroke: var(--warn); }
 svg.np-spark.warn .area { fill: var(--warn); }
 svg.np-spark.bad .line { stroke: var(--bad); }
 svg.np-spark.bad .area { fill: var(--bad); }
+/* Which sites the node's numbers are made of: rows of name, a hairline
+   bar of the site's share of the machine, the measure sorted by and the
+   other one quieter. Tabular figures so the values line up as a column. */
+.np-use { display: flex; flex-direction: column; gap: 6px; }
+.np-use-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.np-use-head h3 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-3); }
+.np-use-tabs { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--surface-2); }
+.np-use-tab { appearance: none; border: 0; background: transparent; color: var(--text-3); font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 6px; cursor: pointer; min-height: 24px; }
+.np-use-tab:hover { color: var(--text); }
+.np-use-tab.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
+.np-use-list { list-style: none; margin: 0 -8px; padding: 0; display: flex; flex-direction: column; }
+.np-use-row { appearance: none; border: 0; background: transparent; font: inherit; color: inherit; text-align: left; width: 100%;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(60px, 30%) 4.2em 4.8em; align-items: center; gap: 12px;
+  min-height: 34px; padding: 4px 8px; border-radius: 8px; font-size: 13px; }
+button.np-use-row { cursor: pointer; }
+button.np-use-row:hover { background: var(--surface-2); }
+button.np-use-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.np-use-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.np-use-row.rest .np-use-name { color: var(--text-3); font-style: italic; }
+.np-use-track { height: 4px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.np-use-fill { display: block; height: 100%; border-radius: 999px; background: var(--accent); transition: width .4s ease; }
+.np-use-fill.warn { background: var(--warn); }
+.np-use-fill.bad { background: var(--bad); }
+.np-use-fill.rest { background: var(--text-3); opacity: .5; }
+.np-use-val { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; }
+.np-use-alt { text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text-3); white-space: nowrap; }
+.np-use-empty { margin: 0; font-size: 13px; color: var(--text-3); }
+.np-use-more { appearance: none; border: 0; background: transparent; font: inherit; font-size: 12.5px; color: var(--text-3); padding: 2px 0; align-self: flex-start; cursor: pointer; }
+.np-use-more:hover { color: var(--text); }
+@media (max-width: 640px) {
+  .np-use-row { grid-template-columns: minmax(0, 1fr) 22% 3.8em 4.4em; gap: 8px; min-height: 40px; }
+}
 .np-node-sites { display: flex; align-items: center; gap: 10px; min-height: 44px; margin: -4px -8px; padding: 8px; border-radius: 10px; color: var(--text-2); }
 .np-node-sites:hover { background: var(--surface-2); text-decoration: none; }
 .np-node-sites > .ico:first-child { flex: none; color: var(--text-3); }
