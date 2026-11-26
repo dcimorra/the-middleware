@@ -198,8 +198,11 @@ func TestARefreshDoesNotRunACommandFromTheRepository(t *testing.T) {
 
 // privateUpstream is GitHub played by git's own http-backend: it serves
 // the bare repositories under dir only to x-access-token:token, and
-// records every Authorization header it was sent, by path.
-func privateUpstream(t *testing.T, dir, token string, seen *[]string) *httptest.Server {
+// records every Authorization header it was sent, by path. seen reads
+// that record under the lock its handler writes it with: read bare, the
+// race detector failed the test (a request's handler and the test share
+// nothing but the network, which it does not count as an order).
+func privateUpstream(t *testing.T, dir, token string) (*httptest.Server, func() []string) {
 	t.Helper()
 	out, err := exec.Command("git", "--exec-path").Output()
 	if err != nil {
@@ -210,11 +213,12 @@ func privateUpstream(t *testing.T, dir, token string, seen *[]string) *httptest.
 		t.Skip("git-http-backend is not installed")
 	}
 	var mu sync.Mutex
+	var seen []string
 	cg := &cgi.Handler{Path: backend, Env: []string{"GIT_PROJECT_ROOT=" + dir, "GIT_HTTP_EXPORT_ALL=1"}}
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h := r.Header.Get("Authorization"); h != "" {
 			mu.Lock()
-			*seen = append(*seen, r.URL.Path)
+			seen = append(seen, r.URL.Path)
 			mu.Unlock()
 		}
 		if u, p, ok := r.BasicAuth(); !ok || u != "x-access-token" || p != token {
@@ -228,7 +232,11 @@ func privateUpstream(t *testing.T, dir, token string, seen *[]string) *httptest.
 		cg.ServeHTTP(w, r)
 	}))
 	t.Cleanup(ts.Close)
-	return ts
+	return ts, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), seen...)
+	}
 }
 
 func TestAPrivateRepositoryIsPulledWithTheModulesTokenAndOnlyItsOwn(t *testing.T) {
@@ -241,8 +249,7 @@ func TestAPrivateRepositoryIsPulledWithTheModulesTokenAndOnlyItsOwn(t *testing.T
 	t.Setenv("GIT_COMMITTER_NAME", "t")
 	t.Setenv("GIT_COMMITTER_EMAIL", "t@t")
 	remotes := filepath.Join(root, "remotes")
-	var seen []string
-	up := privateUpstream(t, remotes, "module-secret", &seen)
+	up, seen := privateUpstream(t, remotes, "module-secret")
 	bare := func(name string) string { return filepath.Join(remotes, "owner", name+".git") }
 	seed := filepath.Join(root, "seed")
 	run(t, root, "init", "-q", "-b", "main", seed)
@@ -309,7 +316,7 @@ func TestAPrivateRepositoryIsPulledWithTheModulesTokenAndOnlyItsOwn(t *testing.T
 	if r.Last == nil || r.Last.OK {
 		t.Fatalf("a listed repository was pulled with the token outside its path: %+v", r.Last)
 	}
-	for _, p := range seen {
+	for _, p := range seen() {
 		if strings.Contains(p, "repo-other") {
 			t.Fatalf("the token was sent to %s", p)
 		}

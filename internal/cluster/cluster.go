@@ -170,7 +170,18 @@ type Manager struct {
 	// what a copy's processes reach through the mesh (door.go). Nil
 	// refuses them. Set once the door is wired (SetDoor).
 	door func(site string) http.Handler
+	// placing counts the copies being put in place: a commit answers at
+	// once and the copy is written to sites/ after, in its own goroutine
+	// (replica.go), so a caller that must know nothing is still writing
+	// there (a test about to remove the folder) waits on it (Placed).
+	placing sync.WaitGroup
 }
+
+// Placed waits until no copy is being put in place here. A test removed
+// its folder while a copy committed in its last second was still being
+// written, and failed with "directory not empty" (arm64 release build,
+// 2026-11-26).
+func (m *Manager) Placed() { m.placing.Wait() }
 
 type nodeView struct {
 	member nodes.Member

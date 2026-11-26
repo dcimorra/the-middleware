@@ -128,6 +128,11 @@ func TestADueTaskRunsInsideItsSiteWithTheSitesEnvironmentAndIsRecorded(t *testin
 	if run.Status != StatusOK || run.ExitCode != 0 || run.Trigger != "schedule" || !run.At.Equal(c.now()) {
 		t.Fatalf("run = %+v", run)
 	}
+	// The record is written before task.done is emitted, and the bus
+	// hands events over on its own goroutine: read at once, the event
+	// was missing now and then on a busy runner (arm64 release build,
+	// 2026-11-26), so the test waits for it as it waits for the record.
+	waitUntil(t, "task.done", func() bool { return len(get("task.done")) == 1 })
 	if len(get("task.started")) != 1 || len(get("task.done")) != 1 {
 		t.Fatalf("events: started=%d done=%d", len(get("task.started")), len(get("task.done")))
 	}
